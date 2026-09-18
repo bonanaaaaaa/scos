@@ -35,6 +35,8 @@
 
 ## Agreed architecture
 
+- Every application-owned table includes non-null created_at and updated_at timestamps maintained by PostgreSQL triggers, including lookup tables. See [database-managed timestamps](adr/0003-database-managed-timestamps.md) for semantics, example SQL, and verification.
+
 - The Order aggregate owns accepted order details and allocations. Quantity, destination, and money are value objects; discount and shipping-plan calculations are domain functions.
 - Use third normal form (3NF) as the relational database design baseline. Separate entity facts and relationships, enforce keys and foreign keys, and evaluate functional dependencies beyond the UUID primary key. Accepted order prices, discounts, shipping charges, and totals are immutable historical facts; preserve them rather than deriving them from current commercial rules. Any deliberate denormalization requires a documented reason.
 - Inventory is persisted separately. The SubmitOrder application use case coordinates inventory changes and order creation atomically.
@@ -48,7 +50,7 @@
 - Hasura-style enum lookup tables retain their agreed text primary keys. The client-generated submissionId remains a separate retry key; this database ID decision does not change its API contract or the order-number format.
 - Use Hasura-style enum lookup tables with text primary keys and foreign keys for persisted categorical values; do not use PostgreSQL native enums or Prisma enum declarations that create them. Apply this to submission outcomes and rejection codes. This adopts the database pattern without adding Hasura to the stack.
 - Maintain lookup values through versioned migrations. Prisma represents these as String fields and relations; domain types remain string literal unions with validation at the adapter seam. Referenced values cannot be removed until references are migrated; avoid cascading deletion of historical records.
-- Enum-table reference: https://hasura.io/docs/2.0/schema/postgres/enums/ . Follow its compatible table shape: one text primary-key column, optionally one text description column, no other columns, at least one value, and GraphQL-compatible value names. Insert initial values in migrations rather than relying on development seeds. Hasura metadata configuration is not needed in our Hono/Prisma stack.
+- Enum-table reference: https://hasura.io/docs/2.0/schema/postgres/enums/ . Use text primary keys, optional descriptions, at least one value, and GraphQL-compatible value names. All application tables also require created_at and updated_at; this intentionally supersedes strict Hasura enum-table shape compatibility as recorded in ADR 0003. Insert initial values in migrations rather than relying on development seeds. Hasura metadata configuration is not needed in our Hono/Prisma stack.
 
 ## Distance calculation and precision
 
