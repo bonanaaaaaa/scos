@@ -17,10 +17,10 @@ describe("@scos/core public entry point", () => {
       "Money",
       "corePackage",
       "createOrder",
+      "destinationSchema",
       "estimateOrder",
-      "parseDestination",
-      "parseOrderRequest",
-      "parseQuantity",
+      "orderRequestSchema",
+      "quantitySchema",
     ]);
   });
 });

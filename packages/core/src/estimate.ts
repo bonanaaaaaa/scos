@@ -1,5 +1,5 @@
 import { type InventorySnapshot, type ShippingPlan, allocateNearestFirst } from "./allocation";
-import { type Destination, isValidGeoPoint } from "./destination";
+import { type Destination, geoPointSchema } from "./destination";
 import { DomainError } from "./errors";
 import type { Money } from "./money";
 import {
@@ -8,7 +8,7 @@ import {
   priceMerchandise,
   shippingCostFor,
 } from "./pricing";
-import { type Quantity, parseQuantity } from "./quantity";
+import { type Quantity, quantitySchema } from "./quantity";
 
 export type EstimateRejectionReason = "INSUFFICIENT_STOCK" | "SHIPPING_EXCEEDS_LIMIT";
 
@@ -83,7 +83,10 @@ export function estimateOrder(request: OrderRequest, inventory: InventorySnapsho
   const { quantity, destination } = request;
   // The brands are compile-time only; re-check so unbranded callers cannot
   // obtain a "valid" estimate for a non-positive or fractional quantity.
-  if (!parseQuantity(quantity).ok || !isValidGeoPoint(destination)) {
+  if (
+    !quantitySchema.safeParse(quantity).success ||
+    !geoPointSchema.safeParse(destination).success
+  ) {
     throw new DomainError("INVALID_REQUEST", "Order request was not validated.");
   }
   const base: EstimateBase = { quantity, destination, ...priceMerchandise(quantity) };

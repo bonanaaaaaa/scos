@@ -11,7 +11,7 @@ export {
   type GeoPoint,
   LATITUDE_LIMIT,
   LONGITUDE_LIMIT,
-  parseDestination,
+  destinationSchema,
 } from "./destination";
 export { DomainError, type DomainErrorCode } from "./errors";
 export {
@@ -25,7 +25,6 @@ export {
 } from "./estimate";
 export { MONEY_MAX_STRING, Money } from "./money";
 export { type CreateOrderInput, type Order, createOrder } from "./order";
-export { type OrderRequestInput, parseOrderRequest } from "./order-request";
+export { orderRequestSchema } from "./order-request";
 export type { DiscountRate } from "./pricing";
-export { MAX_QUANTITY, type Quantity, parseQuantity } from "./quantity";
-export type { Result, ValidationError, ValidationErrorCode, ValidationField } from "./result";
+export { MAX_QUANTITY, type Quantity, quantitySchema } from "./quantity";

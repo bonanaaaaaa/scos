@@ -29,31 +29,36 @@ Core separates three kinds of failure, and each has one mechanism:
 
 | Failure                                   | Mechanism                                                | Examples                                                               |
 | ----------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Malformed client input (expected)         | `Result` with typed `ValidationError`s (`ok` / `err`)    | `parseQuantity`, `parseDestination`, `parseOrderRequest`               |
+| Malformed input (expected)                | Zod schema `.safeParse` result (`success` / `error`)     | `quantitySchema`, `destinationSchema`, `orderRequestSchema`            |
 | Business rejection of a well-formed order | A typed estimate outcome: `valid: false` with a `reason` | `INSUFFICIENT_STOCK`, `SHIPPING_EXCEEDS_LIMIT` from `estimateOrder`    |
 | Violated domain invariant or bug          | `throw new DomainError(code, message)`                   | corrupt inventory, inconsistent order, amount outside `NUMERIC(12, 2)` |
 
-- **Validation returns `Result`, not exceptions.** Bad input is an expected
-  outcome, so it is a return value the caller must handle, not control flow by
-  exception. Multi-field parsers collect every field error instead of stopping at the first,
-  so an adapter can answer with a single HTTP 400 that lists all problems.
+- **Validation returns a result, not exceptions.** Core's input guards are Zod
+  schemas; callers use `.safeParse` and handle `success: false` as an expected
+  outcome instead of catching `ZodError`. Object schemas report every field
+  issue (with its `path`) instead of stopping at the first, so an adapter can
+  answer with a single HTTP 400 that lists all problems. Successful parses
+  return the branded `Quantity` / `Destination` / `OrderRequest` values that
+  `estimateOrder` requires.
 - **Business rejections are data.** Verification must still report the
   merchandise and discount amounts for a rejected order, so the estimate carries
   `valid`, `reason`, and the amounts; nothing is thrown.
 - **`DomainError` means something is wrong on our side.** Core throws it only
-  when an invariant is broken (data or programming error). Callers do not catch
-  it for normal flow.
+  when an invariant is broken (data or programming error), even where the check
+  reuses a Zod schema (for example inventory coordinates or an unvalidated
+  request passed to `estimateOrder`); a `ZodError` never escapes core.
 
-HTTP request validation is Zod in the inbound adapter (`@hono/standard-validator`, see
-[design decisions](../../docs/design-decisions.md)); core stays independent of Zod and Hono.
-The adapter's schema rejects malformed requests first, then converts the parsed body
-with `parseOrderRequest`, which acts as the domain's own guard and should not fail
-for input the schema accepted. Schema limits must match core's (`MAX_QUANTITY`,
-`LATITUDE_LIMIT`, `LONGITUDE_LIMIT`).
+Core depends on Zod but not on Hono. The inbound API adapter keeps its own HTTP
+request schemas through `@hono/standard-validator` (see
+[design decisions](../../docs/design-decisions.md)); their limits must match
+core's (`MAX_QUANTITY`, `LATITUDE_LIMIT`, `LONGITUDE_LIMIT`). The adapter then
+converts the body with `orderRequestSchema`, which acts as the domain's own
+guard and should not fail for input the HTTP schema accepted.
 
 Inbound adapters (#9–#11) must follow this mapping:
 
-- Zod schema failures, and any `Result` validation error -> HTTP 400 listing every problem;
+- HTTP schema failures and core schema `safeParse` failures -> HTTP 400 listing
+  every problem;
 - business outcomes -> their documented status (verification 200 with
   `valid: false`; submission 422);
 - `DomainError` (and any other thrown error) -> HTTP 500, without leaking
@@ -61,16 +66,21 @@ Inbound adapters (#9–#11) must follow this mapping:
 
 ## Supported input bounds
 
-- **Quantity:** a positive integer no greater than `MAX_QUANTITY` (66,666,666 =
-  floor(9999999999.99 / 150), derived from the constants). This is a
-  storage-representability bound, not a business cap: any quantity within it
-  gives merchandise amounts that fit `NUMERIC(12, 2)`, and valid orders are
-  further bounded by available stock. Inbound adapters should reject larger
-  values as malformed input (HTTP 400) using the exported constant.
-- **Destination:** finite latitude in `[-90, 90]` and longitude in
-  `[-180, 180]`, inclusive.
+Enforced by the exported Zod schemas:
 
-Input validation returns a `Result`; see [Error handling](#error-handling).
+- **Quantity (`quantitySchema`):** a positive safe integer no greater than
+  `MAX_QUANTITY` (66,666,666 = floor(9999999999.99 / 150), derived from the
+  constants). NaN, ±Infinity, fractions, `0`, `-0` and non-numbers are
+  rejected. This is a storage-representability bound, not a business cap: any
+  quantity within it gives merchandise amounts that fit `NUMERIC(12, 2)`, and
+  valid orders are further bounded by available stock. Inbound adapters should
+  reject larger values as malformed input (HTTP 400) using the exported
+  constant.
+- **Destination (`destinationSchema`):** finite latitude in `[-90, 90]` and
+  longitude in `[-180, 180]`, inclusive. Supplied precision (including `-0`) is
+  preserved, unknown keys are stripped, and the parsed value is frozen.
+- **Order request (`orderRequestSchema`):** `{ quantity, latitude, longitude }`
+  with the rules above, parsed to a frozen `{ quantity, destination }`.
 
 ### Overflow behaviour of `estimateOrder`
 

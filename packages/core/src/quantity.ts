@@ -1,11 +1,7 @@
+import { z } from "zod";
+
 import { MONEY_MAX } from "./money";
 import { UNIT_PRICE } from "./product";
-import { type Result, type ValidationError, err, ok, validationError } from "./result";
-
-declare const quantityBrand: unique symbol;
-
-/** A validated, positive integer number of units. */
-export type Quantity = number & { readonly [quantityBrand]: true };
 
 /**
  * Largest quantity whose merchandise subtotal (quantity x $150) fits
@@ -18,23 +14,12 @@ export type Quantity = number & { readonly [quantityBrand]: true };
  */
 export const MAX_QUANTITY: number = MONEY_MAX.dividedToIntegerBy(UNIT_PRICE).toNumber();
 
-export function parseQuantity(value: unknown): Result<Quantity, ValidationError> {
-  if (typeof value !== "number") {
-    return err(validationError("quantity", "NOT_A_NUMBER", "Quantity must be a number."));
-  }
-  if (!Number.isFinite(value)) {
-    return err(validationError("quantity", "NOT_FINITE", "Quantity must be finite."));
-  }
-  if (!Number.isInteger(value)) {
-    return err(validationError("quantity", "NOT_INTEGER", "Quantity must be an integer."));
-  }
-  if (value <= 0) {
-    return err(validationError("quantity", "NOT_POSITIVE", "Quantity must be at least 1."));
-  }
-  if (value > MAX_QUANTITY) {
-    return err(
-      validationError("quantity", "OUT_OF_RANGE", `Quantity must be at most ${MAX_QUANTITY}.`),
-    );
-  }
-  return ok(value as Quantity);
-}
+/**
+ * Domain input guard for a quantity: a positive safe integer no greater than
+ * MAX_QUANTITY. Rejects NaN, ±Infinity, fractions, 0, -0 and non-numbers.
+ * Callers use `.safeParse` (see "Error handling" in packages/core/README.md).
+ */
+export const quantitySchema = z.number().int().positive().max(MAX_QUANTITY).brand<"Quantity">();
+
+/** A validated, positive integer number of units. */
+export type Quantity = z.infer<typeof quantitySchema>;

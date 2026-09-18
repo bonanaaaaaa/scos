@@ -1,4 +1,4 @@
-import { type Destination, isValidGeoPoint } from "./destination";
+import { type Destination, geoPointSchema } from "./destination";
 import { haversineDistanceKm } from "./distance";
 import { DomainError } from "./errors";
 import type { Quantity } from "./quantity";
@@ -44,7 +44,7 @@ function assertValidSnapshot(inventory: InventorySnapshot): void {
         `Warehouse ${warehouse.warehouseId} available stock must be a non-negative integer.`,
       );
     }
-    if (!isValidGeoPoint(warehouse)) {
+    if (!geoPointSchema.safeParse(warehouse).success) {
       throw new DomainError(
         "INVALID_INVENTORY",
         `Warehouse ${warehouse.warehouseId} has invalid coordinates.`,
