@@ -105,3 +105,187 @@ where the boundaries go. DDD decides how to model what is inside: value objects
 (`Money`, `Quantity`, `Destination`), aggregates (`Order`) and domain services
 (pricing, allocation). The project uses one bounded context, Ordering; its
 vocabulary is in [CONTEXT.md](../CONTEXT.md).
+
+## Domain model
+
+The domain layer (`packages/core/src/domain`) models the Ordering context with
+one aggregate, a set of value objects and a few stateless domain services.
+Solid diamonds are composition (the owner holds the value); dashed arrows are
+"uses" or "returns" dependencies of a function.
+
+```mermaid
+classDiagram
+    direction LR
+
+    class Order {
+        <<AggregateRoot>>
+        +id string
+        +orderNumber string
+        +quantity Quantity
+        +destination Destination
+        +merchandiseSubtotal Money
+        +discountRate DiscountRate
+        +discountAmount Money
+        +discountedMerchandiseTotal Money
+        +shippingCost Money
+        +orderTotal Money
+        +allocations ShippingPlan
+    }
+    class CreateOrder {
+        <<Factory>>
+        +createOrder(id, orderNumber, estimate) Order
+    }
+
+    class Quantity {
+        <<ValueObject>>
+    }
+    class Destination {
+        <<ValueObject>>
+        +latitude number
+        +longitude number
+    }
+    class Money {
+        <<ValueObject>>
+    }
+    class DiscountRate {
+        <<ValueObject>>
+    }
+    class WarehouseAllocation {
+        <<ValueObject>>
+        +warehouseId string
+        +quantity number
+        +distanceKm number
+    }
+    class ShippingPlan {
+        <<ValueObject>>
+    }
+    class OrderRequest {
+        <<ValueObject>>
+        +quantity Quantity
+        +destination Destination
+    }
+    class OrderEstimate {
+        <<ValueObject>>
+        +valid boolean
+        +reason string
+    }
+
+    class InventorySnapshot {
+        <<ReadModel>>
+    }
+    class WarehouseStock {
+        <<ReadModel>>
+        +warehouseId string
+        +latitude number
+        +longitude number
+        +available number
+    }
+
+    class Pricing {
+        <<DomainService>>
+        +discountRateFor(quantity) DiscountRate
+        +priceMerchandise(quantity) MerchandisePricing
+    }
+    class Shipping {
+        <<DomainService>>
+        +shippingCostFor(allocations) Money
+        +shippingLimitFor(discountedTotal) Decimal
+        +isShippingWithinLimit(shippingCost, discountedTotal) boolean
+    }
+    class Allocation {
+        <<DomainService>>
+        +allocateNearestFirst(quantity, destination, inventory) ShippingPlan
+    }
+    class Distance {
+        <<DomainService>>
+        +haversineDistanceKm(from, to) number
+    }
+    class EstimateOrder {
+        <<DomainService>>
+        +estimateOrder(request, inventory) OrderEstimate
+    }
+
+    Order *-- Quantity
+    Order *-- Destination
+    Order *-- Money
+    Order *-- DiscountRate
+    Order "1" *-- "1..*" WarehouseAllocation : allocations
+    ShippingPlan "1" *-- "1..*" WarehouseAllocation
+    OrderRequest *-- Quantity
+    OrderRequest *-- Destination
+    OrderEstimate *-- Quantity
+    OrderEstimate *-- Destination
+    OrderEstimate *-- Money
+    OrderEstimate *-- DiscountRate
+    OrderEstimate "1" *-- "0..*" WarehouseAllocation : allocations
+    InventorySnapshot "1" *-- "0..*" WarehouseStock
+
+    EstimateOrder ..> OrderRequest : uses
+    EstimateOrder ..> InventorySnapshot : uses
+    EstimateOrder ..> Pricing : uses
+    EstimateOrder ..> Allocation : uses
+    EstimateOrder ..> Shipping : uses
+    EstimateOrder ..> OrderEstimate : returns
+    Allocation ..> Distance : uses
+    Allocation ..> InventorySnapshot : uses
+    Allocation ..> ShippingPlan : returns
+    Shipping ..> WarehouseAllocation : uses
+    Pricing ..> Quantity : uses
+    CreateOrder ..> OrderEstimate : uses
+    CreateOrder ..> Pricing : re-verifies with
+    CreateOrder ..> Shipping : re-verifies with
+    CreateOrder ..> Order : returns
+```
+
+- **Aggregate root: `Order`.** An accepted order with its identity (`id`,
+  `orderNumber`), amounts and allocations. The only way to build one is the
+  `createOrder` factory, which accepts only a valid `OrderEstimate` and
+  re-verifies every invariant (quantity range, allocations summing to the
+  quantity, subtotal, discount tier and amount, shipping cost and the 15% limit,
+  order total) before returning a frozen value; a violation throws
+  `DomainError`.
+- **Value objects** have no identity and are immutable: `Quantity` and
+  `Destination` (branded, produced by the Zod input schemas), `Money`,
+  `DiscountRate`, `WarehouseAllocation`, `ShippingPlan` (a non-empty list of
+  allocations), `OrderRequest` and `OrderEstimate`. An estimate carries the
+  request's quantity and destination, the priced amounts, and either a
+  `ShippingPlan` or a rejection `reason`.
+- **Domain services** are stateless functions: pricing (discount tiers,
+  merchandise totals), shipping (combined cost rounded once, exact 15% limit),
+  allocation (nearest-first; it returns no plan when stock is insufficient) and
+  distance (Haversine). `estimateOrder` composes them into an estimate.
+
+What is deliberately absent:
+
+- **No `Warehouse` entity.** Core never owns or changes warehouses; it only reads
+  an `InventorySnapshot` (a list of `WarehouseStock` rows) that a use case loads
+  through a port and passes in. Reserving stock is the persistence adapter's job.
+- **Estimates have no identity and no repository.** They are recomputed on
+  demand and never stored; only an accepted `Order` is persisted.
+- **No domain events yet.** Nothing inside the context reacts to an order being
+  accepted, so there is nothing to publish.
+- **One bounded context, Ordering.** Its terms (Order Request, Order Estimate,
+  Warehouse Allocation, Shipping Plan and so on) are defined in
+  [CONTEXT.md](../CONTEXT.md).
+
+### Folder layout by concept
+
+```text
+packages/core/src/domain/
+  shared/    decimal, money, errors, product constants, quantity, destination
+  pricing/   discount tiers and merchandise pricing
+  shipping/  distance, nearest-first allocation, shipping cost and limit
+  ordering/  order request schema, estimateOrder, the Order aggregate
+```
+
+Dependencies point one way: `shared` <- `pricing`, `shipping` <- `ordering`.
+`shared` imports no other domain folder, `pricing` and `shipping` do not import
+each other or `ordering`, and `ordering` may import all of them. No domain file
+imports `application/`. `packages/core/.oxlintrc.json` enforces these rules with
+`no-restricted-imports`.
+
+The folders follow domain concepts rather than DDD building-block types
+(`entities/`, `value-objects/`, `services/`). Code that changes together stays
+together: a new discount tier touches only `pricing/`, and a new shipping rate
+only `shipping/`. The folder names also match the words in CONTEXT.md, so a
+reader can go from a business term straight to its code.

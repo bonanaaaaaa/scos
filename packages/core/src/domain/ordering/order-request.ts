@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-import { destinationSchema, latitudeSchema, longitudeSchema } from "./destination";
+import { destinationSchema, latitudeSchema, longitudeSchema } from "../shared/destination";
 import type { OrderRequest } from "./estimate";
-import { quantitySchema } from "./quantity";
+import { quantitySchema } from "../shared/quantity";
 
 /**
  * Domain input guard for a raw order request `{ quantity, latitude, longitude }`.

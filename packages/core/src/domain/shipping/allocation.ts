@@ -1,7 +1,7 @@
-import { type Destination, geoPointSchema } from "./destination";
+import { type Destination, geoPointSchema } from "../shared/destination";
 import { haversineDistanceKm } from "./distance";
-import { DomainError } from "./errors";
-import type { Quantity } from "./quantity";
+import { DomainError } from "../shared/errors";
+import type { Quantity } from "../shared/quantity";
 
 /** One warehouse's available stock in an immutable inventory snapshot. */
 export interface WarehouseStock {

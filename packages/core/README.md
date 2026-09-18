@@ -8,13 +8,23 @@ Order Estimates, and the Order aggregate. No HTTP, Prisma, or persistence types.
 Hexagonal layering (see [architecture](../../docs/architecture.md)); adapters
 import only the package root (`src/index.ts`).
 
-- `src/domain/`: value objects, pricing, distance, allocation, estimates and the
-  Order aggregate. Pure, with no I/O and no ports.
+- `src/domain/`: the pure domain model, with no I/O and no ports, organised by
+  concept (see [Domain model](../../docs/architecture.md#domain-model)):
+  - `shared/`: `decimal`, `money`, `errors`, `product` constants, and the
+    `quantity` and `destination` value objects and input schemas;
+  - `pricing/`: discount tiers and merchandise pricing;
+  - `shipping/`: distance, nearest-first allocation, and shipping cost and
+    limit;
+  - `ordering/`: the order request schema, `estimateOrder`, and the `Order`
+    aggregate.
 - `src/application/` (added with the use cases): VerifyOrder / SubmitOrder and
   the driven ports that persistence implements.
 
-Dependencies point inward: `domain/` must not import `application/`. The
-`.oxlintrc.json` in this package enforces that with `no-restricted-imports`.
+Dependencies point inward and one way: `domain/` must not import
+`application/`, and inside `domain/` the order is `shared` <- `pricing`,
+`shipping` <- `ordering` (`shared` imports no other domain folder; `pricing` and
+`shipping` do not import each other or `ordering`). The `.oxlintrc.json` in this
+package enforces both with `no-restricted-imports`.
 
 ## Numeric policy
 

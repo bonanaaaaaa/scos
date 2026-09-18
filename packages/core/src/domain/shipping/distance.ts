@@ -1,4 +1,4 @@
-import type { GeoPoint } from "./destination";
+import type { GeoPoint } from "../shared/destination";
 
 /**
  * Mean Earth radius in kilometres: the IUGG mean radius R1 = (2a + b) / 3 of

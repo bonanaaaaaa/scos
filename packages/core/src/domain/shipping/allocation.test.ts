@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 
 import { type WarehouseStock, allocateNearestFirst } from "./allocation";
-import type { Destination } from "./destination";
-import { DomainError } from "./errors";
-import type { Quantity } from "./quantity";
+import type { Destination } from "../shared/destination";
+import { DomainError } from "../shared/errors";
+import type { Quantity } from "../shared/quantity";
 
 const destination = { latitude: 0, longitude: 0 } as Destination;
 const asQuantity = (value: number): Quantity => value as Quantity;

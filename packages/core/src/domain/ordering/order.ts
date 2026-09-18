@@ -1,17 +1,13 @@
-import type { WarehouseAllocation, ShippingPlan } from "./allocation";
-import type { Destination } from "./destination";
-import { DomainError } from "./errors";
-import { Money } from "./money";
+import type { WarehouseAllocation, ShippingPlan } from "../shipping/allocation";
+import type { Destination } from "../shared/destination";
+import { DomainError } from "../shared/errors";
+import { Money } from "../shared/money";
 import type { OrderEstimate } from "./estimate";
-import { DomainDecimal } from "./decimal";
-import {
-  type DiscountRate,
-  discountRateFor,
-  isShippingWithinLimit,
-  shippingCostFor,
-} from "./pricing";
-import { UNIT_PRICE } from "./product";
-import { type Quantity, MAX_QUANTITY } from "./quantity";
+import { DomainDecimal } from "../shared/decimal";
+import { type DiscountRate, discountRateFor } from "../pricing/pricing";
+import { isShippingWithinLimit, shippingCostFor } from "../shipping/shipping";
+import { UNIT_PRICE } from "../shared/product";
+import { type Quantity, MAX_QUANTITY } from "../shared/quantity";
 
 /** An accepted order. Amounts are immutable historical facts. */
 export interface Order {

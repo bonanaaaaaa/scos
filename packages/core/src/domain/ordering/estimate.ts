@@ -1,14 +1,14 @@
-import { type InventorySnapshot, type ShippingPlan, allocateNearestFirst } from "./allocation";
-import { type Destination, geoPointSchema } from "./destination";
-import { DomainError } from "./errors";
-import type { Money } from "./money";
 import {
-  type DiscountRate,
-  isShippingWithinLimit,
-  priceMerchandise,
-  shippingCostFor,
-} from "./pricing";
-import { type Quantity, quantitySchema } from "./quantity";
+  type InventorySnapshot,
+  type ShippingPlan,
+  allocateNearestFirst,
+} from "../shipping/allocation";
+import { type Destination, geoPointSchema } from "../shared/destination";
+import { DomainError } from "../shared/errors";
+import type { Money } from "../shared/money";
+import { type DiscountRate, priceMerchandise } from "../pricing/pricing";
+import { isShippingWithinLimit, shippingCostFor } from "../shipping/shipping";
+import { type Quantity, quantitySchema } from "../shared/quantity";
 
 export type EstimateRejectionReason = "INSUFFICIENT_STOCK" | "SHIPPING_EXCEEDS_LIMIT";
 

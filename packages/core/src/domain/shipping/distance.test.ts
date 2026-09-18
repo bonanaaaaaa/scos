@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type { GeoPoint } from "./destination";
+import type { GeoPoint } from "../shared/destination";
 import {
   EARTH_RADIUS_KM,
   centralAngleFromHaversine,
