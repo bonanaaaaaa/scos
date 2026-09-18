@@ -1,0 +1,53 @@
+name: Engineering task
+description: A focused task with clear acceptance criteria and verification.
+body:
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P1
+        - P2
+    validations:
+      required: true
+  - type: input
+    id: owner
+    attributes:
+      label: Owner
+      description: Responsible person or agent role; include shared ownership if needed.
+      placeholder: backend-developer; QA owns API testing
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome and scope
+      description: Briefly state what should work, the boundaries, and important constraints.
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Acceptance criteria
+      description: Use short checkboxes for observable completion criteria.
+      placeholder: "- [ ] Expected behavior"
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link prerequisite issues or PRs and a parent issue if applicable. Write None if independent.
+      placeholder: "Blocked by #123. Parent: #100. Base: main after prerequisites merge."
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: List checks and key failure cases. Developers own unit/integration tests; QA owns independent API testing.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Optional links to relevant PRD sections, design decisions, ADRs, or examples.
