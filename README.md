@@ -44,7 +44,11 @@ The workspace contains:
 - `apps/api`: composition root, depending on core and persistence
 - `libs/typescript-config`: shared TypeScript compiler policy consumed through the `@scos/typescript-config` workspace package
 
-Each workspace package builds with tsdown into ESM JavaScript and declaration files in its `dist` directory, and package exports point to those files. Third-party and `@scos/*` dependencies stay external. Declarations are emitted by the TypeScript 7 compiler; `tsc --noEmit` remains the type checker. Each package's `turbo.json` adds its `tsdown.config.ts`, `tsconfig.json`, `package.json`, and `src` as build inputs. Turbo treats the shared TypeScript configuration as a global dependency so compiler-policy changes invalidate affected cached tasks.
+The library packages (`packages/core`, `packages/persistence`) build with tsdown into ESM JavaScript and declaration files in their `dist` directories, and package exports point to those files. Their third-party and `@scos/*` dependencies stay external. Declarations are emitted by the TypeScript 7 compiler; `tsc --noEmit` remains the type checker.
+
+The API application builds with esbuild (`apps/api/build.mjs`) into a self-contained ESM bundle, `apps/api/dist/server.js`, for Node.js and AWS Lambda. It inlines the built workspace libraries and third-party runtime dependencies, so it runs without `node_modules`. Only Node.js built-ins and pg's optional native addon, `pg-native`, stay external. The API publishes no package exports or declarations.
+
+Each package's `turbo.json` declares its build configuration (`tsdown.config.ts` or `build.mjs`), `tsconfig.json`, `package.json`, and `src` as build inputs, and builds after its workspace dependencies. Turbo treats the shared TypeScript configuration as a global dependency so compiler-policy changes invalidate affected cached tasks.
 
 ## Local API
 
