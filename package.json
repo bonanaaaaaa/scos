@@ -3,17 +3,19 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "api:dev": "pnpm --filter @scos/api dev",
-    "api:start": "pnpm --filter @scos/api start",
+    "api:dev": "turbo run dev --filter=@scos/api",
+    "api:start": "turbo run start --filter=@scos/api",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "lint": "oxlint --deny-warnings scripts && turbo run lint",
+    "lint": "turbo run lint //#lint:root",
+    "lint:root": "oxlint --deny-warnings scripts",
     "format": "oxfmt .",
-    "format:check": "oxfmt --check .",
-    "test": "node --test scripts/*.test.mjs && turbo run test",
+    "format:check": "turbo run //#format:check:root",
+    "format:check:root": "oxfmt --check .",
+    "test": "turbo run test //#test:root",
+    "test:root": "node --test scripts/*.test.mjs",
     "test:integration": "turbo run test:integration",
-    "validate:pr-title": "node scripts/validate-pr-title.mjs",
-    "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
+    "validate:pr-title": "node scripts/validate-pr-title.mjs"
   },
   "devDependencies": {
     "@types/node": "24.13.5",

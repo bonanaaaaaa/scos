@@ -1,5 +1,8 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "remoteCache": {
+    "signature": true
+  },
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -25,6 +28,30 @@
       "cache": false,
       "env": ["DATABASE_TEST_URL", "DATABASE_URL"],
       "persistent": false
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "env": ["PORT"],
+      "persistent": true
+    },
+    "start": {
+      "dependsOn": ["build", "^build"],
+      "cache": false,
+      "env": ["PORT"],
+      "persistent": true
+    },
+    "//#lint:root": {
+      "inputs": ["scripts/**"],
+      "outputs": []
+    },
+    "//#format:check:root": {
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": []
+    },
+    "//#test:root": {
+      "inputs": ["scripts/**"],
+      "outputs": []
     }
   }
 }

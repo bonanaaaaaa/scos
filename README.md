@@ -15,10 +15,14 @@ The repository pins pnpm 12.4.2 through `packageManager`. Run pnpm through Corep
 ```sh
 corepack pnpm install --frozen-lockfile
 corepack pnpm exec tsc --version
-corepack pnpm check
+corepack pnpm build
+corepack pnpm typecheck
+corepack pnpm lint
+corepack pnpm format:check
+corepack pnpm test
 ```
 
-The compiler command must report `Version 7.0.2`. `check` builds every package, type-checks, lints with Oxlint, checks formatting with Oxfmt, and runs the current package boundary and configuration tests.
+The compiler command must report `Version 7.0.2`. The separate quality commands build every package, type-check, lint with Oxlint, check formatting with Oxfmt, and run the current package boundary and configuration tests through Turbo.
 
 The workspace contains:
 
@@ -30,9 +34,7 @@ Package exports point to compiled files in each package's `dist` directory.
 
 ## Local API
 
-Run `corepack pnpm build` once after installation before starting development; workspace dependencies resolve their compiled exports.
-
-Start the API in watch mode during development:
+Start the API in watch mode during development. Turbo builds its workspace dependencies first:
 
 ```sh
 corepack pnpm api:dev
@@ -44,10 +46,9 @@ The server listens on port 3000 by default. Set `PORT` to use a different port:
 PORT=8080 corepack pnpm api:dev
 ```
 
-For a production-style local start, build the workspace and run the compiled server:
+For a production-style local start, Turbo builds the API and its workspace dependencies before running the compiled server:
 
 ```sh
-corepack pnpm build
 PORT=8080 corepack pnpm api:start
 ```
 
@@ -90,13 +91,15 @@ The `CI` workflow runs for pull requests targeting `main` and pushes to `main`. 
 
 The workflow exposes these stable check names:
 
-- `Workspace checks`: frozen install, build, typecheck, Oxlint, Oxfmt, and current tests through `pnpm check`
-- `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached `pnpm test:integration` connectivity and rollback smoke test
+- `Workspace checks`: frozen install followed by separate Turbo build, typecheck, Oxlint, Oxfmt, and test steps
+- `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached Turbo `test:integration` connectivity and rollback smoke test
 - `PR title`: Conventional Commit title validation on opened, edited, reopened, and synchronized pull requests
 - `Code scanner`: verified-secret scanning across the pull request's explicit base and head revisions
-- `Actionlint`: workflow validation when `.github/workflows/**` or `.github/actions/**` changes
+- `Actionlint`: workflow validation when `.github/workflows/**` or `.github/actions/**` changes; local-action changes trigger the workflow but actionlint validates workflow files
 
 The title and code-scanner checks use local composite actions copied from the repository-management baseline. The title composite passes untrusted title text through an environment variable to the repository's tested Node validator; it never interpolates the title into a shell command. The scanner checks full history with TruffleHog's verified-secret mode and converts scanner failure into a failed check.
+
+The workspace and PostgreSQL jobs use the repository's `TURBO_API` and `TURBO_TEAM` variables with the `TURBO_TOKEN` and `TURBO_REMOTE_CACHE_SIGNATURE_KEY` secrets for signed remote caching. Pull requests without those secrets, including forks, continue with Turbo's local cache. Database integration remains uncached. Cache configuration is consumed by Turbo itself and is not passed through to application tasks.
 
 The database client gives connection and query operations five-second timeouts, while the integration test and Actions job have broader bounded timeouts. An unavailable database therefore fails the existing integration harness clearly instead of hanging or being skipped.
 

@@ -19,6 +19,11 @@ jobs:
     name: Workspace checks
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      TURBO_API: ${{ vars.TURBO_API }}
+      TURBO_REMOTE_CACHE_SIGNATURE_KEY: ${{ secrets.TURBO_REMOTE_CACHE_SIGNATURE_KEY }}
+      TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -36,8 +41,16 @@ jobs:
           cache: pnpm
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Run workspace checks
-        run: pnpm check
+      - name: Build workspace
+        run: pnpm exec turbo run build
+      - name: Typecheck workspace
+        run: pnpm exec turbo run typecheck
+      - name: Lint workspace
+        run: pnpm exec turbo run lint //#lint:root
+      - name: Check formatting
+        run: pnpm exec turbo run //#format:check:root
+      - name: Test workspace
+        run: pnpm exec turbo run test //#test:root
 
   postgres:
     name: PostgreSQL integration
@@ -59,6 +72,10 @@ jobs:
           --health-retries 15
     env:
       DATABASE_TEST_URL: postgresql://scos_ci:scos_ci@localhost:5432/scos_test
+      TURBO_API: ${{ vars.TURBO_API }}
+      TURBO_REMOTE_CACHE_SIGNATURE_KEY: ${{ secrets.TURBO_REMOTE_CACHE_SIGNATURE_KEY }}
+      TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -77,4 +94,4 @@ jobs:
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
       - name: Run PostgreSQL connectivity and integration smoke
-        run: pnpm test:integration
+        run: pnpm exec turbo run test:integration
