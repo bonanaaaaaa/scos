@@ -1,6 +1,6 @@
 # SCOS Ordering
 
-Backend workspace for ordering SCOS Station P1 Pro devices. This foundation contains package boundaries, pinned TypeScript tooling, and isolated local PostgreSQL services. Business endpoints and the production schema are added in later issues.
+Backend workspace for ordering SCOS Station P1 Pro devices. This foundation contains package boundaries, a minimal Hono application, pinned TypeScript tooling, and isolated local PostgreSQL services. Ordering endpoints and the production schema are added in later issues.
 
 ## Prerequisites
 
@@ -27,6 +27,31 @@ The workspace contains:
 - `apps/api`: composition root, depending on ordering and persistence
 
 Package exports point to compiled files in each package's `dist` directory.
+
+## Local API
+
+Run `corepack pnpm build` once after installation before starting development; workspace dependencies resolve their compiled exports.
+
+Start the API in watch mode during development:
+
+```sh
+corepack pnpm api:dev
+```
+
+The server listens on port 3000 by default. Set `PORT` to use a different port:
+
+```sh
+PORT=8080 corepack pnpm api:dev
+```
+
+For a production-style local start, build the workspace and run the compiled server:
+
+```sh
+corepack pnpm build
+PORT=8080 corepack pnpm api:start
+```
+
+Check application liveness with `curl http://localhost:8080/health`. The endpoint returns HTTP 200 with `{"status":"ok"}` and does not require PostgreSQL to be running.
 
 ## Local PostgreSQL
 
@@ -57,17 +82,21 @@ docker compose down
 
 To deliberately remove the persistent development database as well, run `docker compose down --volumes`. This deletes local development data.
 
-No application server or database migration command exists yet; this issue intentionally establishes the workspace and test foundation only.
+No database migration command exists yet; this issue intentionally establishes the workspace, minimal application server, and test foundation only.
 
 ## Continuous integration
 
-The `CI` workflow runs for pull requests targeting `main` and pushes to `main`. It has read-only repository access, cancels superseded runs for the same pull request or branch, and does not deploy.
+The `CI` workflow runs for pull requests targeting `main` and pushes to `main`. The pull-request policy workflows run only against `main`. Every workflow has read-only repository access, cancels superseded pull-request runs, has a bounded timeout, and does not deploy.
 
 The workflow exposes these stable check names:
 
 - `Workspace checks`: frozen install, exact TypeScript 7 compiler verification, build, typecheck, Oxlint, Oxfmt, and current tests through `pnpm check`
 - `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached `pnpm test:integration` connectivity and rollback smoke test
-  The separate `PR title` workflow runs on pull-request opened, edited, reopened, and synchronize events targeting `main`. Its `PR title` check validates the title without passing title text through a shell command. Title edits rerun this workflow without rerunning the workspace or PostgreSQL checks. Both workflows use read-only permissions, cancellation of superseded runs, and bounded job timeouts.
+- `PR title`: Conventional Commit title validation on opened, edited, reopened, and synchronized pull requests
+- `Code scanner`: verified-secret scanning across the pull request's explicit base and head revisions
+- `Actionlint`: workflow validation when `.github/workflows/**` or `.github/actions/**` changes
+
+The title and code-scanner checks use local composite actions copied from the repository-management baseline. The title composite passes untrusted title text through an environment variable to the repository's tested Node validator; it never interpolates the title into a shell command. The scanner checks full history with TruffleHog's verified-secret mode and converts scanner failure into a failed check.
 
 The database client gives connection and query operations five-second timeouts, while the integration test and Actions job have broader bounded timeouts. An unavailable database therefore fails the existing integration harness clearly instead of hanging or being skipped.
 
@@ -81,4 +110,4 @@ type(scope)!: description
 
 Allowed types are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`. The scope is optional but cannot be empty; `!` marks a breaking change. The description must be nonempty and remain on one line. Examples include `feat(api): add order verification`, `fix: prevent duplicate orders`, and `feat(api)!: change submission contract`.
 
-Changing a pull request title reruns the title check. Intermediate commit messages are not validated by this rule. Branch protection and repository rules remain repository settings outside this scaffold.
+Changing a pull request title reruns the title check without requiring a code push. Intermediate commit messages are not validated by this rule. Branch protection and repository rules remain repository settings outside this scaffold.

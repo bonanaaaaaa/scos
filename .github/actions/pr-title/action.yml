@@ -1,0 +1,15 @@
+name: "Check PR title"
+description: "Check if the PR title follows Conventional Commits"
+inputs:
+  pr-title:
+    description: "PR title"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check PR title follows Conventional Commits
+      shell: bash
+      env:
+        PR_TITLE: ${{ inputs.pr-title }}
+      run: bash "$GITHUB_ACTION_PATH/pr-title.sh"

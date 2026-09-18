@@ -3,6 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "api:dev": "pnpm --filter @scos/api dev",
+    "api:start": "pnpm --filter @scos/api start",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "oxlint --deny-warnings scripts && turbo run lint",
