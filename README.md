@@ -22,7 +22,7 @@ corepack pnpm format:check
 corepack pnpm test
 ```
 
-The compiler command must report `Version 7.0.2`. The separate quality commands build every package, type-check, lint with Oxlint, check formatting with Oxfmt, and run the current package boundary and configuration tests through Turbo.
+The compiler command must report `Version 7.0.2`. The separate quality commands build every package, type-check, lint with Oxlint, check formatting with Oxfmt, and run the current Vitest suites through Turbo. Each unit suite enforces at least 80% statement, branch, function, and line coverage. Coverage summaries are written to `coverage/` at the repository root and in each tested package.
 
 The workspace contains:
 
@@ -88,17 +88,20 @@ No database migration command exists yet; this issue intentionally establishes t
 
 ## Continuous integration
 
-The `CI` workflow runs for pull requests targeting `main` and pushes to `main`. The pull-request policy workflows run only against `main`. Every workflow has read-only repository access, cancels superseded pull-request runs, has a bounded timeout, and does not deploy.
+The `CI` workflow runs for pull requests targeting `main` and pushes to `main`. The pull-request policy workflows run only against `main`. Validation jobs have read-only repository access, cancel superseded pull-request runs, have bounded timeouts, and do not deploy.
 
 The workflow exposes these stable check names:
 
 - `Workspace checks`: frozen install followed by separate Turbo build, typecheck, Oxlint, Oxfmt, and test steps
+- `Coverage comment`: aggregate Vitest coverage reporting on same-repository pull requests
 - `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached Turbo `test:integration` connectivity and rollback smoke test
 - `PR title`: Conventional Commit title validation on opened, edited, reopened, and synchronized pull requests
 - `Code scanner`: verified-secret scanning across the pull request's explicit base and head revisions
 - `Actionlint`: workflow validation when `.github/workflows/**` or `.github/actions/**` changes; local-action changes trigger the workflow but actionlint validates workflow files
 
 The title and code-scanner checks use local composite actions copied from the repository-management baseline. The title composite passes untrusted title text through an environment variable to the repository's tested Node validator; it never interpolates the title into a shell command. The scanner checks full history with TruffleHog's verified-secret mode and converts scanner failure into a failed check.
+
+The workspace job uploads the root, API, ordering, and persistence JSON coverage summaries even when a coverage threshold rejects the test step. A separate same-repository pull-request job receives only `pull-requests: write` permission to create or update the aggregate coverage comment. Fork pull requests skip that comment job and receive no write permission.
 
 The workspace and PostgreSQL jobs use the repository's `TURBO_API` and `TURBO_TEAM` variables with the `TURBO_TOKEN` and `TURBO_REMOTE_CACHE_SIGNATURE_KEY` secrets for signed remote caching. Pull requests without those secrets, including forks, continue with Turbo's local cache. Database integration remains uncached. Cache configuration is consumed by Turbo itself and is not passed through to application tasks.
 

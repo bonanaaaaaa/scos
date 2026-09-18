@@ -31,12 +31,22 @@ export function validatePullRequestTitle(title) {
   }
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+export function runCli({
+  title = process.env.PR_TITLE ?? "",
+  log = console.log,
+  logError = console.error,
+  validate = validatePullRequestTitle,
+} = {}) {
   try {
-    validatePullRequestTitle(process.env.PR_TITLE ?? "");
-    console.log("PR title follows the repository Conventional Commit format.");
+    validate(title);
+    log("PR title follows the repository Conventional Commit format.");
+    return 0;
   } catch (error) {
-    console.error(error instanceof Error ? error.message : expectedTitleFormat);
-    process.exitCode = 1;
+    logError(error instanceof Error ? error.message : expectedTitleFormat);
+    return 1;
   }
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = runCli();
 }

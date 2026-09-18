@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import test from "node:test";
 
 import { Client } from "pg";
+import { test } from "vitest";
 
 const databaseTestUrl = process.env.DATABASE_TEST_URL;
 

@@ -1,0 +1,20 @@
+name: Vitest Coverage Comment
+description: Upsert the SCOS Vitest coverage summary on a pull request
+
+inputs:
+  github_token:
+    description: Token with pull-request comment permission
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Post coverage comment
+      uses: actions/github-script@v9.0.0
+      env:
+        COVERAGE_ACTION_PATH: ${{ github.action_path }}
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const report = require(`${process.env.COVERAGE_ACTION_PATH}/comment.cjs`);
+          await report({ github, context, core });

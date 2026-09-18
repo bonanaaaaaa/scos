@@ -17,8 +17,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "lint": "oxlint --deny-warnings src test",
-    "test": "node --test dist/index.test.js",
-    "test:integration": "tsx --test test/**/*.integration.test.ts"
+    "test": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
     "@scos/ordering": "workspace:*",
@@ -27,6 +27,8 @@
   "devDependencies": {
     "@scos/typescript-config": "workspace:*",
     "@types/node": "24.13.5",
-    "@types/pg": "8.23.1"
+    "@types/pg": "8.23.1",
+    "@vitest/coverage-v8": "5.0.1",
+    "vitest": "5.0.1"
   }
 }

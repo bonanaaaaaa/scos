@@ -13,17 +13,19 @@
     "format:check": "turbo run //#format:check:root",
     "format:check:root": "oxfmt --check .",
     "test": "turbo run test //#test:root",
-    "test:root": "node --test scripts/*.test.mjs",
+    "test:root": "vitest run --coverage",
     "test:integration": "turbo run test:integration",
     "validate:pr-title": "node scripts/validate-pr-title.mjs"
   },
   "devDependencies": {
     "@types/node": "24.13.5",
+    "@vitest/coverage-v8": "5.0.1",
     "oxfmt": "0.68.0",
     "oxlint": "1.83.0",
     "tsx": "4.23.13",
     "turbo": "2.10.13",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vitest": "5.0.1"
   },
   "engines": {
     "node": ">=24.0.0 <25",

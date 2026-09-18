@@ -8,5 +8,6 @@
 .codex/agents/
 .env
 .turbo
+coverage
 dist
 node_modules

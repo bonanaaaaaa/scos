@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 
-import { isValidPullRequestTitle } from "./validate-pr-title.mjs";
+import { isValidPullRequestTitle, runCli, validatePullRequestTitle } from "./validate-pr-title.mjs";
 
 const allowedTypes = [
   "feat",
@@ -53,4 +53,59 @@ test("rejects missing, blank, or multiline descriptions", () => {
   assert.equal(isValidPullRequestTitle("feat:    "), false);
   assert.equal(isValidPullRequestTitle("feat: first line\nsecond line"), false);
   assert.equal(isValidPullRequestTitle("feat: first line\r\nsecond line"), false);
+});
+
+test("the throwing validator accepts valid titles and explains invalid ones", () => {
+  assert.doesNotThrow(() => validatePullRequestTitle("fix: prevent duplicate orders"));
+  assert.throws(
+    () => validatePullRequestTitle("feature: invalid type"),
+    /Expected Conventional Commit PR title/,
+  );
+});
+
+test("the CLI runner reports valid and invalid titles without exiting directly", () => {
+  const messages = [];
+  const errors = [];
+
+  assert.equal(
+    runCli({ title: "docs: explain validation", log: (message) => messages.push(message) }),
+    0,
+  );
+  assert.deepEqual(messages, ["PR title follows the repository Conventional Commit format."]);
+
+  assert.equal(runCli({ title: "invalid", logError: (message) => errors.push(message) }), 1);
+  assert.match(errors[0], /Expected Conventional Commit PR title/);
+});
+
+test("the CLI runner reads PR_TITLE when no title option is supplied", () => {
+  const previousTitle = process.env.PR_TITLE;
+  const messages = [];
+  process.env.PR_TITLE = "chore: use environment title";
+
+  try {
+    assert.equal(runCli({ log: (message) => messages.push(message) }), 0);
+    assert.equal(messages.length, 1);
+  } finally {
+    if (previousTitle === undefined) {
+      delete process.env.PR_TITLE;
+    } else {
+      process.env.PR_TITLE = previousTitle;
+    }
+  }
+});
+
+test("the CLI runner gives format guidance for unexpected validation failures", () => {
+  const errors = [];
+
+  assert.equal(
+    runCli({
+      title: "fix: valid shape",
+      validate: () => {
+        throw "unexpected failure";
+      },
+      logError: (message) => errors.push(message),
+    }),
+    1,
+  );
+  assert.match(errors[0], /Expected Conventional Commit PR title/);
 });

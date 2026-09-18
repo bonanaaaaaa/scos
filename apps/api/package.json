@@ -15,7 +15,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "oxlint --deny-warnings src",
-    "test": "node --test dist/index.test.js"
+    "test": "vitest run --coverage"
   },
   "dependencies": {
     "@hono/node-server": "2.1.1",
@@ -25,6 +25,8 @@
   },
   "devDependencies": {
     "@scos/typescript-config": "workspace:*",
-    "@types/node": "24.13.5"
+    "@types/node": "24.13.5",
+    "@vitest/coverage-v8": "5.0.1",
+    "vitest": "5.0.1"
   }
 }
