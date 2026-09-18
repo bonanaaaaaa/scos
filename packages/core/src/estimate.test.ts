@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import type { WarehouseStock } from "./allocation.js";
-import type { Destination } from "./destination.js";
-import { EARTH_RADIUS_KM } from "./distance.js";
-import { DomainError } from "./errors.js";
-import { type OrderEstimate, estimateOrder } from "./estimate.js";
-import type { Quantity } from "./quantity.js";
+import type { WarehouseStock } from "./allocation";
+import type { Destination } from "./destination";
+import { EARTH_RADIUS_KM } from "./distance";
+import { DomainError } from "./errors";
+import { type OrderEstimate, estimateOrder } from "./estimate";
+import type { Quantity } from "./quantity";
 
 const q = (value: number): Quantity => value as Quantity;
 const at = (latitude: number, longitude: number): Destination =>

@@ -1,12 +1,12 @@
 import { describe, expect, test } from "vitest";
 
-import type { WarehouseStock } from "./allocation.js";
-import type { Destination } from "./destination.js";
-import { DomainError } from "./errors.js";
-import { type OrderEstimate, type ValidOrderEstimate, estimateOrder } from "./estimate.js";
-import { Money } from "./money.js";
-import { createOrder } from "./order.js";
-import type { Quantity } from "./quantity.js";
+import type { WarehouseStock } from "./allocation";
+import type { Destination } from "./destination";
+import { DomainError } from "./errors";
+import { type OrderEstimate, type ValidOrderEstimate, estimateOrder } from "./estimate";
+import { Money } from "./money";
+import { createOrder } from "./order";
+import type { Quantity } from "./quantity";
 
 const destination = { latitude: 0, longitude: 0 } as Destination;
 const inventory: readonly WarehouseStock[] = [

@@ -1,4 +1,4 @@
-import { type Decimal, DomainDecimal } from "./decimal.js";
+import { type Decimal, DomainDecimal } from "./decimal";
 
 // SCOS Station P1 Pro commercial constants, constructed from decimal strings.
 export const UNIT_PRICE: Decimal = new DomainDecimal("150");

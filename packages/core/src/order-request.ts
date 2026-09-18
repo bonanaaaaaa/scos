@@ -1,7 +1,7 @@
-import { parseDestination } from "./destination.js";
-import type { OrderRequest } from "./estimate.js";
-import { parseQuantity } from "./quantity.js";
-import { type Result, type ValidationError, err, ok } from "./result.js";
+import { parseDestination } from "./destination";
+import type { OrderRequest } from "./estimate";
+import { parseQuantity } from "./quantity";
+import { type Result, type ValidationError, err, ok } from "./result";
 
 export interface OrderRequestInput {
   readonly quantity: unknown;

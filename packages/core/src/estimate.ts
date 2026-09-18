@@ -1,14 +1,14 @@
-import { type InventorySnapshot, type ShippingPlan, allocateNearestFirst } from "./allocation.js";
-import { type Destination, isValidGeoPoint } from "./destination.js";
-import { DomainError } from "./errors.js";
-import type { Money } from "./money.js";
+import { type InventorySnapshot, type ShippingPlan, allocateNearestFirst } from "./allocation";
+import { type Destination, isValidGeoPoint } from "./destination";
+import { DomainError } from "./errors";
+import type { Money } from "./money";
 import {
   type DiscountRate,
   isShippingWithinLimit,
   priceMerchandise,
   shippingCostFor,
-} from "./pricing.js";
-import { type Quantity, parseQuantity } from "./quantity.js";
+} from "./pricing";
+import { type Quantity, parseQuantity } from "./quantity";
 
 export type EstimateRejectionReason = "INSUFFICIENT_STOCK" | "SHIPPING_EXCEEDS_LIMIT";
 

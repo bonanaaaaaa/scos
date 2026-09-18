@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { app, workspaceComposition } from "./index.js";
-import { parsePort, startServer } from "./server.js";
+import { app, workspaceComposition } from "./index";
+import { parsePort, startServer } from "./server";
 
 test("the API composition root can import the inward packages", () => {
   assert.deepEqual(workspaceComposition(), ["core", "persistence"]);

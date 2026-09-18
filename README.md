@@ -44,7 +44,7 @@ The workspace contains:
 - `apps/api`: composition root, depending on core and persistence
 - `libs/typescript-config`: shared TypeScript compiler policy consumed through the `@scos/typescript-config` workspace package
 
-Application and adapter package exports point to compiled files in each package's `dist` directory. Turbo treats the shared TypeScript configuration as a global dependency so compiler-policy changes invalidate affected cached tasks.
+Each workspace package builds with tsdown into ESM JavaScript and declaration files in its `dist` directory, and package exports point to those files. Third-party and `@scos/*` dependencies stay external. Declarations are emitted by the TypeScript 7 compiler; `tsc --noEmit` remains the type checker. Each package's `turbo.json` adds its `tsdown.config.ts`, `tsconfig.json`, `package.json`, and `src` as build inputs. Turbo treats the shared TypeScript configuration as a global dependency so compiler-policy changes invalidate affected cached tasks.
 
 ## Local API
 
@@ -60,7 +60,7 @@ The server listens on port 3000 by default. Set `PORT` to use a different port:
 PORT=8080 corepack pnpm api:dev
 ```
 
-For a production-style local start, Turbo builds the API and its workspace dependencies before running the compiled server:
+For a production-style local start, Turbo builds the API and its workspace dependencies before running the bundled server:
 
 ```sh
 PORT=8080 corepack pnpm api:start

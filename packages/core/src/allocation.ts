@@ -1,7 +1,7 @@
-import { type Destination, isValidGeoPoint } from "./destination.js";
-import { haversineDistanceKm } from "./distance.js";
-import { DomainError } from "./errors.js";
-import type { Quantity } from "./quantity.js";
+import { type Destination, isValidGeoPoint } from "./destination";
+import { haversineDistanceKm } from "./distance";
+import { DomainError } from "./errors";
+import type { Quantity } from "./quantity";
 
 /** One warehouse's available stock in an immutable inventory snapshot. */
 export interface WarehouseStock {

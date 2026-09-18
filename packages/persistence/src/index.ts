@@ -5,4 +5,4 @@ export const persistencePackage = Object.freeze({
   supports: corePackage.name,
 });
 
-export { createDatabasePool, readDatabaseUrl } from "./database.js";
+export { createDatabasePool, readDatabaseUrl } from "./database";

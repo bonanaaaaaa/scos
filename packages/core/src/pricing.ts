@@ -1,13 +1,13 @@
-import type { WarehouseAllocation } from "./allocation.js";
-import { type Decimal, DomainDecimal } from "./decimal.js";
-import { Money } from "./money.js";
+import type { WarehouseAllocation } from "./allocation";
+import { type Decimal, DomainDecimal } from "./decimal";
+import { Money } from "./money";
 import {
   SHIPPING_LIMIT_RATIO,
   SHIPPING_RATE_PER_KG_KM,
   UNIT_PRICE,
   UNIT_WEIGHT_KG,
-} from "./product.js";
-import type { Quantity } from "./quantity.js";
+} from "./product";
+import type { Quantity } from "./quantity";
 
 export type DiscountRate = "0.00" | "0.05" | "0.10" | "0.15" | "0.20";
 

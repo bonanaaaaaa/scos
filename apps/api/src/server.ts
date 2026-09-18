@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { pathToFileURL } from "node:url";
 
-import { app } from "./index.js";
+import { app } from "./index";
 
 const defaultPort = 3000;
 

@@ -1,5 +1,5 @@
-import { type Decimal, DomainDecimal } from "./decimal.js";
-import { DomainError } from "./errors.js";
+import { type Decimal, DomainDecimal } from "./decimal";
+import { DomainError } from "./errors";
 
 /** Largest value representable by PostgreSQL NUMERIC(12, 2). */
 export const MONEY_MAX_STRING = "9999999999.99";

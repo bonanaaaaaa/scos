@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { createDatabasePool, persistencePackage, readDatabaseUrl } from "./index.js";
+import { createDatabasePool, persistencePackage, readDatabaseUrl } from "./index";
 
 test("the persistence adapter points inward to core", () => {
   assert.deepEqual(persistencePackage, { name: "persistence", supports: "core" });

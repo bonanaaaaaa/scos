@@ -10,7 +10,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsdown",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -27,6 +27,7 @@
     "@scos/typescript-config": "workspace:*",
     "@types/node": "24.13.5",
     "@vitest/coverage-v8": "5.0.1",
+    "tsdown": "0.23.0",
     "vitest": "5.0.1"
   }
 }

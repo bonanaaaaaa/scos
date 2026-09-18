@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { type WarehouseStock, allocateNearestFirst } from "./allocation.js";
-import type { Destination } from "./destination.js";
-import { DomainError } from "./errors.js";
-import type { Quantity } from "./quantity.js";
+import { type WarehouseStock, allocateNearestFirst } from "./allocation";
+import type { Destination } from "./destination";
+import { DomainError } from "./errors";
+import type { Quantity } from "./quantity";
 
 const destination = { latitude: 0, longitude: 0 } as Destination;
 const q = (value: number): Quantity => value as Quantity;

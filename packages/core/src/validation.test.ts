@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { parseDestination } from "./destination.js";
-import { MONEY_MAX } from "./money.js";
-import { parseOrderRequest } from "./order-request.js";
-import { UNIT_PRICE } from "./product.js";
-import { MAX_QUANTITY, parseQuantity } from "./quantity.js";
+import { parseDestination } from "./destination";
+import { MONEY_MAX } from "./money";
+import { parseOrderRequest } from "./order-request";
+import { UNIT_PRICE } from "./product";
+import { MAX_QUANTITY, parseQuantity } from "./quantity";
 
 describe("parseQuantity", () => {
   test("derives MAX_QUANTITY from NUMERIC(12, 2) and the unit price", () => {

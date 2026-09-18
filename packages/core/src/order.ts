@@ -1,17 +1,17 @@
-import type { WarehouseAllocation, ShippingPlan } from "./allocation.js";
-import type { Destination } from "./destination.js";
-import { DomainError } from "./errors.js";
-import { Money } from "./money.js";
-import type { OrderEstimate } from "./estimate.js";
-import { DomainDecimal } from "./decimal.js";
+import type { WarehouseAllocation, ShippingPlan } from "./allocation";
+import type { Destination } from "./destination";
+import { DomainError } from "./errors";
+import { Money } from "./money";
+import type { OrderEstimate } from "./estimate";
+import { DomainDecimal } from "./decimal";
 import {
   type DiscountRate,
   discountRateFor,
   isShippingWithinLimit,
   shippingCostFor,
-} from "./pricing.js";
-import { UNIT_PRICE } from "./product.js";
-import { type Quantity, MAX_QUANTITY } from "./quantity.js";
+} from "./pricing";
+import { UNIT_PRICE } from "./product";
+import { type Quantity, MAX_QUANTITY } from "./quantity";
 
 /** An accepted order. Amounts are immutable historical facts. */
 export interface Order {

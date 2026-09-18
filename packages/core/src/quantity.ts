@@ -1,6 +1,6 @@
-import { MONEY_MAX } from "./money.js";
-import { UNIT_PRICE } from "./product.js";
-import { type Result, type ValidationError, err, ok, validationError } from "./result.js";
+import { MONEY_MAX } from "./money";
+import { UNIT_PRICE } from "./product";
+import { type Result, type ValidationError, err, ok, validationError } from "./result";
 
 declare const quantityBrand: unique symbol;
 

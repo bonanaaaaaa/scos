@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import * as core from "./index.js";
+import * as core from "./index";
 
 test("the core package exposes its public entry point", () => {
   assert.equal(core.corePackage.name, "core");

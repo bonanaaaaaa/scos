@@ -5,7 +5,7 @@ import {
   err,
   ok,
   validationError,
-} from "./result.js";
+} from "./result";
 
 /** A point on Earth in decimal degrees (WGS84-style latitude/longitude). */
 export interface GeoPoint {

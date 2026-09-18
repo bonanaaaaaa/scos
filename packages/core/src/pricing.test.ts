@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
-import type { WarehouseAllocation } from "./allocation.js";
-import { DomainDecimal } from "./decimal.js";
-import { Money } from "./money.js";
+import type { WarehouseAllocation } from "./allocation";
+import { DomainDecimal } from "./decimal";
+import { Money } from "./money";
 import {
   discountRateFor,
   isShippingWithinLimit,
@@ -10,8 +10,8 @@ import {
   shippingCostFor,
   shippingLimitFor,
   unroundedShippingCost,
-} from "./pricing.js";
-import { MAX_QUANTITY, type Quantity } from "./quantity.js";
+} from "./pricing";
+import { MAX_QUANTITY, type Quantity } from "./quantity";
 
 const q = (value: number): Quantity => value as Quantity;
 const allocation = (warehouseId: string, quantity: number, distanceKm: number) =>
