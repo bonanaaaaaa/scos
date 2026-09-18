@@ -44,6 +44,12 @@ and discovers the published host port. Set `SCOS_POSTGRES_PASSWORD` if the actua
 password differs from the container's initialization configuration. Local `psql`
 inside the container must be able to authenticate as that user and create databases.
 
+The container must run PostgreSQL 18 or newer, because the schema's generated
+IDs use the built-in `uuidv7()` function introduced in PostgreSQL 18. The
+scaffold's Compose services use `postgres:18.1-alpine`. Before migrating, the
+launcher checks `SHOW server_version_num` and stops with an error if it is
+below 180000.
+
 Each worktree gets a database named `scos_wt_<hash>`, derived from its absolute
 path. The database is created only if missing, with an advisory lock protecting
 simultaneous initialization. Existing data is preserved. Different worktrees
@@ -52,8 +58,31 @@ same database. Moving a worktree changes its database identity.
 
 The launcher exports the generated `DATABASE_URL` to the API, overriding copied
 or inherited database URLs without editing `.env`. It does not log the password.
-Migrations and seeds are not run because the scaffold does not yet provide them.
-Integration-test database setup remains separate.
+Before starting the API it runs `db:seed`, which applies pending migrations and
+inserts any missing seed warehouses. Both steps are idempotent: repeated
+launches never reset data or replenish consumed stock. Integration-test
+database setup remains separate.
+
+## Migrations, seed, and reset
+
+These commands act on the database named by `DATABASE_URL`. Prisma 7 does not
+read `.env`, so export the URL first (the launcher does this for the worktree
+database).
+
+```sh
+corepack pnpm db:migrate   # apply pending migrations
+corepack pnpm db:seed      # apply migrations, then insert missing warehouses
+SCOS_CONFIRM_DATABASE_RESET=<database-name> corepack pnpm db:reset
+```
+
+`db:reset` is the only destructive command. It refuses to run unless
+`SCOS_CONFIRM_DATABASE_RESET` matches the database name in `DATABASE_URL`
+exactly. It then drops all data, reapplies migrations, and reseeds. A person
+must run it: Prisma 7 blocks `prisma migrate reset` when it detects an AI coding
+agent unless the user explicitly consents, so agents should ask a human to run
+`db:reset` rather than working around that check. See
+[database schema](database-schema.md) for tables, relationships, and schema
+decisions.
 
 ## API ports and shutdown
 

@@ -5,13 +5,17 @@
   },
   "globalDependencies": ["libs/typescript-config/base.json"],
   "tasks": {
+    "generate": {
+      "inputs": ["prisma/schema.prisma", "prisma.config.ts"],
+      "outputs": ["src/generated/**"]
+    },
     "build": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "generate"],
       "inputs": ["$TURBO_DEFAULT$"],
       "outputs": ["dist/**"]
     },
     "typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "generate"],
       "inputs": ["$TURBO_DEFAULT$"],
       "outputs": []
     },
@@ -29,6 +33,23 @@
       "cache": false,
       "env": ["DATABASE_TEST_URL", "DATABASE_URL"],
       "persistent": false
+    },
+    "db:migrate": {
+      "cache": false,
+      "env": ["DATABASE_URL"],
+      "outputs": []
+    },
+    "db:seed": {
+      "dependsOn": ["build", "db:migrate"],
+      "cache": false,
+      "env": ["DATABASE_URL"],
+      "outputs": []
+    },
+    "db:reset": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "env": ["DATABASE_URL", "SCOS_CONFIRM_DATABASE_RESET"],
+      "outputs": []
     },
     "dev": {
       "dependsOn": ["^build"],

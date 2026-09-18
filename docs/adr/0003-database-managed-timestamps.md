@@ -1,5 +1,7 @@
 # Database-managed creation and update timestamps
 
+**Amended** by [ADR 0004](0004-deduplicate-accepted-orders.md) (2026-09-19): the schema no longer has submission or lookup tables. The policy below still applies to every application table; the references to submissions, replay, and lookup-table checks apply only if such tables are reintroduced.
+
 Every application-owned table must have `created_at` and `updated_at` as non-null PostgreSQL `timestamptz` columns. This includes inventory, orders, allocations, submissions, and enum lookup tables. PostgreSQL system catalogs and tooling-owned tables such as Prisma migration history are outside the application schema policy.
 
 Follow the timestamp pattern in ed-creative-fusion: both columns use `NOT NULL DEFAULT NOW()`, and one shared `update_timestamp()` function sets `NEW.updated_at = NOW()` through a per-table `BEFORE UPDATE FOR EACH ROW` trigger named `update_<table>_updated_at`. This covers Prisma and raw SQL updates, including no-op updates, without relying on Prisma `@updatedAt`.

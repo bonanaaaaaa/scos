@@ -10,7 +10,7 @@
 - Stack: TypeScript 7 (required), Hono, Prisma, PostgreSQL; deploy on AWS Lambda. PostgreSQL hosting and the database connection approach remain undecided.
 - Use a pnpm workspace and Turborepo monorepo. Oxlint is the selected linter and Oxfmt is the selected formatter. Type-aware lint rule configuration remains an implementation choice to finalize.
 - Use hexagonal architecture and domain-driven design (DDD), with one Ordering bounded context covering pricing, shipping allocation, orders, and available inventory.
-- Do not use the experimental, non-standard Idempotency-Key HTTP header. Use a client-generated submissionId in the JSON request body as the idempotency key.
+- Do not use the experimental, non-standard Idempotency-Key HTTP header. Use a required client-generated submissionId in the JSON request body to prevent duplicate Orders. See [ADR 0004](adr/0004-deduplicate-accepted-orders.md).
 - Target a disposable demo deployment with documented teardown. The user has no existing AWS infrastructure or PostgreSQL database to reuse; the monthly budget is not yet specified.
 
 ## Agreed behavior
@@ -23,12 +23,12 @@
 - Reject insufficient stock explicitly, without changing inventory or offering partial fulfillment.
 - For insufficient stock, verification returns HTTP 200 with valid: false, reason INSUFFICIENT_STOCK, calculated merchandise and discount amounts, and null shippingCost and orderTotal. Submission returns HTTP 422 with INSUFFICIENT_STOCK and creates no order.
 - Use decimal.js for application monetary calculations behind domain value objects and pricing functions, independently of Prisma types. Construct monetary constants and persisted amounts from decimal strings. Use an isolated Decimal configuration with explicit intermediate precision and ROUND_HALF_UP; choose and validate sufficient significant-digit precision for supported inputs rather than setting calculation precision to the two-decimal storage scale. Sum unrounded shipping contributions before the final cent rounding. Geographic distance follows the precision policy below; decimal arithmetic does not remove approximation in geographic distances.
-- Persist monetary amounts using PostgreSQL NUMERIC(12, 2): 12 total digits, including two fractional digits. Use exact monetary arithmetic in the application, preserving intermediate precision until the agreed rounding point. Round combined shipping once to two decimal places using half-up rounding, then compare that charge against 15% of the discounted merchandise total; equality passes. Persist the same monetary amounts returned to the customer.
+- Persist monetary amounts using PostgreSQL NUMERIC(12, 2): 12 total digits, including two fractional digits. Use exact monetary arithmetic in the application, preserving intermediate precision until the agreed rounding point. Round combined shipping once to two decimal places using half-up rounding, then compare that charge against 15% of the discounted merchandise total; equality passes. Persisted facts must reproduce exactly the monetary amounts returned to the customer; derived totals are computed from the stored values (see Agreed architecture).
 - Calculate great-circle distances and allocate nearest warehouses first until fulfilled; use stable warehouse IDs to break equal-distance ties.
 - Prevent overselling by locking all six warehouse inventory rows in stable ID order inside a database transaction before reading stock and calculating allocation. Validate the request, decrement stock, and save the order within that transaction; retry temporary transaction conflicts a bounded number of times.
-- Require an idempotency key for submission. Repeating the same key and inputs returns the original order without consuming additional stock; reusing the key with different inputs returns a conflict.
-- Persist successful outcomes and business rejections against their idempotency keys indefinitely for this challenge; document cleanup as future work. The same key and inputs replay the original outcome; a deliberate new submission attempt requires a new key, including after rejection. Malformed requests and transient server failures do not consume a key.
-- Require positive integer quantities and finite destination coordinates within geographic bounds. Malformed inputs return HTTP 400; verification returns HTTP 200 with validity and reasons; submission returns HTTP 201 when accepted, HTTP 422 for business rejection, and HTTP 409 for conflicting idempotency-key reuse.
+- Store the submissionId as a unique key on the accepted Order. Repeating the same key and inputs returns the original Order without consuming additional stock; reusing the key with different inputs returns a conflict.
+- Only accepted Orders are persisted. Business rejections are returned and not stored, so a rejected, malformed, or failed request consumes no key and is reevaluated when repeated.
+- Require positive integer quantities and finite destination coordinates within geographic bounds. Malformed inputs return HTTP 400; verification returns HTTP 200 with validity and reasons; submission returns HTTP 201 when accepted, HTTP 422 for business rejection, and HTTP 409 for reuse of a submissionId with different inputs.
 - Return monetary amounts as decimal strings, such as "150.00".
 - Preserve each accepted order's quantity, destination, applied pricing and discount, and warehouse allocations in addition to its order number and totals.
 - Provide POST /orders/verify, POST /orders (with submissionId in its JSON body), and GET /health, with OpenAPI documentation and examples. Listing, cancellation, and inventory administration are outside submission scope.
@@ -38,17 +38,17 @@
 - Every application-owned table includes non-null created_at and updated_at timestamps maintained by PostgreSQL triggers, including lookup tables. See [database-managed timestamps](adr/0003-database-managed-timestamps.md) for semantics, example SQL, and verification.
 
 - The Order aggregate owns accepted order details and allocations. Quantity, destination, and money are value objects; discount and shipping-plan calculations are domain functions.
-- Use third normal form (3NF) as the relational database design baseline. Separate entity facts and relationships, enforce keys and foreign keys, and evaluate functional dependencies beyond the UUID primary key. Accepted order prices, discounts, shipping charges, and totals are immutable historical facts; preserve them rather than deriving them from current commercial rules. Any deliberate denormalization requires a documented reason.
+- Use third normal form (3NF) as the relational database design baseline. Separate entity facts and relationships, enforce keys and foreign keys, and evaluate functional dependencies beyond the UUID primary key. Accepted order prices, discounts, shipping charges, and totals are immutable historical facts; preserve them rather than deriving them from current commercial rules. Store the independent facts (quantity, unit price, discount rate and amount, shipping cost) and derive subtotals and the Order Total from those stored values with exact decimal arithmetic, so the amounts returned always equal what was charged. Any deliberate denormalization requires a documented reason.
 - Inventory is persisted separately. The SubmitOrder application use case coordinates inventory changes and order creation atomically.
 - Hono is an inbound adapter calling VerifyOrder and SubmitOrder application use cases. Lambda starts the application.
 - Application use cases depend on the domain model and application-owned persistence interfaces. The Prisma outbound adapter implements persistence and transaction locking.
 - Prisma types and HTTP objects stay outside the domain and application use cases.
-- A transaction interface encompasses stock reads, order and allocation persistence, inventory updates, and idempotency outcomes together.
-- Persist application outcomes and result snapshots, not HTTP status codes or HTTP response envelopes. The Hono adapter maps accepted/rejected/conflicting outcomes to HTTP responses, including on replay.
-- Use UUIDv7 for generated database entity IDs, stored in PostgreSQL UUID columns; referencing foreign keys use the same type. This includes warehouse and order IDs and any separate allocation or submission-record IDs. Keep seeded warehouse UUIDv7 values stable across seed runs so lock ordering and equal-distance allocation remain deterministic.
+- A transaction interface encompasses the duplicate-key lookup, stock reads, order and allocation persistence, and inventory updates together.
+- Persist accepted Orders as snapshots, not HTTP status codes or HTTP response envelopes. The Hono adapter maps accepted, rejected, and conflicting outcomes to HTTP responses, including when an existing Order is returned.
+- Use UUIDv7 for generated database entity IDs, stored in PostgreSQL UUID columns; referencing foreign keys use the same type. This includes warehouse and order IDs and allocation IDs. Keep seeded warehouse UUIDv7 values stable across seed runs so lock ordering and equal-distance allocation remain deterministic.
 - UUIDv7 supports time-oriented ID sorting, not a guarantee of transaction commit order or strict chronology across concurrent generators. Use explicit ORDER BY for ordered results. See [RFC 9562, section 5.7](https://www.rfc-editor.org/rfc/rfc9562.html#name-uuid-version-7). The generation mechanism remains an implementation choice.
-- Hasura-style enum lookup tables retain their agreed text primary keys. The client-generated submissionId remains a separate retry key; this database ID decision does not change its API contract or the order-number format.
-- Use Hasura-style enum lookup tables with text primary keys and foreign keys for persisted categorical values; do not use PostgreSQL native enums or Prisma enum declarations that create them. Apply this to submission outcomes and rejection codes. This adopts the database pattern without adding Hasura to the stack.
+- Hasura-style enum lookup tables retain their agreed text primary keys. The client-generated submissionId is a separate text key on the Order, not a database ID; this decision does not change its API contract or the order-number format.
+- Use Hasura-style enum lookup tables with text primary keys and foreign keys for persisted categorical values; do not use PostgreSQL native enums or Prisma enum declarations that create them. The current schema persists no categorical values, because submission outcomes and rejection codes are no longer stored; apply this pattern if any are introduced. This adopts the database pattern without adding Hasura to the stack.
 - Maintain lookup values through versioned migrations. Prisma represents these as String fields and relations; domain types remain string literal unions with validation at the adapter seam. Referenced values cannot be removed until references are migrated; avoid cascading deletion of historical records.
 - Enum-table reference: https://hasura.io/docs/2.0/schema/postgres/enums/ . Use text primary keys, optional descriptions, at least one value, and GraphQL-compatible value names. All application tables also require created_at and updated_at; this intentionally supersedes strict Hasura enum-table shape compatibility as recorded in ADR 0003. Insert initial values in migrations rather than relying on development seeds. Hasura metadata configuration is not needed in our Hono/Prisma stack.
 
@@ -71,7 +71,7 @@
 - Reuse the request schemas for OpenAPI generation through a compatible schema converter. Standard Schema validation alone does not generate OpenAPI. Verify that refinements and numeric limits are accurately represented or explicitly documented, and that generated schemas match runtime behavior.
 - Reference: [Hono Standard Schema request validation](https://hono.dev/docs/guides/validation#standard-schema-validator-middleware).
 - Unit tests cover discount boundaries, allocation, rounding, and the shipping limit. Distance tests cover identical locations, geographic boundaries, international date-line crossings, nearly antipodal points, and reference distances under the chosen Earth-radius constant.
-- Real PostgreSQL integration tests cover rollback, simultaneous submissions, and idempotency.
+- Real PostgreSQL integration tests cover rollback, simultaneous submissions, and duplicate submissionId handling.
 - Provide easy local start/test commands and documented API examples.
 
 ## OpenAPI deliverable
@@ -79,13 +79,13 @@
 - Deliver a machine-readable OpenAPI specification for POST /orders/verify, POST /orders, and GET /health, generated from the API adapter's route and validation schemas.
 - Serve the specification at GET /openapi.json and interactive API documentation at GET /docs. Provide a deterministic export command producing docs/openapi.json for review without starting the application or connecting to PostgreSQL.
 - Document request and response schemas, quantity and coordinate constraints, submissionId, decimal-string monetary amounts, nullable totals for insufficient stock, and business rejection codes.
-- Include examples of valid verification, insufficient stock, excessive shipping, accepted submission, replay, and conflicting submissionId reuse. Describe outcome retention and the requirement for a new ID for a new attempt.
-- Document success responses and malformed-input, business-rejection, conflicting-ID, and transient-failure responses. HTTP status mapping belongs to the API adapter and specification, never persisted submission records.
+- Include examples of valid verification, insufficient stock, excessive shipping, accepted submission, rejected submission, a repeated submissionId returning the original Order, and conflicting submissionId reuse. State that rejections are not stored.
+- Document success responses and malformed-input, business-rejection, conflicting-ID, and transient-failure responses. HTTP status mapping belongs to the API adapter and specification, never persisted records.
 - Validate the generated specification and check representative HTTP responses against its schemas. Check that the committed export matches regenerated output.
 
 ## Verification and submission sequence
 
-Verification is advisory: another order can consume inventory before submission. The following flow shows a new submission attempt. A retry of a completed attempt returns its saved outcome without recalculating or deducting stock again; reuse with different inputs returns a conflict.
+Verification is advisory: another order can consume inventory before submission. The following flow shows a submission with a new submissionId. Repeating the submissionId of an accepted Order returns that Order without deducting stock again; reuse with different inputs returns a conflict.
 
 ```mermaid
 sequenceDiagram
@@ -108,14 +108,14 @@ sequenceDiagram
     User->>API: Submit with new submissionId
     rect rgb(235, 245, 255)
         Note over API,DB: One database transaction
-        API->>DB: Claim unique submissionId
         API->>DB: Lock warehouse rows in stable ID order
         DB-->>API: Current inventory
+        API->>DB: Look up Order by submissionId (none found)
         API->>API: Recalculate pricing and shipping
         alt Fulfillable and shipping within limit
-            API->>DB: Save Order, deduct stock, save outcome
+            API->>DB: Save Order with submissionId and allocations, deduct stock
         else Insufficient stock or shipping exceeds limit
-            API->>DB: Save rejection outcome and leave stock unchanged
+            Note over API,DB: Save nothing; stock unchanged
         end
         API->>DB: Commit
     end

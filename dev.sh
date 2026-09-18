@@ -110,6 +110,16 @@ NODE
 )"
 unset pg_password
 export DATABASE_URL
+# Apply pending migrations, then insert any missing seed warehouses. Both are
+# idempotent: existing rows and consumed stock are never reset or replenished.
+# The schema's uuidv7() defaults require PostgreSQL 18 or newer.
+server_version_num="$(docker exec "$container" psql -X -At -U "$pg_user" -d postgres -c 'SHOW server_version_num')"
+[[ "$server_version_num" =~ ^[0-9]+$ ]] || die 'Could not read the shared PostgreSQL server version.'
+(( server_version_num >= 180000 )) \
+  || die "PostgreSQL 18 or newer is required (uuidv7() is built in from 18); the shared container reports server_version_num $server_version_num."
+printf 'Applying migrations and seed data to %s...\n' "$database_name"
+corepack pnpm exec turbo run db:seed --filter=@scos/persistence --output-logs=errors-only \
+  || die 'Database migration or seeding failed; see the output above.'
 # Match the reference launcher: increment from the preferred port until free.
 # Parse .env as data; exported PORT takes precedence over the file.
 PORT="$(node --env-file=.env --input-type=module <<'NODE'
