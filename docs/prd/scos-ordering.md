@@ -144,6 +144,8 @@ These rules apply to estimation and submission:
 
 ### Accepted constraints and references
 
+- decimal.js is the selected application monetary library. Persist final amounts as NUMERIC(12, 2), return decimal strings, and round combined shipping once using half-up rounding.
+
 - Oxlint is the selected linter and Oxfmt is the selected formatter, as recorded in the [design decisions](../design-decisions.md).
 
 - Core implementation was budgeted at approximately four hours, with review and deployment effort separate. The target discussed was Monday, September 21, 2026, Bangkok time; no more precise cutoff was given.
@@ -162,7 +164,7 @@ The implementation must establish its workspace, runtime, local database, and ve
 
 ### Open choices, not new product requirements
 
-- The monetary implementation remains open after discussion of decimal libraries and native bigint. Any choice must preserve the accepted commercial results and rounding rules; adopting integer distance units requires a documented precision decision.
+- Intermediate decimal precision and distance representation remain implementation details to document and verify against the accepted rounding rules; adopting integer distance units requires a documented precision decision.
 - PostgreSQL hosting, connection configuration, deployment access controls, and the monthly demo budget are unresolved. They block hosted provisioning, not the local core.
 - Monetary storage precision is settled in the linked design decisions. Operational input limits and handling amounts beyond the storage range remain implementation design details; no unagreed maximum order quantity or latency target is introduced here.
 
