@@ -163,4 +163,4 @@ The implementation must establish its workspace, runtime, local database, and ve
 - Linter selection is settled as Oxlint in the linked design decisions. Formatter selection remains open; Oxfmt has been recommended but not explicitly selected.
 - The monetary implementation remains open after discussion of decimal libraries and native bigint. Any choice must preserve the accepted commercial results and rounding rules; adopting integer distance units requires a documented precision decision.
 - PostgreSQL hosting, connection configuration, deployment access controls, and the monthly demo budget are unresolved. They block hosted provisioning, not the local core.
-- Exact monetary storage precision and operational limits must be reconciled in the implementation design; no unagreed maximum order quantity or latency target is introduced here.
+- Monetary storage precision is settled in the linked design decisions. Operational input limits and handling amounts beyond the storage range remain implementation design details; no unagreed maximum order quantity or latency target is introduced here.

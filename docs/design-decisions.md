@@ -21,7 +21,7 @@
 - Apply the highest eligible volume-discount tier to the entire order, independent of warehouse splits.
 - Reject insufficient stock explicitly, without changing inventory or offering partial fulfillment.
 - For insufficient stock, verification returns HTTP 200 with valid: false, reason INSUFFICIENT_STOCK, calculated merchandise and discount amounts, and null shippingCost and orderTotal. Submission returns HTTP 422 with INSUFFICIENT_STOCK and creates no order.
-- Persist monetary values using PostgreSQL NUMERIC and use decimal arithmetic in the application. Round combined shipping once to two decimal places using half-up rounding, then compare that charge against 15% of the discounted merchandise total; equality passes. Persist the same monetary amounts returned to the customer. Column precision/scale remains to be finalized.
+- Persist monetary amounts using PostgreSQL NUMERIC(12, 2): 12 total digits, including two fractional digits. Use exact monetary arithmetic in the application, preserving intermediate precision until the agreed rounding point. Round combined shipping once to two decimal places using half-up rounding, then compare that charge against 15% of the discounted merchandise total; equality passes. Persist the same monetary amounts returned to the customer.
 - Calculate great-circle distances and allocate nearest warehouses first until fulfilled; use stable warehouse IDs to break equal-distance ties.
 - Prevent overselling by locking all six warehouse inventory rows in stable ID order inside a database transaction before reading stock and calculating allocation. Validate the request, decrement stock, and save the order within that transaction; retry temporary transaction conflicts a bounded number of times.
 - Require an idempotency key for submission. Repeating the same key and inputs returns the original order without consuming additional stock; reusing the key with different inputs returns a conflict.
@@ -62,5 +62,4 @@
 ## Unresolved
 
 - Monthly demo budget, PostgreSQL hosting, and database connection approach; deployment starts from scratch.
-- Monetary column precision/scale.
 - Deployment exposure and packaging, subject to Q26 infrastructure and budget constraints.
