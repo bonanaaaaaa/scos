@@ -1,0 +1,8 @@
+# Local issue-loop memory and evidence
+.loop/
+
+# Local agent skills
+.claude/skills/
+.claude/agents/
+.agents/skills/
+.codex/agents/
