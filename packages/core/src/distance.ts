@@ -1,0 +1,33 @@
+import type { GeoPoint } from "./destination.js";
+
+/**
+ * Mean Earth radius in kilometres: the IUGG mean radius R1 = (2a + b) / 3 of
+ * the WGS84 ellipsoid, 6371.0088 km (Moritz, "Geodetic Reference System 1980",
+ * as adopted by the IUGG). Used consistently for verification and submission.
+ */
+export const EARTH_RADIUS_KM = 6371.0088;
+
+const DEGREES_TO_RADIANS = Math.PI / 180;
+
+/**
+ * Great-circle distance in kilometres using the Haversine formula on a
+ * spherical Earth with JavaScript number arithmetic.
+ *
+ * Coordinates are used exactly as supplied (no rounding). The Haversine
+ * intermediate is clamped to [0, 1] so floating-point drift near identical or
+ * antipodal points cannot produce NaN. The result is not rounded; convert it to
+ * decimal.js through its string form for monetary arithmetic.
+ */
+export function haversineDistanceKm(from: GeoPoint, to: GeoPoint): number {
+  const lat1 = from.latitude * DEGREES_TO_RADIANS;
+  const lat2 = to.latitude * DEGREES_TO_RADIANS;
+  const deltaLat = (to.latitude - from.latitude) * DEGREES_TO_RADIANS;
+  const deltaLon = (to.longitude - from.longitude) * DEGREES_TO_RADIANS;
+
+  const sinHalfLat = Math.sin(deltaLat / 2);
+  const sinHalfLon = Math.sin(deltaLon / 2);
+  const a = sinHalfLat * sinHalfLat + Math.cos(lat1) * Math.cos(lat2) * sinHalfLon * sinHalfLon;
+  const clamped = Math.min(1, Math.max(0, a));
+
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(clamped));
+}

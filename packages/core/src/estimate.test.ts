@@ -1,0 +1,151 @@
+import { describe, expect, test } from "vitest";
+
+import type { WarehouseStock } from "./allocation.js";
+import type { Destination } from "./destination.js";
+import { EARTH_RADIUS_KM } from "./distance.js";
+import { type OrderEstimate, estimateOrder } from "./estimate.js";
+import type { Quantity } from "./quantity.js";
+
+const q = (value: number): Quantity => value as Quantity;
+const at = (latitude: number, longitude: number): Destination =>
+  ({ latitude, longitude }) as Destination;
+
+/** Equator longitude whose distance from (0, 0) is `km`. */
+const longitudeForKm = (km: number): number => ((km / EARTH_RADIUS_KM) * 180) / Math.PI;
+
+const PRD_WAREHOUSES: readonly WarehouseStock[] = [
+  { warehouseId: "wh-1-los-angeles", latitude: 33.9425, longitude: -118.408056, available: 355 },
+  { warehouseId: "wh-2-new-york", latitude: 40.639722, longitude: -73.778889, available: 578 },
+  { warehouseId: "wh-3-sao-paulo", latitude: -23.435556, longitude: -46.473056, available: 265 },
+  { warehouseId: "wh-4-paris", latitude: 49.009722, longitude: 2.547778, available: 694 },
+  { warehouseId: "wh-5-warsaw", latitude: 52.165833, longitude: 20.967222, available: 245 },
+  { warehouseId: "wh-6-hong-kong", latitude: 22.308889, longitude: 113.914444, available: 419 },
+];
+
+const summarise = (estimate: OrderEstimate) => ({
+  valid: estimate.valid,
+  reason: estimate.reason,
+  merchandiseSubtotal: estimate.merchandiseSubtotal.toString(),
+  discountRate: estimate.discountRate,
+  discountAmount: estimate.discountAmount.toString(),
+  discountedMerchandiseTotal: estimate.discountedMerchandiseTotal.toString(),
+  shippingCost: estimate.shippingCost?.toString() ?? null,
+  orderTotal: estimate.orderTotal?.toString() ?? null,
+  allocations: estimate.allocations.map(({ warehouseId, quantity }) => [warehouseId, quantity]),
+});
+
+describe("estimateOrder", () => {
+  test("a destination at a warehouse ships for free", () => {
+    const estimate = estimateOrder({ quantity: q(3), destination: at(0, 0) }, [
+      { warehouseId: "w", latitude: 0, longitude: 0, available: 3 },
+    ]);
+    expect(summarise(estimate)).toEqual({
+      valid: true,
+      reason: null,
+      merchandiseSubtotal: "450.00",
+      discountRate: "0.00",
+      discountAmount: "0.00",
+      discountedMerchandiseTotal: "450.00",
+      shippingCost: "0.00",
+      orderTotal: "450.00",
+      allocations: [["w", 3]],
+    });
+    expect(estimate.allocations[0]?.distanceKm).toBe(0);
+  });
+
+  test("insufficient stock retains merchandise and discount with null shipping and total", () => {
+    const estimate = estimateOrder({ quantity: q(30), destination: at(0, 0) }, [
+      { warehouseId: "w", latitude: 0, longitude: 0, available: 29 },
+      { warehouseId: "empty", latitude: 0, longitude: 1, available: 0 },
+    ]);
+    expect(summarise(estimate)).toEqual({
+      valid: false,
+      reason: "INSUFFICIENT_STOCK",
+      merchandiseSubtotal: "4500.00",
+      discountRate: "0.05",
+      discountAmount: "225.00",
+      discountedMerchandiseTotal: "4275.00",
+      shippingCost: null,
+      orderTotal: null,
+      allocations: [],
+    });
+  });
+
+  test("zero inventory is insufficient stock", () => {
+    expect(estimateOrder({ quantity: q(1), destination: at(0, 0) }, []).reason).toBe(
+      "INSUFFICIENT_STOCK",
+    );
+  });
+
+  describe("shipping limit after rounding (1 unit: limit is exactly 22.50)", () => {
+    const estimateAtKm = (km: number) =>
+      estimateOrder({ quantity: q(1), destination: at(0, longitudeForKm(km)) }, [
+        { warehouseId: "w", latitude: 0, longitude: 0, available: 1 },
+      ]);
+
+    test("below the limit is valid", () => {
+      const estimate = estimateAtKm(6160); // 22.484 -> 22.48
+      expect(estimate.shippingCost?.toString()).toBe("22.48");
+      expect(estimate.valid).toBe(true);
+      expect(estimate.orderTotal?.toString()).toBe("172.48");
+    });
+
+    test("rounding to exactly the limit is valid even when the unrounded cost is above it", () => {
+      const estimate = estimateAtKm(6165.2); // 22.50298 -> 22.50
+      expect(estimate.shippingCost?.toString()).toBe("22.50");
+      expect(estimate.valid).toBe(true);
+      expect(estimate.reason).toBeNull();
+      expect(estimate.orderTotal?.toString()).toBe("172.50");
+    });
+
+    test("above the limit is invalid and retains all amounts and allocations", () => {
+      const estimate = estimateAtKm(6166.5); // 22.507 -> 22.51
+      expect(summarise(estimate)).toEqual({
+        valid: false,
+        reason: "SHIPPING_EXCEEDS_LIMIT",
+        merchandiseSubtotal: "150.00",
+        discountRate: "0.00",
+        discountAmount: "0.00",
+        discountedMerchandiseTotal: "150.00",
+        shippingCost: "22.51",
+        orderTotal: "172.51",
+        allocations: [["w", 1]],
+      });
+    });
+  });
+
+  test("uses the PRD warehouses nearest-first with a split allocation", () => {
+    const destination = at(13.75, 100.5); // Bangkok
+    const estimate = estimateOrder({ quantity: q(500), destination }, PRD_WAREHOUSES);
+    expect(summarise(estimate)).toEqual({
+      valid: true,
+      reason: null,
+      merchandiseSubtotal: "75000.00",
+      discountRate: "0.20",
+      discountAmount: "15000.00",
+      discountedMerchandiseTotal: "60000.00",
+      shippingCost: "5002.43",
+      orderTotal: "65002.43",
+      allocations: [
+        ["wh-6-hong-kong", 419],
+        ["wh-5-warsaw", 81],
+      ],
+    });
+  });
+
+  test("the whole PRD inventory can be exhausted but not exceeded", () => {
+    const total = PRD_WAREHOUSES.reduce((sum, warehouse) => sum + warehouse.available, 0);
+    expect(total).toBe(2556);
+    const exact = estimateOrder({ quantity: q(total), destination: at(0, 0) }, PRD_WAREHOUSES);
+    expect(exact.allocations).toHaveLength(6);
+    expect(exact.allocations.reduce((sum, entry) => sum + entry.quantity, 0)).toBe(total);
+    const over = estimateOrder({ quantity: q(total + 1), destination: at(0, 0) }, PRD_WAREHOUSES);
+    expect(over.reason).toBe("INSUFFICIENT_STOCK");
+  });
+
+  test("returns a frozen estimate", () => {
+    const estimate = estimateOrder({ quantity: q(1), destination: at(0, 0) }, PRD_WAREHOUSES);
+    expect(Object.isFrozen(estimate)).toBe(true);
+    expect(Object.isFrozen(estimate.allocations)).toBe(true);
+  });
+});
