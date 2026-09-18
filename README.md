@@ -1,6 +1,6 @@
 # SCOS Ordering
 
-Backend workspace for ordering SCOS Station P1 Pro devices. This foundation contains package boundaries, a minimal Hono application, pinned TypeScript tooling, and isolated local PostgreSQL services. Ordering endpoints and the production schema are added in later issues.
+Backend workspace for ordering SCOS Station P1 Pro devices. This foundation contains package boundaries, a minimal Hono application, pinned TypeScript tooling, isolated local PostgreSQL services, and the Ordering database schema with its warehouse seed. Ordering endpoints are added in later issues.
 
 ## Prerequisites
 
@@ -46,7 +46,7 @@ The workspace contains:
 
 See [architecture](docs/architecture.md) for the hexagonal layering, the dependency rule, and where new code belongs.
 
-The library packages (`packages/core`, `packages/persistence`) build with tsdown into ESM JavaScript and declaration files in their `dist` directories, and package exports point to those files. Their third-party and `@scos/*` dependencies stay external. Declarations are emitted by the TypeScript 7 compiler; `tsc --noEmit` remains the type checker.
+The library packages (`packages/core`, `packages/persistence`) build with tsdown into ESM JavaScript and declaration files in their `dist` directories, and package exports point to those files. Their third-party and `@scos/*` dependencies stay external; `packages/persistence` additionally bundles its generated Prisma client (`src/generated/prisma`, produced by the `generate` task) and keeps `pg`, `@prisma/client`, `@prisma/adapter-pg` and `@scos/core` external. Declarations are emitted by the TypeScript 7 compiler; `tsc --noEmit` remains the type checker.
 
 The API application builds with esbuild (`apps/api/build.mjs`) into a self-contained ESM bundle, `apps/api/dist/server.js`, for Node.js and AWS Lambda. It inlines the built workspace libraries and third-party runtime dependencies, so it runs without `node_modules`. Only Node.js built-ins and pg's optional native addon, `pg-native`, stay external. The API publishes no package exports or declarations.
 
@@ -93,7 +93,7 @@ DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
   corepack pnpm test:integration
 ```
 
-The harness creates a uniquely named schema, proves a transaction rollback leaves no rows, and drops the schema when the test completes. Database integration tasks are uncached.
+The harness creates a uniquely named schema, proves a transaction rollback leaves no rows, and drops the schema when the test completes. The persistence schema tests create a uniquely named database beside `scos_test` for each test file, apply the real migrations, and drop it afterwards. Database integration tasks are uncached.
 
 Stop the services when finished:
 
@@ -103,7 +103,16 @@ docker compose down
 
 To deliberately remove the persistent development database as well, run `docker compose down --volumes`. This deletes local development data.
 
-No database migration command exists yet; this issue intentionally establishes the workspace, minimal application server, and test foundation only.
+## Database schema, migrations, and seed
+
+The PostgreSQL schema, Prisma client, migrations, and warehouse seed live in `packages/persistence`. With `DATABASE_URL` exported:
+
+```sh
+corepack pnpm db:migrate   # apply pending migrations
+corepack pnpm db:seed      # apply migrations, then insert missing seed warehouses
+```
+
+Seeding never replenishes consumed stock. The destructive `db:reset` requires `SCOS_CONFIRM_DATABASE_RESET` to match the target database name. See [database schema](docs/database-schema.md) for the entity relationships and schema decisions, and [local development](docs/local-development.md) for command details.
 
 ## Continuous integration
 
@@ -113,7 +122,7 @@ The workflow exposes these stable check names:
 
 - `Workspace checks`: frozen install followed by separate Turbo build, typecheck, Oxlint, Oxfmt, and test steps
 - `Coverage comment`: aggregate Vitest coverage reporting on same-repository pull requests
-- `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached Turbo `test:integration` connectivity and rollback smoke test
+- `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached Turbo `test:integration` connectivity smoke test plus migration, schema, and seed integration tests
 - `PR title`: Conventional Commit title validation on opened, edited, reopened, and synchronized pull requests
 - `Code scanner`: verified-secret scanning across the pull request's explicit base and head revisions
 - `Actionlint`: workflow validation when `.github/workflows/**` or `.github/actions/**` changes; local-action changes trigger the workflow but actionlint validates workflow files

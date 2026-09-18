@@ -1,0 +1,81 @@
+// SCOS Ordering persistence schema. See docs/database-schema.md.
+//
+// Rules that Prisma cannot express live in the SQL migrations and are
+// covered by integration tests: CHECK constraints, the shared
+// public.update_timestamp() function, and per-table update triggers.
+//
+// Timestamps use database defaults and triggers (ADR 0003). The migrations
+// define DEFAULT NOW(); the schema uses @default(dbgenerated()) so Prisma
+// omits both columns on insert and PostgreSQL supplies the transaction time.
+// @default(now()) would make Prisma send a client-side clock value instead,
+// and @default(dbgenerated("now()")) is reported as drift against now().
+// Do not add Prisma @updatedAt. Do not add Prisma enums; they create native
+// PostgreSQL enums. A future categorical column uses a text lookup table.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Warehouse and its current available inventory.
+model Warehouse {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name      String   @unique
+  latitude  Float
+  longitude Float
+  stock     Int
+  createdAt DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+
+  allocations OrderAllocation[]
+
+  @@map("warehouses")
+}
+
+/// Accepted Order: the client's duplicate-request key, the Order Request it
+/// fulfilled, and the independent commercial facts applied to it. The
+/// merchandise subtotal, discounted merchandise total, and order total are
+/// derived on read (src/records.ts), not stored. Rejected requests are not
+/// stored.
+model Order {
+  id                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orderNumber          String   @unique @map("order_number")
+  submissionKey        String   @unique @map("submission_key")
+  quantity             Int
+  destinationLatitude  Float    @map("destination_latitude")
+  destinationLongitude Float    @map("destination_longitude")
+  unitPrice            Decimal  @map("unit_price") @db.Decimal(12, 2)
+  discountRate         Decimal  @map("discount_rate") @db.Decimal(3, 2)
+  discountAmount       Decimal  @map("discount_amount") @db.Decimal(12, 2)
+  shippingCost         Decimal  @map("shipping_cost") @db.Decimal(12, 2)
+  createdAt            DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+
+  allocations OrderAllocation[]
+
+  @@map("orders")
+}
+
+/// Quantity taken from one warehouse to fulfill an accepted Order.
+model OrderAllocation {
+  id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orderId     String   @map("order_id") @db.Uuid
+  warehouseId String   @map("warehouse_id") @db.Uuid
+  quantity    Int
+  createdAt   DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([orderId, warehouseId])
+  @@index([warehouseId])
+  @@map("order_allocations")
+}

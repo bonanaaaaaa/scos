@@ -9,7 +9,7 @@ export default defineConfig({
       reportOnFailure: true,
       reportsDirectory: "coverage",
       include: ["src/**/*.ts"],
-      exclude: ["src/**/*.test.ts"],
+      exclude: ["src/**/*.test.ts", "src/generated/**"],
       thresholds: {
         statements: 80,
         branches: 80,

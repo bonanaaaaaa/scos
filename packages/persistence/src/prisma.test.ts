@@ -1,0 +1,16 @@
+import { expect, test } from "vitest";
+
+import { createDatabasePool } from "./database";
+import { createPrismaClient } from "./prisma";
+
+test("Prisma uses the caller's pool and leaves ending it to the caller", async () => {
+  const pool = createDatabasePool("postgresql://example:example@localhost:5432/example");
+  try {
+    const prisma = createPrismaClient(pool);
+    await prisma.$disconnect();
+    expect(pool.ended).toBe(false);
+  } finally {
+    await pool.end();
+  }
+  expect(pool.ended).toBe(true);
+});
