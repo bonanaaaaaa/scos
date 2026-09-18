@@ -67,7 +67,7 @@ The workflow exposes these stable check names:
 
 - `Workspace checks`: frozen install, exact TypeScript 7 compiler verification, build, typecheck, Oxlint, Oxfmt, and current tests through `pnpm check`
 - `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached `pnpm test:integration` connectivity and rollback smoke test
-- `PR title`: pull-request title validation without passing title text through a shell command
+  The separate `PR title` workflow runs on pull-request opened, edited, reopened, and synchronize events targeting `main`. Its `PR title` check validates the title without passing title text through a shell command. Title edits rerun this workflow without rerunning the workspace or PostgreSQL checks. Both workflows use read-only permissions, cancellation of superseded runs, and bounded job timeouts.
 
 The database client gives connection and query operations five-second timeouts, while the integration test and Actions job have broader bounded timeouts. An unavailable database therefore fails the existing integration harness clearly instead of hanging or being skipped.
 
