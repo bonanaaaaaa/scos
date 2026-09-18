@@ -63,6 +63,13 @@
 
 ## Agreed validation strategy
 
+- Validate environment configuration with Zod once at runtime bootstrap, before constructing runtime clients, starting the HTTP listener or accepting Lambda invocations. Missing or invalid required variables fail startup (nonzero exit for the server; failed initialization for Lambda). Report variable names and safe validation reasons only, never values, credentials or connection strings.
+- Export typed, validated configuration from the composition boundary and inject it into adapters instead of scattered `process.env` reads. Document required, optional and conditional variables in `.env.example`; defaults apply only where explicitly safe. Required variables depend on the enabled runtime mode (for example, telemetry endpoints when export is enabled). Parse environment strings explicitly and reject malformed values.
+- Keep pure app construction, unit tests and offline OpenAPI export independent of deployment environment validation; validation belongs to executable runtime entrypoints. A configured but unavailable database does not prevent the database-independent health handler from functioning; schema validation is not a database connectivity probe.
+- Validate incoming HTTP requests with Zod schemas through Hono's Standard Schema middleware, `sValidator` from `@hono/standard-validator`. Keep schemas and HTTP error mapping in the inbound API adapter; application inputs and domain invariants remain independent of Zod/Hono.
+- Apply the agreed quantity, coordinate and submissionId constraints before invoking use cases. Map schema failures and malformed JSON to the documented HTTP 400 envelope, without consuming submission IDs or mutating inventory. Do not implicitly coerce strings into JSON numbers; document content-type and unknown-field behavior and verify them in API tests.
+- Reuse the request schemas for OpenAPI generation through a compatible schema converter. Standard Schema validation alone does not generate OpenAPI. Verify that refinements and numeric limits are accurately represented or explicitly documented, and that generated schemas match runtime behavior.
+- Reference: [Hono Standard Schema request validation](https://hono.dev/docs/guides/validation#standard-schema-validator-middleware).
 - Unit tests cover discount boundaries, allocation, rounding, and the shipping limit. Distance tests cover identical locations, geographic boundaries, international date-line crossings, nearly antipodal points, and reference distances under the chosen Earth-radius constant.
 - Real PostgreSQL integration tests cover rollback, simultaneous submissions, and idempotency.
 - Provide easy local start/test commands and documented API examples.
@@ -114,6 +121,21 @@ sequenceDiagram
     end
     API-->>User: Accepted Order or business rejection
 ```
+
+## Observability
+
+- Use `pino` with `@opentelemetry/instrumentation-pino` (`PinoInstrumentation`) for application logging. Register instrumentation before importing Pino or constructing loggers, and verify the built Node/Lambda module-loading path is instrumented.
+- Keep automatic log correlation enabled with default `trace_id`, `span_id`, and `trace_flags` keys. When no valid active span exists, omit those fields. Set `disableLogSending: true` and `disableLogCorrelation: false`. Do not configure an application OTel Logs SDK/LoggerProvider or log exporter; the JavaScript Logs SDK is currently in Development. Traces and metrics use their stable SDKs.
+- Pino emits structured JSON to stdout for platform/collector ingestion. Document the collection path and Pino-to-OTel field mapping; do not add `pino-opentelemetry-transport` or duplicate ingestion. Application OTLP export is for traces and metrics only.
+- Pin compatible Pino/instrumentation/SDK versions. Verify severity mapping, child loggers, redaction on stdout/collected records, trace correlation and single-record output. The instrumentation does not supply HTTP semantic attributes automatically; request instrumentation must provide them.
+- Reference: [Pino instrumentation README](https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-pino#readme).
+- Use OpenTelemetry-aligned structured JSON logs, tracing and metrics. Keep instrumentation and SDK/export configuration in adapters/composition, with no OTel dependency in the domain.
+- Map logs explicitly to the OTel LogRecord data model, including timestamp, severity, body, attributes and resource/scope. Correlate active trace/span IDs; submission IDs remain separate business identifiers. Use consistent service name, version and environment across signals.
+- Propagate valid W3C trace context through request, use-case and persistence instrumentation without leaking context across concurrent requests. Distinguish business outcomes from unexpected system errors.
+- Record HTTP request duration in seconds under stable HTTP semantic conventions and a documented submission-request outcome counter (including replay outcomes). Use bounded metric dimensions and route templates, never per-request IDs or raw URLs.
+- Exclude request bodies, credentials, tokens, database parameters and destination coordinates from telemetry. Sanitize errors. Use bounded asynchronous export, configurable sampling and documented OTLP/local test-sink configuration. Telemetry failures must not change order outcomes or extend database transactions.
+- Developers own instrumentation unit/integration tests; QA validates telemetry via API scenarios. Hosted delivery must verify Lambda warm reuse and bounded flush behavior. Telemetry backend provisioning is a separate deployment choice.
+- References: [OTel logs](https://opentelemetry.io/docs/specs/otel/logs/data-model/), [HTTP spans](https://opentelemetry.io/docs/specs/semconv/http/http-spans/), [HTTP metrics](https://opentelemetry.io/docs/specs/semconv/http/http-metrics/).
 
 ## Unresolved
 
