@@ -5,11 +5,12 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
+    "lint": "oxlint --deny-warnings scripts && turbo run lint",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "test": "turbo run test",
+    "test": "node --test scripts/*.test.mjs && turbo run test",
     "test:integration": "turbo run test:integration",
+    "validate:pr-title": "node scripts/validate-pr-title.mjs",
     "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
   },
   "devDependencies": {

@@ -58,3 +58,27 @@ docker compose down
 To deliberately remove the persistent development database as well, run `docker compose down --volumes`. This deletes local development data.
 
 No application server or database migration command exists yet; this issue intentionally establishes the workspace and test foundation only.
+
+## Continuous integration
+
+The `CI` workflow runs for pull requests targeting `main` and pushes to `main`. It has read-only repository access, cancels superseded runs for the same pull request or branch, and does not deploy.
+
+The workflow exposes these stable check names:
+
+- `Workspace checks`: frozen install, exact TypeScript 7 compiler verification, build, typecheck, Oxlint, Oxfmt, and current tests through `pnpm check`
+- `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached `pnpm test:integration` connectivity and rollback smoke test
+- `PR title`: pull-request title validation without passing title text through a shell command
+
+The database client gives connection and query operations five-second timeouts, while the integration test and Actions job have broader bounded timeouts. An unavailable database therefore fails the existing integration harness clearly instead of hanging or being skipped.
+
+Pull request titles must use one of these forms:
+
+```text
+type: description
+type(scope): description
+type(scope)!: description
+```
+
+Allowed types are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`. The scope is optional but cannot be empty; `!` marks a breaking change. The description must be nonempty and remain on one line. Examples include `feat(api): add order verification`, `fix: prevent duplicate orders`, and `feat(api)!: change submission contract`.
+
+Changing a pull request title reruns the title check. Intermediate commit messages are not validated by this rule. Branch protection and repository rules remain repository settings outside this scaffold.
