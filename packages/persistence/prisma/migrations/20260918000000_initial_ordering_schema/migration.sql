@@ -13,7 +13,7 @@
 CREATE SCHEMA IF NOT EXISTS "public";
 
 -- CreateTable
-CREATE TABLE "warehouse" (
+CREATE TABLE "warehouses" (
     "id" UUID NOT NULL DEFAULT uuidv7(),
     "name" TEXT NOT NULL,
     "latitude" DOUBLE PRECISION NOT NULL,
@@ -22,11 +22,11 @@ CREATE TABLE "warehouse" (
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT "warehouse_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "warehouses_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "customer_order" (
+CREATE TABLE "orders" (
     "id" UUID NOT NULL DEFAULT uuidv7(),
     "order_number" TEXT NOT NULL,
     "submission_key" TEXT NOT NULL,
@@ -40,11 +40,11 @@ CREATE TABLE "customer_order" (
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT "customer_order_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "orders_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "order_allocation" (
+CREATE TABLE "order_allocations" (
     "id" UUID NOT NULL DEFAULT uuidv7(),
     "order_id" UUID NOT NULL,
     "warehouse_id" UUID NOT NULL,
@@ -52,40 +52,40 @@ CREATE TABLE "order_allocation" (
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT "order_allocation_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "order_allocations_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "warehouse_name_key" ON "warehouse"("name");
+CREATE UNIQUE INDEX "warehouses_name_key" ON "warehouses"("name");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "customer_order_order_number_key" ON "customer_order"("order_number");
+CREATE UNIQUE INDEX "orders_order_number_key" ON "orders"("order_number");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "customer_order_submission_key_key" ON "customer_order"("submission_key");
+CREATE UNIQUE INDEX "orders_submission_key_key" ON "orders"("submission_key");
 
 -- CreateIndex
-CREATE INDEX "order_allocation_warehouse_id_idx" ON "order_allocation"("warehouse_id");
+CREATE INDEX "order_allocations_warehouse_id_idx" ON "order_allocations"("warehouse_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "order_allocation_order_id_warehouse_id_key" ON "order_allocation"("order_id", "warehouse_id");
+CREATE UNIQUE INDEX "order_allocations_order_id_warehouse_id_key" ON "order_allocations"("order_id", "warehouse_id");
 
 -- AddForeignKey
-ALTER TABLE "order_allocation" ADD CONSTRAINT "order_allocation_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "customer_order"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
+ALTER TABLE "order_allocations" ADD CONSTRAINT "order_allocations_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 -- AddForeignKey
-ALTER TABLE "order_allocation" ADD CONSTRAINT "order_allocation_warehouse_id_fkey" FOREIGN KEY ("warehouse_id") REFERENCES "warehouse"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
+ALTER TABLE "order_allocations" ADD CONSTRAINT "order_allocations_warehouse_id_fkey" FOREIGN KEY ("warehouse_id") REFERENCES "warehouses"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 
 -- ---------------------------------------------------------------------------
 -- CHECK constraints (not expressible in the Prisma schema)
 -- ---------------------------------------------------------------------------
 
-ALTER TABLE "warehouse"
-    ADD CONSTRAINT "warehouse_name_check" CHECK (btrim("name") <> ''),
-    ADD CONSTRAINT "warehouse_latitude_check" CHECK ("latitude" BETWEEN -90 AND 90),
-    ADD CONSTRAINT "warehouse_longitude_check" CHECK ("longitude" BETWEEN -180 AND 180),
-    ADD CONSTRAINT "warehouse_stock_check" CHECK ("stock" >= 0);
+ALTER TABLE "warehouses"
+    ADD CONSTRAINT "warehouses_name_check" CHECK (btrim("name") <> ''),
+    ADD CONSTRAINT "warehouses_latitude_check" CHECK ("latitude" BETWEEN -90 AND 90),
+    ADD CONSTRAINT "warehouses_longitude_check" CHECK ("longitude" BETWEEN -180 AND 180),
+    ADD CONSTRAINT "warehouses_stock_check" CHECK ("stock" >= 0);
 
 -- The client's duplicate-request key and the Order Request (quantity and
 -- destination) are stored on the accepted Order itself; rejected requests are
@@ -100,27 +100,27 @@ ALTER TABLE "warehouse"
 -- 9999999999.99 (the discounted total is bounded by the subtotal). The
 -- expressions are evaluated in unbounded NUMERIC, so they are exact and cannot
 -- overflow.
-ALTER TABLE "customer_order"
-    ADD CONSTRAINT "customer_order_order_number_check" CHECK (btrim("order_number") <> ''),
-    ADD CONSTRAINT "customer_order_submission_key_check"
+ALTER TABLE "orders"
+    ADD CONSTRAINT "orders_order_number_check" CHECK (btrim("order_number") <> ''),
+    ADD CONSTRAINT "orders_submission_key_check"
         CHECK (btrim("submission_key") <> '' AND char_length("submission_key") <= 255),
-    ADD CONSTRAINT "customer_order_quantity_check" CHECK ("quantity" > 0),
-    ADD CONSTRAINT "customer_order_destination_latitude_check"
+    ADD CONSTRAINT "orders_quantity_check" CHECK ("quantity" > 0),
+    ADD CONSTRAINT "orders_destination_latitude_check"
         CHECK ("destination_latitude" BETWEEN -90 AND 90),
-    ADD CONSTRAINT "customer_order_destination_longitude_check"
+    ADD CONSTRAINT "orders_destination_longitude_check"
         CHECK ("destination_longitude" BETWEEN -180 AND 180),
-    ADD CONSTRAINT "customer_order_unit_price_check" CHECK ("unit_price" >= 0),
-    ADD CONSTRAINT "customer_order_discount_rate_check" CHECK ("discount_rate" BETWEEN 0 AND 1),
-    ADD CONSTRAINT "customer_order_discount_amount_check"
+    ADD CONSTRAINT "orders_unit_price_check" CHECK ("unit_price" >= 0),
+    ADD CONSTRAINT "orders_discount_rate_check" CHECK ("discount_rate" BETWEEN 0 AND 1),
+    ADD CONSTRAINT "orders_discount_amount_check"
         CHECK ("discount_amount" >= 0 AND "discount_amount" <= "unit_price" * "quantity"),
-    ADD CONSTRAINT "customer_order_shipping_cost_check" CHECK ("shipping_cost" >= 0),
-    ADD CONSTRAINT "customer_order_merchandise_subtotal_range_check"
+    ADD CONSTRAINT "orders_shipping_cost_check" CHECK ("shipping_cost" >= 0),
+    ADD CONSTRAINT "orders_merchandise_subtotal_range_check"
         CHECK ("unit_price" * "quantity" <= 9999999999.99),
-    ADD CONSTRAINT "customer_order_order_total_range_check"
+    ADD CONSTRAINT "orders_order_total_range_check"
         CHECK ("unit_price" * "quantity" - "discount_amount" + "shipping_cost" <= 9999999999.99);
 
-ALTER TABLE "order_allocation"
-    ADD CONSTRAINT "order_allocation_quantity_check" CHECK ("quantity" > 0);
+ALTER TABLE "order_allocations"
+    ADD CONSTRAINT "order_allocations_quantity_check" CHECK ("quantity" > 0);
 
 -- ---------------------------------------------------------------------------
 -- Database-managed timestamps (ADR 0003)
@@ -136,20 +136,20 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS update_warehouse_updated_at ON "warehouse";
-CREATE TRIGGER update_warehouse_updated_at
-BEFORE UPDATE ON "warehouse"
+DROP TRIGGER IF EXISTS update_warehouses_updated_at ON "warehouses";
+CREATE TRIGGER update_warehouses_updated_at
+BEFORE UPDATE ON "warehouses"
 FOR EACH ROW
 EXECUTE FUNCTION public.update_timestamp();
 
-DROP TRIGGER IF EXISTS update_customer_order_updated_at ON "customer_order";
-CREATE TRIGGER update_customer_order_updated_at
-BEFORE UPDATE ON "customer_order"
+DROP TRIGGER IF EXISTS update_orders_updated_at ON "orders";
+CREATE TRIGGER update_orders_updated_at
+BEFORE UPDATE ON "orders"
 FOR EACH ROW
 EXECUTE FUNCTION public.update_timestamp();
 
-DROP TRIGGER IF EXISTS update_order_allocation_updated_at ON "order_allocation";
-CREATE TRIGGER update_order_allocation_updated_at
-BEFORE UPDATE ON "order_allocation"
+DROP TRIGGER IF EXISTS update_order_allocations_updated_at ON "order_allocations";
+CREATE TRIGGER update_order_allocations_updated_at
+BEFORE UPDATE ON "order_allocations"
 FOR EACH ROW
 EXECUTE FUNCTION public.update_timestamp();

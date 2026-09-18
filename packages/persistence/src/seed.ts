@@ -77,7 +77,7 @@ export async function seedWarehouses(
     return `($${offset + 1}::uuid, $${offset + 2}, $${offset + 3}::double precision, $${offset + 4}::double precision, $${offset + 5}::integer)`;
   });
   const result = await database.query(
-    `INSERT INTO warehouse (id, name, latitude, longitude, stock)
+    `INSERT INTO warehouses (id, name, latitude, longitude, stock)
      VALUES ${rows.join(",\n            ")}
      ON CONFLICT (id) DO NOTHING`,
     values,

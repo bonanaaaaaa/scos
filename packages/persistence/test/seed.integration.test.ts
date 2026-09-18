@@ -45,7 +45,7 @@ async function readWarehouses() {
   }>(
     `SELECT id, name, latitude, longitude, stock, uuid_extract_version(id) AS version,
             created_at = updated_at AS fresh
-     FROM warehouse ORDER BY id`,
+     FROM warehouses ORDER BY id`,
   );
   return result.rows;
 }
@@ -75,10 +75,10 @@ describe("warehouse seed", { timeout: 30_000 }, () => {
   });
 
   test("rerunning the seed never replenishes consumed stock or touches existing rows", async () => {
-    await db.pool.query("UPDATE warehouse SET stock = stock - 55 WHERE name = 'Los Angeles'");
-    await db.pool.query("UPDATE warehouse SET stock = 0 WHERE name = 'Warsaw'");
+    await db.pool.query("UPDATE warehouses SET stock = stock - 55 WHERE name = 'Los Angeles'");
+    await db.pool.query("UPDATE warehouses SET stock = 0 WHERE name = 'Warsaw'");
     const before = await db.pool.query(
-      "SELECT id, stock, created_at, updated_at FROM warehouse ORDER BY id",
+      "SELECT id, stock, created_at, updated_at FROM warehouses ORDER BY id",
     );
 
     expect(await seedWarehouses(db.pool)).toStrictEqual({ inserted: 0, existing: 6 });
@@ -89,7 +89,7 @@ describe("warehouse seed", { timeout: 30_000 }, () => {
     expect(stdout).toMatch(/0 inserted, 6 already present/);
 
     const after = await db.pool.query(
-      "SELECT id, stock, created_at, updated_at FROM warehouse ORDER BY id",
+      "SELECT id, stock, created_at, updated_at FROM warehouses ORDER BY id",
     );
     expect(after.rows).toStrictEqual(before.rows);
     const stock = Object.fromEntries((await readWarehouses()).map((row) => [row.name, row.stock]));
@@ -99,25 +99,25 @@ describe("warehouse seed", { timeout: 30_000 }, () => {
   });
 
   test("a rerun restores only a missing warehouse and fails loudly on a conflicting name", async () => {
-    await db.pool.query("DELETE FROM warehouse WHERE name = 'Hong Kong'");
+    await db.pool.query("DELETE FROM warehouses WHERE name = 'Hong Kong'");
     expect(await seedWarehouses(db.pool)).toStrictEqual({ inserted: 1, existing: 5 });
     expect((await readWarehouses()).length).toBe(6);
 
-    await db.pool.query("DELETE FROM warehouse WHERE name = 'Paris'");
+    await db.pool.query("DELETE FROM warehouses WHERE name = 'Paris'");
     await db.pool.query(
-      "INSERT INTO warehouse (name, latitude, longitude, stock) VALUES ('Paris', 0, 0, 1)",
+      "INSERT INTO warehouses (name, latitude, longitude, stock) VALUES ('Paris', 0, 0, 1)",
     );
     await assertDatabaseError(seedWarehouses(db.pool), {
       code: "23505",
-      constraint: "warehouse_name_key",
+      constraint: "warehouses_name_key",
     });
-    const paris = await db.pool.query("SELECT stock FROM warehouse WHERE name = 'Paris'");
+    const paris = await db.pool.query("SELECT stock FROM warehouses WHERE name = 'Paris'");
     expect(paris.rows).toStrictEqual([{ stock: 1 }]);
   });
 
   test("the reset guard refuses without an exact confirmation and changes nothing", async () => {
     const count = async () =>
-      (await db.pool.query<{ count: number }>("SELECT count(*)::int AS count FROM warehouse"))
+      (await db.pool.query<{ count: number }>("SELECT count(*)::int AS count FROM warehouses"))
         .rows[0]!.count;
     const before = await count();
 

@@ -36,7 +36,7 @@ model Warehouse {
 
   allocations OrderAllocation[]
 
-  @@map("warehouse")
+  @@map("warehouses")
 }
 
 /// Accepted Order: the client's duplicate-request key, the Order Request it
@@ -60,7 +60,7 @@ model Order {
 
   allocations OrderAllocation[]
 
-  @@map("customer_order")
+  @@map("orders")
 }
 
 /// Quantity taken from one warehouse to fulfill an accepted Order.
@@ -77,5 +77,5 @@ model OrderAllocation {
 
   @@unique([orderId, warehouseId])
   @@index([warehouseId])
-  @@map("order_allocation")
+  @@map("order_allocations")
 }

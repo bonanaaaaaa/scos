@@ -49,7 +49,7 @@ test("seeding inserts only missing warehouses and never updates existing stock",
   if (call === undefined) {
     throw new Error("seeding must issue exactly one query");
   }
-  expect(call.text).toMatch(/INSERT INTO warehouse \(id, name, latitude, longitude, stock\)/);
+  expect(call.text).toMatch(/INSERT INTO warehouses \(id, name, latitude, longitude, stock\)/);
   expect(call.text).toMatch(/ON CONFLICT \(id\) DO NOTHING\s*$/);
   expect(call.text).not.toMatch(/UPDATE|DO UPDATE/i);
   expect(call.values.length).toBe(30);
