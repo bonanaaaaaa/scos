@@ -153,7 +153,7 @@ These rules apply to estimation and submission:
 
 - Core implementation was budgeted at approximately four hours, with review and deployment effort separate. The target discussed was Monday, September 21, 2026, Bangkok time; no more precise cutoff was given.
 - [Design decisions](../design-decisions.md) contain the agreed language/runtime, monorepo, architecture, persistence, enum-table, and served API contract constraints. These remain binding even though the PRD focuses on product behavior.
-- The relational schema follows third normal form (3NF), with accepted order amounts retained as historical snapshots; see the [design decisions](../design-decisions.md#agreed-architecture).
+- The relational schema follows third normal form (3NF), with each accepted order's applied price, discount, and shipping cost retained as historical facts and its totals derived exactly from them; see the [design decisions](../design-decisions.md#agreed-architecture).
 - Generated database entity IDs use UUIDv7 for time-oriented sorting, as specified in the design decisions. Any persisted categorical values use text-key lookup tables; the submission identifier is a separate text key on the Order.
 - [Advisory verification ADR](../adr/0001-advisory-verification.md) defines the distinction between an estimate and acceptance.
 - [Order deduplication ADR](../adr/0004-deduplicate-accepted-orders.md) supersedes the [submission replay ADR](../adr/0002-replay-submission-outcomes.md): accepted Orders are deduplicated by submission identifier, and rejections are not stored.

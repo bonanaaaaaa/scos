@@ -40,24 +40,23 @@ model Warehouse {
 }
 
 /// Accepted Order: the client's duplicate-request key, the Order Request it
-/// fulfilled, and its immutable commercial snapshot. Rejected requests are
-/// not stored.
+/// fulfilled, and the independent commercial facts applied to it. The
+/// merchandise subtotal, discounted merchandise total, and order total are
+/// derived on read (src/records.ts), not stored. Rejected requests are not
+/// stored.
 model Order {
-  id                         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orderNumber                String   @unique @map("order_number")
-  submissionKey              String   @unique @map("submission_key")
-  quantity                   Int
-  destinationLatitude        Float    @map("destination_latitude")
-  destinationLongitude       Float    @map("destination_longitude")
-  unitPrice                  Decimal  @map("unit_price") @db.Decimal(12, 2)
-  merchandiseSubtotal        Decimal  @map("merchandise_subtotal") @db.Decimal(12, 2)
-  discountRate               Decimal  @map("discount_rate") @db.Decimal(3, 2)
-  discountAmount             Decimal  @map("discount_amount") @db.Decimal(12, 2)
-  discountedMerchandiseTotal Decimal  @map("discounted_merchandise_total") @db.Decimal(12, 2)
-  shippingCost               Decimal  @map("shipping_cost") @db.Decimal(12, 2)
-  orderTotal                 Decimal  @map("order_total") @db.Decimal(12, 2)
-  createdAt                  DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                  DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+  id                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orderNumber          String   @unique @map("order_number")
+  submissionKey        String   @unique @map("submission_key")
+  quantity             Int
+  destinationLatitude  Float    @map("destination_latitude")
+  destinationLongitude Float    @map("destination_longitude")
+  unitPrice            Decimal  @map("unit_price") @db.Decimal(12, 2)
+  discountRate         Decimal  @map("discount_rate") @db.Decimal(3, 2)
+  discountAmount       Decimal  @map("discount_amount") @db.Decimal(12, 2)
+  shippingCost         Decimal  @map("shipping_cost") @db.Decimal(12, 2)
+  createdAt            DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
 
   allocations OrderAllocation[]
 

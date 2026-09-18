@@ -34,12 +34,9 @@ CREATE TABLE "customer_order" (
     "destination_latitude" DOUBLE PRECISION NOT NULL,
     "destination_longitude" DOUBLE PRECISION NOT NULL,
     "unit_price" DECIMAL(12,2) NOT NULL,
-    "merchandise_subtotal" DECIMAL(12,2) NOT NULL,
     "discount_rate" DECIMAL(3,2) NOT NULL,
     "discount_amount" DECIMAL(12,2) NOT NULL,
-    "discounted_merchandise_total" DECIMAL(12,2) NOT NULL,
     "shipping_cost" DECIMAL(12,2) NOT NULL,
-    "order_total" DECIMAL(12,2) NOT NULL,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
 
@@ -92,10 +89,17 @@ ALTER TABLE "warehouse"
 
 -- The client's duplicate-request key and the Order Request (quantity and
 -- destination) are stored on the accepted Order itself; rejected requests are
--- not persisted, so they consume no key. unit_price * quantity is
--- evaluated in unbounded NUMERIC, so the subtotal comparison is exact; a
--- product beyond NUMERIC(12,2) cannot be stored in merchandise_subtotal, so
--- such a row always fails.
+-- not persisted, so they consume no key.
+--
+-- Only independent commercial facts are stored. The merchandise subtotal
+-- (unit_price * quantity), the discounted merchandise total (subtotal -
+-- discount_amount), and the order total (discounted total + shipping_cost) are
+-- derived on read. These CHECKs keep every derived amount valid and storable
+-- as NUMERIC(12,2): the discount cannot exceed the subtotal, so no derived
+-- amount is negative, and the subtotal and order total cannot exceed
+-- 9999999999.99 (the discounted total is bounded by the subtotal). The
+-- expressions are evaluated in unbounded NUMERIC, so they are exact and cannot
+-- overflow.
 ALTER TABLE "customer_order"
     ADD CONSTRAINT "customer_order_order_number_check" CHECK (btrim("order_number") <> ''),
     ADD CONSTRAINT "customer_order_submission_key_check"
@@ -106,18 +110,14 @@ ALTER TABLE "customer_order"
     ADD CONSTRAINT "customer_order_destination_longitude_check"
         CHECK ("destination_longitude" BETWEEN -180 AND 180),
     ADD CONSTRAINT "customer_order_unit_price_check" CHECK ("unit_price" >= 0),
-    ADD CONSTRAINT "customer_order_merchandise_subtotal_check"
-        CHECK ("merchandise_subtotal" >= 0
-            AND "merchandise_subtotal" = "unit_price" * "quantity"),
     ADD CONSTRAINT "customer_order_discount_rate_check" CHECK ("discount_rate" BETWEEN 0 AND 1),
-    ADD CONSTRAINT "customer_order_discount_amount_check" CHECK ("discount_amount" >= 0),
-    ADD CONSTRAINT "customer_order_discounted_merchandise_total_check"
-        CHECK ("discounted_merchandise_total" >= 0
-            AND "discounted_merchandise_total" = "merchandise_subtotal" - "discount_amount"),
+    ADD CONSTRAINT "customer_order_discount_amount_check"
+        CHECK ("discount_amount" >= 0 AND "discount_amount" <= "unit_price" * "quantity"),
     ADD CONSTRAINT "customer_order_shipping_cost_check" CHECK ("shipping_cost" >= 0),
-    ADD CONSTRAINT "customer_order_order_total_check"
-        CHECK ("order_total" >= 0
-            AND "order_total" = "discounted_merchandise_total" + "shipping_cost");
+    ADD CONSTRAINT "customer_order_merchandise_subtotal_range_check"
+        CHECK ("unit_price" * "quantity" <= 9999999999.99),
+    ADD CONSTRAINT "customer_order_order_total_range_check"
+        CHECK ("unit_price" * "quantity" - "discount_amount" + "shipping_cost" <= 9999999999.99);
 
 ALTER TABLE "order_allocation"
     ADD CONSTRAINT "order_allocation_quantity_check" CHECK ("quantity" > 0);

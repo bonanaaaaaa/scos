@@ -11,9 +11,20 @@ function formatFixed(value: Prisma.Decimal, scale: number, label: string): strin
   return value.toFixed(scale);
 }
 
-/** NUMERIC(12,2) amount as an exact decimal string, such as "150.00". */
+const MAX_MONEY = "9999999999.99";
+
+/**
+ * NUMERIC(12,2) amount as an exact decimal string, such as "150.00". Amounts
+ * beyond the column range are refused: Decimal arithmetic keeps 20 significant
+ * digits, so every in-range derived amount is exact and a larger one could
+ * have been rounded.
+ */
 export function formatMoney(value: Prisma.Decimal): string {
-  return formatFixed(value, 2, "Money");
+  const text = formatFixed(value, 2, "Money");
+  if (value.abs().greaterThan(MAX_MONEY)) {
+    throw new Error("Money must fit NUMERIC(12,2)");
+  }
+  return text;
 }
 
 /** NUMERIC(3,2) discount rate as an exact decimal string, such as "0.15". */
@@ -37,27 +48,25 @@ export interface WarehouseRecord extends Timestamps, Coordinates {
   readonly stock: number;
 }
 
-export interface CommercialSnapshot {
-  readonly unitPrice: string;
-  readonly merchandiseSubtotal: string;
-  readonly discountRate: string;
-  readonly discountAmount: string;
-  readonly discountedMerchandiseTotal: string;
-}
-
 export interface OrderAllocationRecord extends Timestamps {
   readonly id: string;
   readonly warehouseId: string;
   readonly quantity: number;
 }
 
-export interface OrderRecord extends Timestamps, CommercialSnapshot {
+export interface OrderRecord extends Timestamps {
   readonly id: string;
   readonly orderNumber: string;
   readonly submissionKey: string;
   readonly quantity: number;
   readonly destination: Coordinates;
+  readonly unitPrice: string;
+  readonly discountRate: string;
+  readonly discountAmount: string;
   readonly shippingCost: string;
+  // Derived on read from the stored facts above; not stored (3NF).
+  readonly merchandiseSubtotal: string;
+  readonly discountedMerchandiseTotal: string;
   readonly orderTotal: string;
   readonly allocations: readonly OrderAllocationRecord[];
 }
@@ -74,16 +83,6 @@ export function toWarehouseRecord(row: Warehouse): WarehouseRecord {
   };
 }
 
-function toCommercialSnapshot(row: Order): CommercialSnapshot {
-  return {
-    unitPrice: formatMoney(row.unitPrice),
-    merchandiseSubtotal: formatMoney(row.merchandiseSubtotal),
-    discountRate: formatDiscountRate(row.discountRate),
-    discountAmount: formatMoney(row.discountAmount),
-    discountedMerchandiseTotal: formatMoney(row.discountedMerchandiseTotal),
-  };
-}
-
 export function toOrderAllocationRecord(row: OrderAllocation): OrderAllocationRecord {
   return {
     id: row.id,
@@ -97,15 +96,24 @@ export function toOrderAllocationRecord(row: OrderAllocation): OrderAllocationRe
 export function toOrderRecord(
   row: Order & { readonly allocations: readonly OrderAllocation[] },
 ): OrderRecord {
+  // The three totals are derived, not stored: exact Decimal arithmetic over
+  // the stored facts, so the amounts returned equal what was charged.
+  const merchandiseSubtotal = row.unitPrice.times(row.quantity);
+  const discountedMerchandiseTotal = merchandiseSubtotal.minus(row.discountAmount);
+  const orderTotal = discountedMerchandiseTotal.plus(row.shippingCost);
   return {
     id: row.id,
     orderNumber: row.orderNumber,
     submissionKey: row.submissionKey,
     quantity: row.quantity,
     destination: { latitude: row.destinationLatitude, longitude: row.destinationLongitude },
-    ...toCommercialSnapshot(row),
+    unitPrice: formatMoney(row.unitPrice),
+    discountRate: formatDiscountRate(row.discountRate),
+    discountAmount: formatMoney(row.discountAmount),
     shippingCost: formatMoney(row.shippingCost),
-    orderTotal: formatMoney(row.orderTotal),
+    merchandiseSubtotal: formatMoney(merchandiseSubtotal),
+    discountedMerchandiseTotal: formatMoney(discountedMerchandiseTotal),
+    orderTotal: formatMoney(orderTotal),
     allocations: row.allocations.map(toOrderAllocationRecord),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

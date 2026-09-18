@@ -44,18 +44,15 @@ async function insertBackdatedWarehouse(): Promise<string> {
 
 // An accepted Order carries the client's duplicate-request key and the Order
 // Request it fulfilled: quantity 10 at 150.00 each, with no discount and
-// 10.00 shipping.
+// 10.00 shipping. The subtotal and totals are derived on read, not stored.
 const acceptedOrder = {
   quantity: "10",
   destination_latitude: "1.5",
   destination_longitude: "-2.5",
   unit_price: "150.00",
-  merchandise_subtotal: "1500.00",
   discount_rate: "0.00",
   discount_amount: "0.00",
-  discounted_merchandise_total: "1500.00",
   shipping_cost: "10.00",
-  order_total: "1510.00",
 };
 
 type OrderOverrides = Partial<
@@ -203,12 +200,9 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
             destinationLatitude: 0,
             destinationLongitude: 0,
             unitPrice: "150.00",
-            merchandiseSubtotal: "150.00",
             discountRate: "0.00",
             discountAmount: "0.00",
-            discountedMerchandiseTotal: "150.00",
             shippingCost: "10.00",
-            orderTotal: "160.00",
           },
         });
         return tx.$queryRaw<{ equal: boolean; at_now: boolean }[]>`
@@ -275,10 +269,9 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         await client.query("UPDATE warehouse SET stock = stock - 1 WHERE id = $1", [id]);
         const order = await client.query<{ id: string }>(
           `INSERT INTO customer_order (order_number, submission_key, quantity,
-             destination_latitude, destination_longitude, unit_price, merchandise_subtotal,
-             discount_rate, discount_amount, discounted_merchandise_total, shipping_cost,
-             order_total)
-           VALUES ($1, $2, 1, 0, 0, '150.00', '150.00', '0.00', '0.00', '150.00', '10.00', '160.00')
+             destination_latitude, destination_longitude, unit_price, discount_rate,
+             discount_amount, shipping_cost)
+           VALUES ($1, $2, 1, 0, 0, '150.00', '0.00', '0.00', '10.00')
            RETURNING id`,
           [unique("ORD"), unique("attempt")],
         );
@@ -372,12 +365,9 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
           destinationLatitude: 0,
           destinationLongitude: 0,
           unitPrice: "150.00",
-          merchandiseSubtotal: "150.00",
           discountRate: "0.00",
           discountAmount: "0.00",
-          discountedMerchandiseTotal: "150.00",
           shippingCost: "10.00",
-          orderTotal: "160.00",
         },
       });
       await insertAllocation(order.id, warehouseId);
@@ -474,22 +464,22 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
     });
 
     test("Orders require a positive quantity and a bounded destination", async () => {
-      // Quantity participates in the subtotal CHECK, so consistent amounts
-      // isolate the quantity constraint.
-      const zeroQuantity = {
-        quantity: "0",
-        merchandise_subtotal: "0.00",
-        discounted_merchandise_total: "0.00",
-        order_total: "10.00",
-      };
-      await assertDatabaseError(insertOrder(zeroQuantity), {
+      await assertDatabaseError(insertOrder({ quantity: "0" }), {
         code: CHECK_VIOLATION,
         constraint: "customer_order_quantity_check",
       });
-      await assertDatabaseError(
-        insertOrder({ ...zeroQuantity, quantity: "-5", unit_price: "0.00" }),
-        { code: CHECK_VIOLATION, constraint: "customer_order_quantity_check" },
-      );
+      // Quantity participates in the discount CHECK, which is evaluated first
+      // (constraint-name order): a negative quantity at a positive price makes
+      // the derived subtotal negative. A zero unit price isolates the quantity
+      // constraint.
+      await assertDatabaseError(insertOrder({ quantity: "-5", unit_price: "0.00" }), {
+        code: CHECK_VIOLATION,
+        constraint: "customer_order_quantity_check",
+      });
+      await assertDatabaseError(insertOrder({ quantity: "-5" }), {
+        code: CHECK_VIOLATION,
+        constraint: "customer_order_discount_amount_check",
+      });
 
       for (const [column, value] of [
         ["destination_latitude", "90.000001"],
@@ -508,83 +498,43 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
       await insertOrder({ destination_latitude: "90", destination_longitude: "-180" });
     });
 
-    test("the merchandise subtotal must equal unit price times quantity", async () => {
-      await assertDatabaseError(
-        insertOrder({
-          merchandise_subtotal: "1500.01",
-          discounted_merchandise_total: "1500.01",
-          order_total: "1510.01",
-        }),
-        { code: CHECK_VIOLATION, constraint: "customer_order_merchandise_subtotal_check" },
+    test("customer_order carries exactly the expected CHECK constraints", async () => {
+      // customer_order_unit_price_check can never be the first CHECK to fire:
+      // with a positive quantity a negative price fails the discount CHECK,
+      // and with a negative quantity the quantity CHECK precedes it by name.
+      // Assert it exists rather than claim to observe it.
+      const checks = await db.pool.query<{ conname: string }>(
+        `SELECT conname FROM pg_constraint
+         WHERE conrelid = 'public.customer_order'::regclass AND contype = 'c'
+         ORDER BY conname`,
       );
-      await assertDatabaseError(
-        insertOrder({
-          quantity: "11",
-          merchandise_subtotal: "1500.00",
-        }),
-        { code: CHECK_VIOLATION, constraint: "customer_order_merchandise_subtotal_check" },
-      );
-      // A negative unit price cannot be stored either: the product is
-      // negative, and every amount derived from it must be nonnegative.
-      // PostgreSQL evaluates CHECKs in constraint-name order, so the
-      // discounted total rejects the row first.
-      await assertDatabaseError(
-        insertOrder({
-          unit_price: "-150.00",
-          merchandise_subtotal: "-1500.00",
-          discounted_merchandise_total: "-1500.00",
-          order_total: "-1490.00",
-        }),
-        { code: CHECK_VIOLATION, constraint: "customer_order_discounted_merchandise_total_check" },
-      );
-
-      // Exact NUMERIC arithmetic: cent-level prices and large quantities
-      // multiply without rounding.
-      await insertOrder({
-        quantity: "3",
-        unit_price: "0.10",
-        merchandise_subtotal: "0.30",
-        discounted_merchandise_total: "0.30",
-        order_total: "10.30",
-      });
-      await insertOrder({
-        quantity: "1000000",
-        unit_price: "9999.99",
-        merchandise_subtotal: "9999990000.00",
-        discount_rate: "0.20",
-        discount_amount: "1999998000.00",
-        discounted_merchandise_total: "7999992000.00",
-        order_total: "7999992010.00",
-      });
-      // The product is computed in unbounded NUMERIC, so a subtotal beyond
-      // NUMERIC(12,2) fails as an overflow before any CHECK is evaluated
-      // rather than making the CHECK misbehave.
-      await assertDatabaseError(
-        insertOrder({
-          quantity: "2",
-          unit_price: "9999999999.99",
-          merchandise_subtotal: "19999999999.98",
-          discounted_merchandise_total: "19999999999.98",
-          order_total: "20000000009.98",
-        }),
-        { code: NUMERIC_OVERFLOW },
+      assert.deepEqual(
+        checks.rows.map((row) => row.conname),
+        [
+          "customer_order_destination_latitude_check",
+          "customer_order_destination_longitude_check",
+          "customer_order_discount_amount_check",
+          "customer_order_discount_rate_check",
+          "customer_order_merchandise_subtotal_range_check",
+          "customer_order_order_number_check",
+          "customer_order_order_total_range_check",
+          "customer_order_quantity_check",
+          "customer_order_shipping_cost_check",
+          "customer_order_submission_key_check",
+          "customer_order_unit_price_check",
+        ],
       );
     });
 
-    test("Order snapshots are nonnegative and arithmetically consistent", async () => {
+    test("stored commercial facts are nonnegative and the rate is bounded", async () => {
       const cases: [OrderOverrides, string][] = [
-        [{ order_total: "1510.01" }, "customer_order_order_total_check"],
-        [
-          { discounted_merchandise_total: "1499.00", order_total: "1509.00" },
-          "customer_order_discounted_merchandise_total_check",
-        ],
         [{ discount_rate: "1.50" }, "customer_order_discount_rate_check"],
         [{ discount_rate: "-0.01" }, "customer_order_discount_rate_check"],
-        [
-          { discount_amount: "-10.00", discounted_merchandise_total: "1510.00" },
-          "customer_order_discount_amount_check",
-        ],
-        [{ shipping_cost: "-10.00", order_total: "1490.00" }, "customer_order_shipping_cost_check"],
+        [{ discount_amount: "-10.00" }, "customer_order_discount_amount_check"],
+        [{ shipping_cost: "-10.00" }, "customer_order_shipping_cost_check"],
+        // A negative unit price makes the derived subtotal negative, so the
+        // discount CHECK (evaluated before unit_price_check by name) rejects it.
+        [{ unit_price: "-150.00" }, "customer_order_discount_amount_check"],
       ];
       for (const [overrides, constraint] of cases) {
         await assertDatabaseError(insertOrder(overrides), {
@@ -595,10 +545,131 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
       await insertOrder({
         discount_rate: "0.15",
         discount_amount: "225.00",
-        discounted_merchandise_total: "1275.00",
         shipping_cost: "0.00",
-        order_total: "1275.00",
       });
+      await insertOrder({ unit_price: "0.00" });
+    });
+
+    test("the discount cannot exceed the derived merchandise subtotal", async () => {
+      await assertDatabaseError(insertOrder({ discount_amount: "1500.01" }), {
+        code: CHECK_VIOLATION,
+        constraint: "customer_order_discount_amount_check",
+      });
+      // The subtotal follows the quantity: 150.00 x 9 = 1350.00.
+      await assertDatabaseError(insertOrder({ quantity: "9", discount_amount: "1350.01" }), {
+        code: CHECK_VIOLATION,
+        constraint: "customer_order_discount_amount_check",
+      });
+      // A discount of the whole subtotal leaves a zero discounted total.
+      await insertOrder({ discount_rate: "1.00", discount_amount: "1500.00" });
+    });
+
+    test("derived amounts must fit NUMERIC(12,2)", async () => {
+      // The CHECK expressions are unbounded NUMERIC, so an out-of-range derived
+      // amount is a CHECK violation, not a numeric overflow.
+      await assertDatabaseError(insertOrder({ quantity: "2", unit_price: "9999999999.99" }), {
+        code: CHECK_VIOLATION,
+        constraint: "customer_order_merchandise_subtotal_range_check",
+      });
+      // 9999.99 x 1000001 is exactly 9999999999.99; one more unit is beyond it.
+      await assertDatabaseError(insertOrder({ quantity: "1000002", unit_price: "9999.99" }), {
+        code: CHECK_VIOLATION,
+        constraint: "customer_order_merchandise_subtotal_range_check",
+      });
+      // A discount does not bring an out-of-range subtotal back into range.
+      await assertDatabaseError(
+        insertOrder({
+          quantity: "2",
+          unit_price: "9999999999.99",
+          discount_amount: "9999999999.99",
+          shipping_cost: "0.00",
+        }),
+        { code: CHECK_VIOLATION, constraint: "customer_order_merchandise_subtotal_range_check" },
+      );
+
+      // Subtotal in range, order total one cent beyond it.
+      await assertDatabaseError(
+        insertOrder({ quantity: "1", unit_price: "9999999999.99", shipping_cost: "0.01" }),
+        { code: CHECK_VIOLATION, constraint: "customer_order_order_total_range_check" },
+      );
+      await assertDatabaseError(
+        insertOrder({
+          quantity: "1",
+          unit_price: "9999999999.99",
+          discount_amount: "0.01",
+          shipping_cost: "0.02",
+        }),
+        { code: CHECK_VIOLATION, constraint: "customer_order_order_total_range_check" },
+      );
+
+      // Boundaries: the subtotal and the order total exactly at 9999999999.99.
+      await insertOrder({ quantity: "1", unit_price: "9999999999.99", shipping_cost: "0.00" });
+      await insertOrder({ quantity: "1000001", unit_price: "9999.99", shipping_cost: "0.00" });
+      await insertOrder({ quantity: "1", unit_price: "9999999999.98", shipping_cost: "0.01" });
+      await insertOrder({
+        quantity: "1",
+        unit_price: "9999999999.99",
+        discount_amount: "0.01",
+        shipping_cost: "0.01",
+      });
+      await insertOrder({
+        quantity: "1000000",
+        unit_price: "9999.99",
+        discount_rate: "0.20",
+        discount_amount: "1999998000.00",
+        shipping_cost: "2000007999.99",
+      });
+    });
+
+    test("totals derived by the mapping equal PostgreSQL's exact NUMERIC arithmetic", async () => {
+      const ids = [
+        await insertOrder(),
+        await insertOrder({ quantity: "3", unit_price: "0.10" }),
+        await insertOrder({
+          quantity: "2147483647",
+          unit_price: "0.01",
+          discount_amount: "0.01",
+          shipping_cost: "0.01",
+        }),
+        await insertOrder({
+          quantity: "1000000",
+          unit_price: "9999.99",
+          discount_rate: "0.20",
+          discount_amount: "1999998000.00",
+        }),
+      ];
+      const computed = await db.pool.query<{
+        id: string;
+        merchandiseSubtotal: string;
+        discountedMerchandiseTotal: string;
+        orderTotal: string;
+      }>(
+        `SELECT id,
+                (unit_price * quantity)::text AS "merchandiseSubtotal",
+                (unit_price * quantity - discount_amount)::text AS "discountedMerchandiseTotal",
+                (unit_price * quantity - discount_amount + shipping_cost)::text AS "orderTotal"
+         FROM customer_order WHERE id = ANY($1::uuid[])`,
+        [ids],
+      );
+      assert.equal(computed.rowCount, ids.length);
+      const rows = await db.prisma.order.findMany({
+        where: { id: { in: ids } },
+        include: { allocations: true },
+      });
+      const mapped = new Map(rows.map((row) => [row.id, toOrderRecord(row)]));
+      for (const expected of computed.rows) {
+        const { id, merchandiseSubtotal, discountedMerchandiseTotal, orderTotal } = mapped.get(
+          expected.id,
+        )!;
+        assert.deepEqual(
+          { id, merchandiseSubtotal, discountedMerchandiseTotal, orderTotal },
+          expected,
+        );
+      }
+      assert.deepEqual(
+        computed.rows.map((row) => row.orderTotal).sort(),
+        ["10.30", "1510.00", "21474836.47", "7999992010.00"].sort(),
+      );
     });
 
     test("discount rates beyond NUMERIC(3,2) are rounded to scale or overflow", async () => {
@@ -678,6 +749,8 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
   });
 
   describe("money round-trips", () => {
+    // Quantity 1 with a full discount lets every stored money column hold the
+    // same amount: subtotal = amount, discounted total = 0.00, total = amount.
     for (const amount of ["0.00", "0.01", "9999999999.99"]) {
       test(`NUMERIC(12,2) round-trips ${amount} exactly through Prisma and pg`, async () => {
         const order = await db.prisma.order.create({
@@ -688,37 +761,55 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
             destinationLatitude: 0,
             destinationLongitude: 0,
             unitPrice: amount,
-            merchandiseSubtotal: amount,
-            discountRate: "0.00",
-            discountAmount: "0.00",
-            discountedMerchandiseTotal: amount,
-            shippingCost: "0.00",
-            orderTotal: amount,
+            discountRate: "1.00",
+            discountAmount: amount,
+            shippingCost: amount,
           },
         });
-        assert.equal(formatMoney(order.orderTotal), amount);
-        const reread = await db.prisma.order.findUniqueOrThrow({ where: { id: order.id } });
-        assert.equal(formatMoney(reread.unitPrice), amount);
-        assert.equal(formatMoney(reread.orderTotal), amount);
-        const raw = await db.pool.query<{ order_total: string }>(
-          "SELECT order_total FROM customer_order WHERE id = $1",
+        assert.equal(formatMoney(order.unitPrice), amount);
+        assert.equal(formatMoney(order.discountAmount), amount);
+        assert.equal(formatMoney(order.shippingCost), amount);
+        const reread = await db.prisma.order.findUniqueOrThrow({
+          where: { id: order.id },
+          include: { allocations: true },
+        });
+        const record = toOrderRecord(reread);
+        assert.deepEqual(
+          {
+            unitPrice: record.unitPrice,
+            discountAmount: record.discountAmount,
+            shippingCost: record.shippingCost,
+            merchandiseSubtotal: record.merchandiseSubtotal,
+            discountedMerchandiseTotal: record.discountedMerchandiseTotal,
+            orderTotal: record.orderTotal,
+          },
+          {
+            unitPrice: amount,
+            discountAmount: amount,
+            shippingCost: amount,
+            merchandiseSubtotal: amount,
+            discountedMerchandiseTotal: "0.00",
+            orderTotal: amount,
+          },
+        );
+        const raw = await db.pool.query(
+          "SELECT unit_price, discount_amount, shipping_cost FROM customer_order WHERE id = $1",
           [order.id],
         );
-        assert.equal(raw.rows[0]!.order_total, amount);
+        assert.deepEqual(raw.rows, [
+          { unit_price: amount, discount_amount: amount, shipping_cost: amount },
+        ]);
       });
     }
 
     test("amounts beyond NUMERIC(12,2) are rejected rather than stored", async () => {
-      await assertDatabaseError(
-        insertOrder({
-          quantity: "1",
-          unit_price: "10000000000.00",
-          merchandise_subtotal: "10000000000.00",
-          discounted_merchandise_total: "10000000000.00",
-          order_total: "10000000010.00",
-        }),
-        { code: NUMERIC_OVERFLOW },
-      );
+      // The value overflows while being coerced to the column type, before any
+      // CHECK is evaluated.
+      for (const column of ["unit_price", "discount_amount", "shipping_cost"] as const) {
+        await assertDatabaseError(insertOrder({ quantity: "1", [column]: "10000000000.00" }), {
+          code: NUMERIC_OVERFLOW,
+        });
+      }
       const orderNumber = unique("ORD");
       await assert.rejects(
         db.prisma.order.create({
@@ -729,12 +820,9 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
             destinationLatitude: 0,
             destinationLongitude: 0,
             unitPrice: "10000000000.00",
-            merchandiseSubtotal: "10000000000.00",
             discountRate: "0.00",
             discountAmount: "0.00",
-            discountedMerchandiseTotal: "10000000000.00",
             shippingCost: "0.00",
-            orderTotal: "10000000000.00",
           },
         }),
         /numeric field overflow|22003/i,
@@ -758,12 +846,9 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
           destinationLatitude: 13.7563,
           destinationLongitude: 100.5018,
           unitPrice: "150.00",
-          merchandiseSubtotal: "4500.00",
           discountRate: "0.05",
           discountAmount: "225.00",
-          discountedMerchandiseTotal: "4275.00",
           shippingCost: "123.45",
-          orderTotal: "4398.45",
           allocations: {
             create: [
               { warehouseId: warehouseA, quantity: 20 },
@@ -774,6 +859,8 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         include: { allocations: { orderBy: { quantity: "desc" } } },
       });
 
+      // merchandiseSubtotal, discountedMerchandiseTotal, and orderTotal are
+      // derived by the mapping; the row stores only the facts created above.
       const order = toOrderRecord(created);
       assert.deepEqual(
         {

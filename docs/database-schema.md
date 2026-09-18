@@ -34,13 +34,10 @@ erDiagram
         int quantity "> 0"
         float8 destination_latitude "-90..90"
         float8 destination_longitude "-180..180"
-        numeric unit_price "12,2"
-        numeric merchandise_subtotal "12,2; = unit_price * quantity"
+        numeric unit_price "12,2; >= 0"
         numeric discount_rate "3,2; 0..1"
-        numeric discount_amount "12,2"
-        numeric discounted_merchandise_total "12,2"
-        numeric shipping_cost "12,2"
-        numeric order_total "12,2"
+        numeric discount_amount "12,2; 0..unit_price * quantity"
+        numeric shipping_cost "12,2; >= 0"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -56,13 +53,15 @@ erDiagram
 
 `order_allocation` has a unique `(order_id, warehouse_id)` pair: one allocation per warehouse per Order.
 
+`customer_order` has no subtotal or total columns: the merchandise subtotal, discounted merchandise total, and order total are derived on read (see [Normalization](#normalization-3nf)).
+
 ## Tables
 
-| Table              | Purpose                                                                                 |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| `warehouse`        | Warehouse location and current Warehouse Inventory (`stock`)                            |
-| `customer_order`   | Accepted Order: duplicate-request key, Order Request, and immutable commercial snapshot |
-| `order_allocation` | Warehouse Allocations of an accepted Order                                              |
+| Table              | Purpose                                                                                |
+| ------------------ | -------------------------------------------------------------------------------------- |
+| `warehouse`        | Warehouse location and current Warehouse Inventory (`stock`)                           |
+| `customer_order`   | Accepted Order: duplicate-request key, Order Request, and the commercial facts applied |
+| `order_allocation` | Warehouse Allocations of an accepted Order                                             |
 
 ## Decisions
 
@@ -70,9 +69,15 @@ erDiagram
 
 - Each fact is stored once and depends only on its table's key. Warehouses, Orders, and allocations are separate entities; relationships use foreign keys.
 - The Order Request (quantity and destination) lives on the accepted Order, together with the client's `submission_key`. Every column of `customer_order` depends on the Order itself. Rejected requests are not stored at all: a request whose key has no accepted Order is evaluated fresh, so there is no separate attempt entity to normalize into.
-- Commercial amounts on `customer_order` are a deliberate historical snapshot, as required by the design decisions: accepted prices, discounts, shipping, and totals are preserved rather than recalculated from current commercial rules. `merchandise_subtotal`, `discounted_merchandise_total`, and `order_total` are derivable from other columns in the same row. They are stored anyway because they are the exact amounts returned to the customer, and intra-row CHECKs keep them consistent (`subtotal = unit_price * quantity`, `discounted = subtotal - discount`, `total = discounted + shipping`). The discount rounding rule belongs to the domain and is not enforced by the schema.
-- `unit_price` is stored so that each snapshot records the applied price alongside the amounts derived from it.
-- The subtotal CHECK multiplies `NUMERIC(12,2)` by an `integer` in unbounded `NUMERIC`, so the comparison is exact at every quantity. A product beyond `NUMERIC(12,2)` cannot be stored in `merchandise_subtotal` at all: the insert fails with a numeric overflow (`22003`) before any CHECK is evaluated, so the constraint never silently accepts a rounded subtotal.
+- `customer_order` stores only independent commercial facts: `unit_price`, `discount_rate`, `discount_amount`, and `shipping_cost`, next to the request's `quantity`. No column is computable from the others, so no non-key column depends on another non-key column.
+- All four are stored because they are historical facts about the accepted Order, as required by the design decisions: the price, discount, and shipping that were applied are preserved rather than recalculated from current commercial rules. `discount_rate` and `discount_amount` are both kept because the amount is not a function of the rate in the schema: rounding the discount to cents is a domain rule, so the rate records which tier applied and the amount records what was actually deducted.
+- The merchandise subtotal (`unit_price * quantity`), the discounted merchandise total (subtotal minus `discount_amount`), and the order total (discounted total plus `shipping_cost`) are not stored. `toOrderRecord` in `src/records.ts` derives them on read with exact decimal arithmetic (Prisma `Decimal`, never a JavaScript number). The inputs are exact `NUMERIC(12,2)` values and the operations are a multiplication by an integer, a subtraction, and an addition, so the amounts returned always equal what was charged; there is no stored copy that could disagree.
+- CHECKs keep every derived amount valid and storable as `NUMERIC(12,2)`, so a row whose totals could not be returned cannot be stored:
+  - `customer_order_discount_amount_check`: `discount_amount >= 0 AND discount_amount <= unit_price * quantity`. The discount cannot exceed the subtotal, so the discounted total and the order total are never negative.
+  - `customer_order_merchandise_subtotal_range_check`: `unit_price * quantity <= 9999999999.99`. The discounted total is bounded by the subtotal, so it needs no check of its own.
+  - `customer_order_order_total_range_check`: `unit_price * quantity - discount_amount + shipping_cost <= 9999999999.99`.
+- The CHECK expressions multiply `NUMERIC(12,2)` by an `integer` in unbounded `NUMERIC`, so they are exact at every quantity and cannot overflow: an out-of-range derived amount fails as a CHECK violation (`23514`). The mapping applies the same range on read and refuses an amount beyond `NUMERIC(12,2)` instead of returning a rounded one.
+- PostgreSQL evaluates a table's CHECKs in constraint-name order, so `customer_order_discount_amount_check` runs before `customer_order_quantity_check` and `customer_order_unit_price_check`. A negative unit price, or a negative quantity at a positive price, makes the subtotal negative and is reported by the discount CHECK. If both are negative, the subtotal is positive and `customer_order_quantity_check` reports the row. `customer_order_unit_price_check` remains as an explicit statement of the column rule.
 
 ### Identifiers and keys
 
@@ -89,13 +94,13 @@ erDiagram
 
 ### Money and coordinates
 
-- Monetary amounts are `NUMERIC(12,2)`; the discount rate is `NUMERIC(3,2)` constrained to 0 through 1, enough for every PRD tier (0.00, 0.05, 0.10, 0.15, 0.20). PostgreSQL rounds a rate with more than two decimal places to the column scale instead of rejecting it, so a finer tier (such as 12.5%) needs a migration widening the scale first. Amounts are nonnegative. Values outside `NUMERIC(12,2)`, such as `10000000000.00`, fail with a numeric overflow rather than being stored.
-- Mappings convert Prisma `Decimal` values to fixed two-decimal strings (`"150.00"`) using the decimal value itself, never a JavaScript number. They refuse non-finite values or values with more decimal places than the column scale instead of rounding. Write amounts to Prisma as decimal strings.
+- Monetary amounts are `NUMERIC(12,2)`; the discount rate is `NUMERIC(3,2)` constrained to 0 through 1, enough for every PRD tier (0.00, 0.05, 0.10, 0.15, 0.20). PostgreSQL rounds a rate with more than two decimal places to the column scale instead of rejecting it, so a finer tier (such as 12.5%) needs a migration widening the scale first. Stored amounts are nonnegative. A stored value outside `NUMERIC(12,2)`, such as `10000000000.00`, fails with a numeric overflow (`22003`) rather than being stored; a derived amount outside that range fails the range CHECKs above.
+- Mappings convert Prisma `Decimal` values to fixed two-decimal strings (`"150.00"`) using the decimal value itself, never a JavaScript number. They refuse non-finite values, values with more decimal places than the column scale, and amounts beyond `NUMERIC(12,2)` instead of rounding. Write amounts to Prisma as decimal strings.
 - Coordinates are `double precision`, which matches JavaScript number fidelity without decimal rounding. CHECKs bound warehouse and destination latitude to -90 through 90 and longitude to -180 through 180 (inclusive); `NaN` and infinities fail these checks.
 
 ### Outcomes and retention
 
-- The schema stores application outcomes and snapshots, never HTTP status codes or response envelopes. The HTTP adapter maps outcomes to responses.
+- The schema stores application outcomes and the facts of each accepted Order, never HTTP status codes or response envelopes. The HTTP adapter maps outcomes to responses.
 - Only accepted Orders are stored, and they are kept indefinitely. Cleanup is future work. A business rejection (insufficient stock or excessive shipping) is computed, returned, and forgotten, so there is no rejection history and a rejected request consumes no `submission_key`.
 - Every foreign key uses `ON DELETE RESTRICT ON UPDATE RESTRICT`. Deleting or re-keying a warehouse or Order that an allocation still references fails; nothing cascades.
 - The schema does not enforce that an Order's allocations sum to its quantity, or that allocations never exceed warehouse stock. These cross-row invariants belong to the SubmitOrder transaction.
@@ -138,4 +143,4 @@ The seed uses `INSERT ... ON CONFLICT (id) DO NOTHING`. Rerunning it never reple
 
 ## Verification
 
-`corepack pnpm test:integration` (with `DATABASE_TEST_URL` set) runs `packages/persistence/test/*.integration.test.ts` against real PostgreSQL. Each test file creates a uniquely named database next to `scos_test` on the disposable test server, applies the migrations with `prisma migrate deploy`, and drops the database afterwards. The tests cover clean migration and drift, timestamp columns and triggers on every table, timestamp behavior through Prisma and raw SQL, UUIDv7 defaults, constraints and restricted deletes, decimal round-trips, and seed reruns.
+`corepack pnpm test:integration` (with `DATABASE_TEST_URL` set) runs `packages/persistence/test/*.integration.test.ts` against real PostgreSQL. Each test file creates a uniquely named database next to `scos_test` on the disposable test server, applies the migrations with `prisma migrate deploy`, and drops the database afterwards. The tests cover clean migration and drift, timestamp columns and triggers on every table, timestamp behavior through Prisma and raw SQL, UUIDv7 defaults, constraints and restricted deletes, the derived-amount range checks, decimal round-trips, derived totals matching PostgreSQL's arithmetic, and seed reruns.
