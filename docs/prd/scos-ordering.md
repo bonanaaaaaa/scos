@@ -146,6 +146,7 @@ These rules apply to estimation and submission:
 
 - Core implementation was budgeted at approximately four hours, with review and deployment effort separate. The target discussed was Monday, September 21, 2026, Bangkok time; no more precise cutoff was given.
 - [Design decisions](../design-decisions.md) contain the agreed language/runtime, monorepo, architecture, persistence, enum-table, and served API contract constraints. These remain binding even though the PRD focuses on product behavior.
+- Generated database entity IDs use UUIDv7 for time-oriented sorting, as specified in the design decisions. Enum lookup tables retain text keys; submission retry identifiers retain their existing contract.
 - [Advisory verification ADR](../adr/0001-advisory-verification.md) defines the distinction between an estimate and acceptance.
 - [Submission replay ADR](../adr/0002-replay-submission-outcomes.md) defines stable outcomes per attempt and new identifiers for new attempts.
 - Dollar amounts are treated as USD for this single-currency challenge; international tax and customs charges are outside the supplied calculation rules.
