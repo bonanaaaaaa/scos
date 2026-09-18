@@ -36,21 +36,13 @@ Sources are the supplied `bangkok-software-engineer-interview-challenge-sc-1-.pd
 - **Ordering representative or integrating client:** submits an Order Request on behalf of a buyer, inspects an Order Estimate, and deliberately submits or retries an order attempt. This is a working persona, not a requirement for accounts or authentication.
 - **Challenge evaluator or developer:** starts the backend, reads its served API documentation, exercises the flows, and verifies the required behavior.
 
-## 3. User stories
+## 3. Acceptance criteria
 
-- **S1 [P1] — Estimate:** As an ordering representative, I want to verify quantity and Destination so that I can see availability, the applicable discount, shipping, and the Order Total before committing.
-- **S2 [P1] — Submit:** As an ordering representative, I want a valid request accepted against current inventory so that I receive an order number and a reliable record of the accepted amounts.
-- **S3 [P1] — Retry safely:** As an integrating client, I want to retry an uncertain submission without creating another Order or consuming inventory twice.
-- **S4 [P1] — Understand invalid requests:** As an integrating client, I want input errors and business rejections distinguished so that I can correct a request or begin a new attempt appropriately.
-- **S5 [P1] — Discover the interface:** As an evaluator, I want the running application to serve machine-readable and interactive API documentation so that I can exercise its supported behavior.
-- **S6 [P1] — Reproduce and verify:** As an evaluator, I want documented local setup, representative starting inventory, and meaningful automated checks so that I can assess the submission without bespoke environment knowledge.
-- **S7 [P2] — Hosted demonstration:** As an evaluator, I want a disposable hosted demonstration so that I can exercise the backend remotely. Provisioning is a separate phase with unresolved hosting and budget prerequisites; it does not gate the core local submission.
-
-## 4. Acceptance criteria
+Core capabilities below are P1 (required). The hosted demonstration is P2 and remains a separate phase dependent on hosting, budget, and provisioning authorization.
 
 ### Shared commercial rules
 
-These rules apply to S1 and S2:
+These rules apply to estimation and submission:
 
 - The single product is SCOS Station P1 Pro, priced at $150 per unit and weighing 365 grams per unit.
 - Volume Discount is 0% below 25 units, 5% from 25, 10% from 50, 15% from 100, and 20% from 250. Apply only the highest qualifying tier to the entire Merchandise Subtotal, regardless of warehouse splits.
@@ -59,7 +51,7 @@ These rules apply to S1 and S2:
 - Order Total includes Discounted Merchandise Total plus Shipping Cost. Returned and retained monetary amounts agree and are represented to clients as decimal strings.
 - Fulfillment is all-or-nothing. No partial Order is offered when the full quantity is unavailable.
 
-### S1 — Estimate
+### Estimate
 
 - **Given** a positive integer quantity and valid Destination with sufficient stock, **when** verification runs, **then** it returns Merchandise Subtotal, Volume Discount, Discounted Merchandise Total, Shipping Cost, Order Total, and validity using the shared rules.
 - **Given** a request requiring multiple warehouses, **when** an estimate is calculated, **then** its Shipping Plan fulfills the entire quantity at minimum shipping cost and never allocates more than a warehouse holds.
@@ -67,16 +59,16 @@ These rules apply to S1 and S2:
 - **Given** total stock is insufficient, **when** verification runs, **then** it returns an invalid estimate with an insufficient-stock reason, merchandise and discount amounts, and unavailable shipping/order totals represented as null.
 - **Given** any verification request, **when** it completes, **then** it creates no Order, consumes or reserves no inventory, and guarantees no later submission outcome.
 
-### S2 — Submit
+### Submit
 
 - **Given** a valid request against current inventory, **when** submitted successfully, **then** one Order receives a unique order number and its complete warehouse allocations are deducted immediately.
 - **Given** an accepted Order, **when** its record is inspected, **then** it preserves quantity, Destination, applied pricing and discount, Shipping Cost, Order Total, and Warehouse Allocations as accepted at submission.
 - **Given** inventory changed after verification, **when** the request is submitted, **then** the result is recalculated; it may cost more or become invalid rather than honoring stale availability.
 - **Given** two submissions compete for remaining inventory, **when** processed concurrently, **then** only fulfillable Orders succeed and no warehouse stock becomes negative.
 - **Given** a failure before acceptance is committed, **when** processing terminates, **then** no partial Order, partial inventory deduction, or completed submission outcome remains.
-- **Given** a business rejection, **when** submission completes, **then** no Order is created and inventory is unchanged, while the rejection remains available for replay under S3.
+- **Given** a business rejection, **when** submission completes, **then** no Order is created and inventory is unchanged, while the rejection remains available for replay under the retry requirements.
 
-### S3 — Retry safely
+### Retry safely
 
 - **Given** a submission attempt identifier and the same request inputs, **when** the caller retries after successful acceptance, **then** it receives the original accepted outcome without another Order or inventory deduction.
 - **Given** a business rejection saved for an attempt, **when** the same attempt is retried, **then** the original rejection is returned even if circumstances have changed.
@@ -86,21 +78,21 @@ These rules apply to S1 and S2:
 - **Given** malformed input or a transient failure that did not commit an outcome, **when** the request is corrected or retried, **then** the identifier has not been consumed by that failed attempt.
 - **Given** a completed business outcome, **when** the application restarts, **then** replay remains available. No automatic expiry is required for this challenge.
 
-### S4 — Understand invalid requests
+### Understand invalid requests
 
 - **Given** zero, negative, fractional, missing, or otherwise invalid quantity, or missing/non-finite/out-of-range coordinates, **when** a request is received, **then** it is rejected as invalid input without inventory or Order changes.
 - **Given** coordinates at valid geographic boundaries, **when** verification or submission occurs, **then** the boundaries are accepted: latitude -90 through 90 and longitude -180 through 180, inclusive.
 - **Given** a well-formed but unfulfillable request, **when** verified, **then** the availability check succeeds and reports invalidity; **when** submitted, **then** it reports a business rejection. A business rejection is distinguishable from malformed input, identifier conflict, and temporary service failure.
 - **Given** a temporary processing failure, **when** the caller receives the error, **then** the response does not imply acceptance; repeating the same attempt can recover any previously committed result.
 
-### S5 — Discover the interface
+### Discover the interface
 
 - **Given** the application is running, **when** an evaluator requests its API specification, **then** the application serves a machine-readable OpenAPI document describing verification, submission, and health behavior.
 - **Given** the application is running, **when** an evaluator opens its documentation, **then** interactive API documentation is served by the application itself.
 - **Given** the documentation, **when** an evaluator follows its examples, **then** request constraints, decimal-string amounts, nullable totals, successful outcomes, rejections, conflicts, and retry semantics match actual behavior.
 - **Given** an interface change, **when** verification runs, **then** specification validity and representative response conformance are checked so published documentation cannot silently drift.
 
-### S6 — Reproduce and verify
+### Reproduce and verify
 
 - **Given** a fresh checkout and documented prerequisites, **when** an evaluator follows setup instructions, **then** they can start the local application and database, initialize starting data, access documentation, and run the checks.
 - **Given** a newly initialized development dataset, **when** inventory is inspected, **then** it contains the following warehouses with the supplied coordinates and unit counts:
@@ -110,18 +102,18 @@ These rules apply to S1 and S2:
   - Paris: 49.009722, 2.547778; 694 units.
   - Warsaw: 52.165833, 20.967222; 245 units.
   - Hong Kong: 22.308889, 113.914444; 419 units.
-- **Given** the verification suite, **when** executed, **then** it exercises the commercial boundaries, allocation, rollback, concurrent submissions, and replay scenarios in S1-S4. Database-dependent guarantees are checked against a real database.
+- **Given** the verification suite, **when** executed, **then** it exercises the commercial boundaries, allocation, rollback, concurrent submissions, and replay scenarios defined above. Database-dependent guarantees are checked against a real database.
 - **Given** unfinished or deferred work, **when** the evaluator reads the README, **then** limitations and next steps are explicit rather than represented as complete.
 
-### S7 — Hosted demonstration
+### Hosted demonstration
 
 - **Given** an agreed deployment budget, hosting configuration, and authorization to provision, **when** the demonstration is deployed, **then** the core flows and served documentation are verified against that environment.
 - **Given** the demonstration is no longer needed, **when** its teardown instructions are followed, **then** the created resources can be identified and removed with data-loss implications made clear.
 
-## 5. Edge cases
+## 4. Edge cases
 
 - **Empty state:** zero available inventory is Insufficient Stock for every otherwise-valid positive quantity. No partial shipment is presented as a complete estimate.
-- **Loading state:** no product UI is required. Clients can have an in-flight submission with an unknown outcome; repeating its identifier follows S3 rather than creating a deliberate new attempt.
+- **Loading state:** no product UI is required. Clients can have an in-flight submission with an unknown outcome; repeating its identifier follows the retry requirements rather than creating a deliberate new attempt.
 - **Mid-flow failure:** order creation, inventory consumption, and accepted-outcome persistence succeed together or leave no partial effects. Committed business rejections remain replayable. A lost response after commit is recovered by retrying the same attempt.
 - **Permissions/authentication:** user accounts, roles, and entitlements are not defined by the challenge. This does not authorize public unauthenticated exposure; access controls remain a deployment decision.
 - **Boundary inputs:** test 24/25, 49/50, 99/100, and 249/250 units; exact stock exhaustion; valid coordinate endpoints; and shipping below, equal to, and above the limit after rounding.
@@ -129,7 +121,7 @@ These rules apply to S1 and S2:
 - **Distance and rounding:** a Destination at a warehouse may have zero shipping cost; equal-distance stock choices are deterministic. Rounding individual allocations must not replace the agreed combined-charge rounding rule.
 - **Historical values:** subsequent inventory or commercial changes do not rewrite accepted Order amounts or saved submission outcomes.
 
-## 6. Measurable success criteria
+## 5. Measurable success criteria
 
 - Every P1 acceptance scenario has an executable check or documented reproducible verification, with no unresolved failing required check at handoff.
 - Concurrency tests produce zero negative-stock results and zero duplicate Orders for the same submission attempt.
@@ -140,7 +132,7 @@ These rules apply to S1 and S2:
 
 No numerical latency, throughput, uptime, or cloud-cost target has been agreed. Do not substitute invented targets for acceptance criteria.
 
-## 7. Non-goals
+## 6. Non-goals
 
 - A customer-facing frontend, shopping cart, payment collection, tax calculation, currency conversion, or multiple products.
 - Stock reservations or a guaranteed quote between verification and submission.
@@ -150,7 +142,7 @@ No numerical latency, throughput, uptime, or cloud-cost target has been agreed. 
 - Automatic expiry of saved submission outcomes in this challenge.
 - Creating GitHub issues, sending the submission, merging PRs, or provisioning cloud resources as part of authoring this PRD.
 
-## 8. Assumptions, dependencies, and open questions
+## 7. Assumptions, dependencies, and open questions
 
 ### Accepted constraints and references
 
