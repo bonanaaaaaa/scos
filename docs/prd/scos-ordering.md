@@ -1,6 +1,6 @@
 ---
 github_project: "https://github.com/users/bonanaaaaaa/projects/1"
-parent_issue: ""
+parent_issue: "https://github.com/bonanaaaaaa/scos/issues/6"
 related_adrs:
   - docs/adr/0003-database-managed-timestamps.md
   - docs/adr/0001-advisory-verification.md
@@ -100,6 +100,7 @@ These rules apply to estimation and submission:
 
 #### Understand invalid requests
 
+- Request validation uses Zod through the Standard Schema-compatible Hono middleware (`@hono/standard-validator`) at the HTTP boundary, with the constraints and error behavior below.
 - **Given** zero, negative, fractional, missing, or otherwise invalid quantity, or missing/non-finite/out-of-range coordinates, **when** a request is received, **then** it is rejected as invalid input without inventory or Order changes.
 - **Given** coordinates at valid geographic boundaries, **when** verification or submission occurs, **then** the boundaries are accepted: latitude -90 through 90 and longitude -180 through 180, inclusive.
 - **Given** a well-formed but unfulfillable request, **when** verified, **then** the availability check succeeds and reports invalidity; **when** submitted, **then** it reports a business rejection. A business rejection is distinguishable from malformed input, identifier conflict, and temporary service failure.
@@ -112,8 +113,15 @@ These rules apply to estimation and submission:
 - **Given** the documentation, **when** an evaluator follows its examples, **then** request constraints, decimal-string amounts, nullable totals, successful outcomes, rejections, conflicts, and retry semantics match actual behavior.
 - **Given** an interface change, **when** verification runs, **then** specification validity and representative response conformance are checked so published documentation cannot silently drift.
 
+#### Observe runtime behavior
+
+- **Given** API traffic, **when** requests complete, **then** Pino structured JSON logs to stdout with correlation-only `@opentelemetry/instrumentation-pino`, traces and metrics describe request timing, status and business outcomes using documented OpenTelemetry conventions and shared service metadata.
+- **Given** active trace context, **when** related logs and spans are emitted, **then** they correlate without leaking context between requests. Metrics use bounded dimensions; telemetry excludes secrets, raw request bodies and customer coordinates.
+- **Given** unavailable telemetry export, **when** an order request executes, **then** its business result and transaction guarantees remain unchanged. Local telemetry verification is reproducible without a hosted account.
+
 #### Reproduce and verify
 
+- **Given** missing or invalid required environment configuration, **when** the server or Lambda runtime initializes, **then** Zod validation prevents it from accepting requests and reports safe variable names/reasons without revealing values. Required variables and safe defaults are documented; offline specification export remains independent of deployment secrets.
 - **Given** a fresh checkout and documented prerequisites, **when** an evaluator follows setup instructions, **then** they can start the local application and database, initialize starting data, access documentation, and run the checks.
 - **Given** a newly initialized development dataset, **when** inventory is inspected, **then** it contains the following warehouses with the supplied coordinates and unit counts:
   - Los Angeles: 33.9425, -118.408056; 355 units.
