@@ -67,7 +67,7 @@ async function insertSubmission(outcome: "ACCEPTED" | "REJECTED", quantity = 10)
 const acceptedAmounts = {
   unit_price: "150.00",
   merchandise_subtotal: "1500.00",
-  discount_rate: "0.0000",
+  discount_rate: "0.00",
   discount_amount: "0.00",
   discounted_merchandise_total: "1500.00",
   shipping_cost: "10.00",
@@ -113,7 +113,7 @@ async function insertRejection(
     `INSERT INTO submission_rejection (submission_id, submission_outcome, reason, unit_price,
        merchandise_subtotal, discount_rate, discount_amount, discounted_merchandise_total,
        shipping_cost, order_total)
-     VALUES ($1, $2, $3, '150.00', '1500.00', '0.0000', '0.00', '1500.00', $4, $5)`,
+     VALUES ($1, $2, $3, '150.00', '1500.00', '0.00', '0.00', '1500.00', $4, $5)`,
     [submissionId, outcome, reason, shippingCost, orderTotal],
   );
 }
@@ -550,8 +550,8 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
           { discounted_merchandise_total: "1499.00", order_total: "1509.00" },
           "customer_order_discounted_merchandise_total_check",
         ],
-        [{ discount_rate: "1.5000" }, "customer_order_discount_rate_check"],
-        [{ discount_rate: "-0.0100" }, "customer_order_discount_rate_check"],
+        [{ discount_rate: "1.50" }, "customer_order_discount_rate_check"],
+        [{ discount_rate: "-0.01" }, "customer_order_discount_rate_check"],
         [{ unit_price: "-1.00" }, "customer_order_unit_price_check"],
         [{ shipping_cost: "-10.00", order_total: "1490.00" }, "customer_order_shipping_cost_check"],
       ];
@@ -562,7 +562,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         });
       }
       await insertOrder(await insertSubmission("ACCEPTED"), {
-        discount_rate: "0.1500",
+        discount_rate: "0.15",
         discount_amount: "225.00",
         discounted_merchandise_total: "1275.00",
         shipping_cost: "0.00",
@@ -747,7 +747,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
             submissionId: submission.id,
             unitPrice: amount,
             merchandiseSubtotal: amount,
-            discountRate: "0.0000",
+            discountRate: "0.00",
             discountAmount: "0.00",
             discountedMerchandiseTotal: amount,
             shippingCost: "0.00",
@@ -781,7 +781,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
             submissionId: submission,
             unitPrice: "10000000000.00",
             merchandiseSubtotal: "10000000000.00",
-            discountRate: "0.0000",
+            discountRate: "0.00",
             discountAmount: "0.00",
             discountedMerchandiseTotal: "10000000000.00",
             shippingCost: "0.00",
@@ -812,7 +812,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
               orderNumber: unique("ORD"),
               unitPrice: "150.00",
               merchandiseSubtotal: "4500.00",
-              discountRate: "0.0500",
+              discountRate: "0.05",
               discountAmount: "225.00",
               discountedMerchandiseTotal: "4275.00",
               shippingCost: "123.45",
@@ -851,7 +851,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         {
           unitPrice: "150.00",
           merchandiseSubtotal: "4500.00",
-          discountRate: "0.0500",
+          discountRate: "0.05",
           discountAmount: "225.00",
           discountedMerchandiseTotal: "4275.00",
           shippingCost: "123.45",
@@ -885,7 +885,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
               reason: "INSUFFICIENT_STOCK",
               unitPrice: "150.00",
               merchandiseSubtotal: "750000.00",
-              discountRate: "0.2000",
+              discountRate: "0.20",
               discountAmount: "150000.00",
               discountedMerchandiseTotal: "600000.00",
             },
@@ -900,7 +900,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         reason: "INSUFFICIENT_STOCK",
         unitPrice: "150.00",
         merchandiseSubtotal: "750000.00",
-        discountRate: "0.2000",
+        discountRate: "0.20",
         discountAmount: "150000.00",
         discountedMerchandiseTotal: "600000.00",
         shippingCost: null,
@@ -921,7 +921,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
               reason: "SHIPPING_EXCEEDS_LIMIT",
               unitPrice: "150.00",
               merchandiseSubtotal: "150.00",
-              discountRate: "0.0000",
+              discountRate: "0.00",
               discountAmount: "0.00",
               discountedMerchandiseTotal: "150.00",
               shippingCost: "22.51",

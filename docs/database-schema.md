@@ -58,7 +58,7 @@ erDiagram
         text submission_outcome FK "always ACCEPTED"
         numeric unit_price "12,2"
         numeric merchandise_subtotal "12,2"
-        numeric discount_rate "5,4; 0..1"
+        numeric discount_rate "3,2; 0..1"
         numeric discount_amount "12,2"
         numeric discounted_merchandise_total "12,2"
         numeric shipping_cost "12,2"
@@ -80,7 +80,7 @@ erDiagram
         text reason FK
         numeric unit_price "12,2"
         numeric merchandise_subtotal "12,2"
-        numeric discount_rate "5,4; 0..1"
+        numeric discount_rate "3,2; 0..1"
         numeric discount_amount "12,2"
         numeric discounted_merchandise_total "12,2"
         numeric shipping_cost "nullable"
@@ -133,7 +133,7 @@ erDiagram
 
 ### Money and coordinates
 
-- Monetary amounts are `NUMERIC(12,2)`; the discount rate is `NUMERIC(5,4)` constrained to 0 through 1. Amounts are nonnegative. Values outside `NUMERIC(12,2)`, such as `10000000000.00`, fail with a numeric overflow rather than being stored.
+- Monetary amounts are `NUMERIC(12,2)`; the discount rate is `NUMERIC(3,2)` constrained to 0 through 1, enough for every PRD tier (0.00, 0.05, 0.10, 0.15, 0.20). PostgreSQL rounds a rate with more than two decimal places to the column scale instead of rejecting it, so a finer tier (such as 12.5%) needs a migration widening the scale first. Amounts are nonnegative. Values outside `NUMERIC(12,2)`, such as `10000000000.00`, fail with a numeric overflow rather than being stored.
 - Mappings convert Prisma `Decimal` values to fixed two-decimal strings (`"150.00"`) using the decimal value itself, never a JavaScript number. They refuse non-finite values or values with more decimal places than the column scale instead of rounding. Write amounts to Prisma as decimal strings.
 - Coordinates are `double precision`, which matches JavaScript number fidelity without decimal rounding. CHECKs bound latitude to -90 through 90 and longitude to -180 through 180 (inclusive); `NaN` and infinities fail these checks.
 - Insufficient-stock rejections have no shipping plan, so `shipping_cost` and `order_total` are `NULL`. Shipping-limit rejections record both. A CHECK enforces this per reason.

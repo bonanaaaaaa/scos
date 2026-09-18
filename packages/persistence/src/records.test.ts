@@ -56,15 +56,15 @@ test("money formats exactly to two decimal places without JavaScript numbers", (
   assert.equal(formatMoney(decimal("150.5")), "150.50");
   assert.equal(formatMoney(decimal("9999999999.99")), "9999999999.99");
   assert.equal(formatMoney(decimal("1234567890.1")), "1234567890.10");
-  assert.equal(formatDiscountRate(decimal("0.05")), "0.0500");
-  assert.equal(formatDiscountRate(decimal("1")), "1.0000");
+  assert.equal(formatDiscountRate(decimal("0.05")), "0.05");
+  assert.equal(formatDiscountRate(decimal("1")), "1.00");
 });
 
 test("money and rates refuse values that would need rounding or are not finite", () => {
   assert.throws(() => formatMoney(decimal("0.001")), /at most 2 decimal places/);
   assert.throws(() => formatMoney(decimal("NaN")), /Money must be finite/);
   assert.throws(() => formatMoney(decimal("Infinity")), /Money must be finite/);
-  assert.throws(() => formatDiscountRate(decimal("0.12345")), /at most 4 decimal places/);
+  assert.throws(() => formatDiscountRate(decimal("0.125")), /at most 2 decimal places/);
 });
 
 test("warehouse and submission rows map to plain records", () => {
@@ -145,7 +145,7 @@ test("order rows map to snapshots with decimal strings and allocations", () => {
     submissionId: order.submissionId,
     unitPrice: "150.00",
     merchandiseSubtotal: "15000.00",
-    discountRate: "0.1500",
+    discountRate: "0.15",
     discountAmount: "2250.00",
     discountedMerchandiseTotal: "12750.00",
     shippingCost: "0.01",
@@ -174,7 +174,7 @@ test("rejection rows map to a discriminated union by reason", () => {
   assert.equal(insufficient.shippingCost, null);
   assert.equal(insufficient.orderTotal, null);
   assert.equal(insufficient.discountedMerchandiseTotal, "12750.00");
-  assert.equal(insufficient.discountRate, "0.1500");
+  assert.equal(insufficient.discountRate, "0.15");
 
   const excessive = toSubmissionRejectionRecord(
     rejectionRow("SHIPPING_EXCEEDS_LIMIT", decimal("1912.51"), decimal("14662.51")),

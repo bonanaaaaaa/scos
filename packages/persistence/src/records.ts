@@ -49,9 +49,9 @@ export function formatMoney(value: Prisma.Decimal): string {
   return formatFixed(value, 2, "Money");
 }
 
-/** NUMERIC(5,4) discount rate as an exact decimal string, such as "0.1500". */
+/** NUMERIC(3,2) discount rate as an exact decimal string, such as "0.15". */
 export function formatDiscountRate(value: Prisma.Decimal): string {
-  return formatFixed(value, 4, "Discount rate");
+  return formatFixed(value, 2, "Discount rate");
 }
 
 function formatOptionalMoney(value: Prisma.Decimal | null): string | null {

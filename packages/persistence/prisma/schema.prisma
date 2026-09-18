@@ -91,7 +91,7 @@ model Order {
   submissionOutcome          String   @default("ACCEPTED") @map("submission_outcome")
   unitPrice                  Decimal  @map("unit_price") @db.Decimal(12, 2)
   merchandiseSubtotal        Decimal  @map("merchandise_subtotal") @db.Decimal(12, 2)
-  discountRate               Decimal  @map("discount_rate") @db.Decimal(5, 4)
+  discountRate               Decimal  @map("discount_rate") @db.Decimal(3, 2)
   discountAmount             Decimal  @map("discount_amount") @db.Decimal(12, 2)
   discountedMerchandiseTotal Decimal  @map("discounted_merchandise_total") @db.Decimal(12, 2)
   shippingCost               Decimal  @map("shipping_cost") @db.Decimal(12, 2)
@@ -130,7 +130,7 @@ model SubmissionRejection {
   reason                     String
   unitPrice                  Decimal  @map("unit_price") @db.Decimal(12, 2)
   merchandiseSubtotal        Decimal  @map("merchandise_subtotal") @db.Decimal(12, 2)
-  discountRate               Decimal  @map("discount_rate") @db.Decimal(5, 4)
+  discountRate               Decimal  @map("discount_rate") @db.Decimal(3, 2)
   discountAmount             Decimal  @map("discount_amount") @db.Decimal(12, 2)
   discountedMerchandiseTotal Decimal  @map("discounted_merchandise_total") @db.Decimal(12, 2)
   shippingCost               Decimal? @map("shipping_cost") @db.Decimal(12, 2)
