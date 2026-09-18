@@ -1,0 +1,21 @@
+{
+  "name": "@scos/ordering",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint --deny-warnings src",
+    "test": "node --test dist/index.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.5"
+  }
+}

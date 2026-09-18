@@ -6,3 +6,7 @@
 .claude/agents/
 .agents/skills/
 .codex/agents/
+.env
+.turbo
+dist
+node_modules
