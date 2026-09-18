@@ -3,6 +3,18 @@
 Pure SCOS domain layer: value objects, pricing, distance, warehouse allocation,
 Order Estimates, and the Order aggregate. No HTTP, Prisma, or persistence types.
 
+## Layout
+
+Hexagonal layering; adapters import only the package root (`src/index.ts`).
+
+- `src/domain/`: value objects, pricing, distance, allocation, estimates and the
+  Order aggregate. Pure, with no I/O and no ports.
+- `src/application/` (added with the use cases): VerifyOrder / SubmitOrder and
+  the driven ports that persistence implements.
+
+Dependencies point inward: `domain/` must not import `application/`. The
+`.oxlintrc.json` in this package enforces that with `no-restricted-imports`.
+
 ## Numeric policy
 
 - **Decimal arithmetic:** an isolated `decimal.js` clone (`defaults: true`,

@@ -1,0 +1,21 @@
+{
+  "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  "overrides": [
+    {
+      "files": ["src/domain/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/application", "**/application/**"],
+                "message": "Hexagonal layering: domain must not depend on the application layer."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
