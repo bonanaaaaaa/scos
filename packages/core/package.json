@@ -1,0 +1,24 @@
+{
+  "name": "@scos/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint --deny-warnings src",
+    "test": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@scos/typescript-config": "workspace:*",
+    "@types/node": "24.13.5",
+    "@vitest/coverage-v8": "5.0.1",
+    "vitest": "5.0.1"
+  }
+}

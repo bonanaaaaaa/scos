@@ -1,0 +1,58 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "remoteCache": {
+    "signature": true
+  },
+  "globalDependencies": ["libs/typescript-config/base.json"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": []
+    },
+    "lint": {
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["build", "^build"],
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": ["coverage/**"]
+    },
+    "test:integration": {
+      "dependsOn": ["build", "^build"],
+      "cache": false,
+      "env": ["DATABASE_TEST_URL", "DATABASE_URL"],
+      "persistent": false
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "env": ["PORT"],
+      "persistent": true
+    },
+    "start": {
+      "dependsOn": ["build", "^build"],
+      "cache": false,
+      "env": ["PORT"],
+      "persistent": true
+    },
+    "//#lint:root": {
+      "inputs": ["scripts/**"],
+      "outputs": []
+    },
+    "//#format:check:root": {
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": []
+    },
+    "//#test:root": {
+      "inputs": ["scripts/**", "vitest.config.mjs"],
+      "outputs": ["coverage/**"]
+    }
+  }
+}

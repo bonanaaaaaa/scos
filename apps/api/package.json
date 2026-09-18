@@ -1,0 +1,32 @@
+{
+  "name": "@scos/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint --deny-warnings src",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.1",
+    "@scos/core": "workspace:*",
+    "@scos/persistence": "workspace:*",
+    "hono": "4.13.8"
+  },
+  "devDependencies": {
+    "@scos/typescript-config": "workspace:*",
+    "@types/node": "24.13.5",
+    "@vitest/coverage-v8": "5.0.1",
+    "vitest": "5.0.1"
+  }
+}

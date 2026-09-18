@@ -1,0 +1,33 @@
+name: "Code Scanner"
+description: "Scan code for secrets"
+
+inputs:
+  base:
+    description: "Base branch to compare against"
+    required: true
+  head:
+    description: "Head branch to compare against"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Secret Scanning
+      id: trufflehog
+      uses: trufflesecurity/trufflehog@v3.97.3
+      continue-on-error: true
+      with:
+        base: ${{ inputs.base }}
+        head: ${{ inputs.head }}
+        extra_args: --debug --only-verified
+
+    - name: Scan Results Status
+      if: steps.trufflehog.outcome == 'failure'
+      shell: bash
+      run: exit 1
