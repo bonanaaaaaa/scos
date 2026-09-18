@@ -1,0 +1,41 @@
+name: Auto-assign
+
+on:
+  issues:
+    types: [opened]
+  # Use the trusted base workflow so fork PRs can also be assigned.
+  # Never check out or execute PR code in this workflow.
+  pull_request_target:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ASSIGNEE: bonanaaaaaa
+      ITEM_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+    steps:
+      - name: Assign if no assignee has been selected
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Read current assignments to also preserve changes made after opening.
+          endpoint="repos/${GH_REPO}/issues/${ITEM_NUMBER}"
+          count=$(gh api "$endpoint" --jq '.assignees | length')
+          if [ "$count" -gt 0 ]; then
+            echo "Already assigned; leaving existing assignees in place."
+            exit 0
+          fi
+
+          gh api --method POST "$endpoint/assignees" \
+            -f "assignees[]=$ASSIGNEE" \
+            --jq '.assignees[].login'
