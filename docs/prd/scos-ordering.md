@@ -31,16 +31,35 @@ The deliverable is a backend that separates advisory Order Estimates from commit
 
 Sources are the supplied `bangkok-software-engineer-interview-challenge-sc-1-.pdf` and the design discussion recorded in [design decisions](../design-decisions.md). The PDF is a requirements reference, not authorization to email, publish, or deploy. Domain language follows [CONTEXT.md](../../CONTEXT.md). Implementation constraints remain in the linked design decisions rather than being duplicated here.
 
-## 2. Users
+### Users
 
 - **Ordering representative or integrating client:** submits an Order Request on behalf of a buyer, inspects an Order Estimate, and deliberately submits or retries an order attempt. This is a working persona, not a requirement for accounts or authentication.
 - **Challenge evaluator or developer:** starts the backend, reads its served API documentation, exercises the flows, and verifies the required behavior.
 
-## 3. Acceptance criteria
+## 2. Goals
 
-Core capabilities below are P1 (required). The hosted demonstration is P2 and remains a separate phase dependent on hosting, budget, and provisioning authorization.
+- Help callers determine whether a requested quantity is fulfillable and understand its discounted merchandise, shipping, and total cost.
+- Accept complete Orders against current inventory without overselling or leaving partial effects.
+- Let callers recover a stable submission outcome after an uncertain response without creating duplicate Orders.
+- Make the backend understandable and reproducible through served API documentation, documented setup, and verifiable acceptance criteria.
 
-### Shared commercial rules
+## 3. Non-goals
+
+- A customer-facing frontend, shopping cart, payment collection, tax calculation, currency conversion, or multiple products.
+- Stock reservations or a guaranteed quote between verification and submission.
+- Partial fulfillment, backorders, order cancellation, order listing, or inventory administration.
+- Physical dispatch tracking, road-routing distance, carrier selection, or delivery-time guarantees.
+- A full user-account, authorization, or multi-tenant product.
+- Automatic expiry of saved submission outcomes in this challenge.
+- Creating GitHub issues, sending the submission, merging PRs, or provisioning cloud resources as part of authoring this PRD.
+
+## 4. Requirements
+
+The local core is **must-have (P1)**. The hosted demonstration is **optional (P2)** and remains a separate phase dependent on hosting, budget, and provisioning authorization.
+
+### Must-have requirements (P1)
+
+#### Shared commercial rules
 
 These rules apply to estimation and submission:
 
@@ -51,7 +70,7 @@ These rules apply to estimation and submission:
 - Order Total includes Discounted Merchandise Total plus Shipping Cost. Returned and retained monetary amounts agree and are represented to clients as decimal strings.
 - Fulfillment is all-or-nothing. No partial Order is offered when the full quantity is unavailable.
 
-### Estimate
+#### Estimate
 
 - **Given** a positive integer quantity and valid Destination with sufficient stock, **when** verification runs, **then** it returns Merchandise Subtotal, Volume Discount, Discounted Merchandise Total, Shipping Cost, Order Total, and validity using the shared rules.
 - **Given** a request requiring multiple warehouses, **when** an estimate is calculated, **then** its Shipping Plan fulfills the entire quantity at minimum shipping cost and never allocates more than a warehouse holds.
@@ -59,7 +78,7 @@ These rules apply to estimation and submission:
 - **Given** total stock is insufficient, **when** verification runs, **then** it returns an invalid estimate with an insufficient-stock reason, merchandise and discount amounts, and unavailable shipping/order totals represented as null.
 - **Given** any verification request, **when** it completes, **then** it creates no Order, consumes or reserves no inventory, and guarantees no later submission outcome.
 
-### Submit
+#### Submit
 
 - **Given** a valid request against current inventory, **when** submitted successfully, **then** one Order receives a unique order number and its complete warehouse allocations are deducted immediately.
 - **Given** an accepted Order, **when** its record is inspected, **then** it preserves quantity, Destination, applied pricing and discount, Shipping Cost, Order Total, and Warehouse Allocations as accepted at submission.
@@ -68,7 +87,7 @@ These rules apply to estimation and submission:
 - **Given** a failure before acceptance is committed, **when** processing terminates, **then** no partial Order, partial inventory deduction, or completed submission outcome remains.
 - **Given** a business rejection, **when** submission completes, **then** no Order is created and inventory is unchanged, while the rejection remains available for replay under the retry requirements.
 
-### Retry safely
+#### Retry safely
 
 - **Given** a submission attempt identifier and the same request inputs, **when** the caller retries after successful acceptance, **then** it receives the original accepted outcome without another Order or inventory deduction.
 - **Given** a business rejection saved for an attempt, **when** the same attempt is retried, **then** the original rejection is returned even if circumstances have changed.
@@ -78,21 +97,21 @@ These rules apply to estimation and submission:
 - **Given** malformed input or a transient failure that did not commit an outcome, **when** the request is corrected or retried, **then** the identifier has not been consumed by that failed attempt.
 - **Given** a completed business outcome, **when** the application restarts, **then** replay remains available. No automatic expiry is required for this challenge.
 
-### Understand invalid requests
+#### Understand invalid requests
 
 - **Given** zero, negative, fractional, missing, or otherwise invalid quantity, or missing/non-finite/out-of-range coordinates, **when** a request is received, **then** it is rejected as invalid input without inventory or Order changes.
 - **Given** coordinates at valid geographic boundaries, **when** verification or submission occurs, **then** the boundaries are accepted: latitude -90 through 90 and longitude -180 through 180, inclusive.
 - **Given** a well-formed but unfulfillable request, **when** verified, **then** the availability check succeeds and reports invalidity; **when** submitted, **then** it reports a business rejection. A business rejection is distinguishable from malformed input, identifier conflict, and temporary service failure.
 - **Given** a temporary processing failure, **when** the caller receives the error, **then** the response does not imply acceptance; repeating the same attempt can recover any previously committed result.
 
-### Discover the interface
+#### Discover the interface
 
 - **Given** the application is running, **when** an evaluator requests its API specification, **then** the application serves a machine-readable OpenAPI document describing verification, submission, and health behavior.
 - **Given** the application is running, **when** an evaluator opens its documentation, **then** interactive API documentation is served by the application itself.
 - **Given** the documentation, **when** an evaluator follows its examples, **then** request constraints, decimal-string amounts, nullable totals, successful outcomes, rejections, conflicts, and retry semantics match actual behavior.
 - **Given** an interface change, **when** verification runs, **then** specification validity and representative response conformance are checked so published documentation cannot silently drift.
 
-### Reproduce and verify
+#### Reproduce and verify
 
 - **Given** a fresh checkout and documented prerequisites, **when** an evaluator follows setup instructions, **then** they can start the local application and database, initialize starting data, access documentation, and run the checks.
 - **Given** a newly initialized development dataset, **when** inventory is inspected, **then** it contains the following warehouses with the supplied coordinates and unit counts:
@@ -105,12 +124,7 @@ These rules apply to estimation and submission:
 - **Given** the verification suite, **when** executed, **then** it exercises the commercial boundaries, allocation, rollback, concurrent submissions, and replay scenarios defined above. Database-dependent guarantees are checked against a real database.
 - **Given** unfinished or deferred work, **when** the evaluator reads the README, **then** limitations and next steps are explicit rather than represented as complete.
 
-### Hosted demonstration
-
-- **Given** an agreed deployment budget, hosting configuration, and authorization to provision, **when** the demonstration is deployed, **then** the core flows and served documentation are verified against that environment.
-- **Given** the demonstration is no longer needed, **when** its teardown instructions are followed, **then** the created resources can be identified and removed with data-loss implications made clear.
-
-## 4. Edge cases
+#### Edge cases
 
 - **Empty state:** zero available inventory is Insufficient Stock for every otherwise-valid positive quantity. No partial shipment is presented as a complete estimate.
 - **Loading state:** no product UI is required. Clients can have an in-flight submission with an unknown outcome; repeating its identifier follows the retry requirements rather than creating a deliberate new attempt.
@@ -121,28 +135,12 @@ These rules apply to estimation and submission:
 - **Distance and rounding:** a Destination at a warehouse may have zero shipping cost; equal-distance stock choices are deterministic. Rounding individual allocations must not replace the agreed combined-charge rounding rule.
 - **Historical values:** subsequent inventory or commercial changes do not rewrite accepted Order amounts or saved submission outcomes.
 
-## 5. Measurable success criteria
+### Optional: hosted demonstration (P2)
 
-- Every P1 acceptance scenario has an executable check or documented reproducible verification, with no unresolved failing required check at handoff.
-- Concurrency tests produce zero negative-stock results and zero duplicate Orders for the same submission attempt.
-- Failure-injection tests leave zero partial inventory deductions or partial Orders after rollback.
-- Pricing tests select the correct discount on both sides of every tier boundary and accept shipping equal to, but not above, the agreed limit.
-- The running application serves both forms of API documentation; the specification validates and representative responses conform.
-- An evaluator can reproduce local setup and testing using the README and the provided initial dataset.
+- **Given** an agreed deployment budget, hosting configuration, and authorization to provision, **when** the demonstration is deployed, **then** the core flows and served documentation are verified against that environment.
+- **Given** the demonstration is no longer needed, **when** its teardown instructions are followed, **then** the created resources can be identified and removed with data-loss implications made clear.
 
-No numerical latency, throughput, uptime, or cloud-cost target has been agreed. Do not substitute invented targets for acceptance criteria.
-
-## 6. Non-goals
-
-- A customer-facing frontend, shopping cart, payment collection, tax calculation, currency conversion, or multiple products.
-- Stock reservations or a guaranteed quote between verification and submission.
-- Partial fulfillment, backorders, order cancellation, order listing, or inventory administration.
-- Physical dispatch tracking, road-routing distance, carrier selection, or delivery-time guarantees.
-- A full user-account, authorization, or multi-tenant product.
-- Automatic expiry of saved submission outcomes in this challenge.
-- Creating GitHub issues, sending the submission, merging PRs, or provisioning cloud resources as part of authoring this PRD.
-
-## 7. Assumptions, dependencies, and open questions
+## 5. Assumptions and open questions
 
 ### Accepted constraints and references
 
@@ -164,3 +162,14 @@ The implementation must establish its workspace, runtime, local database, and ve
 - The monetary implementation remains open after discussion of decimal libraries and native bigint. Any choice must preserve the accepted commercial results and rounding rules; adopting integer distance units requires a documented precision decision.
 - PostgreSQL hosting, connection configuration, deployment access controls, and the monthly demo budget are unresolved. They block hosted provisioning, not the local core.
 - Monetary storage precision is settled in the linked design decisions. Operational input limits and handling amounts beyond the storage range remain implementation design details; no unagreed maximum order quantity or latency target is introduced here.
+
+## 6. Success metrics
+
+- Every P1 acceptance scenario has an executable check or documented reproducible verification, with no unresolved failing required check at handoff.
+- Concurrency tests produce zero negative-stock results and zero duplicate Orders for the same submission attempt.
+- Failure-injection tests leave zero partial inventory deductions or partial Orders after rollback.
+- Pricing tests select the correct discount on both sides of every tier boundary and accept shipping equal to, but not above, the agreed limit.
+- The running application serves both forms of API documentation; the specification validates and representative responses conform.
+- An evaluator can reproduce local setup and testing using the README and the provided initial dataset.
+
+No numerical latency, throughput, uptime, or cloud-cost target has been agreed. Do not substitute invented targets for acceptance criteria.
