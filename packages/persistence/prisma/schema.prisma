@@ -1,0 +1,147 @@
+// SCOS Ordering persistence schema. See docs/database-schema.md.
+//
+// Rules that Prisma cannot express live in the SQL migrations and are
+// covered by integration tests: CHECK constraints, lookup values, the shared
+// public.update_timestamp() function, and per-table update triggers.
+//
+// Timestamps use database defaults and triggers (ADR 0003). The migrations
+// define DEFAULT NOW(); the schema uses @default(dbgenerated()) so Prisma
+// omits both columns on insert and PostgreSQL supplies the transaction time.
+// @default(now()) would make Prisma send a client-side clock value instead,
+// and @default(dbgenerated("now()")) is reported as drift against now().
+// Do not add Prisma @updatedAt. Categorical values use text lookup tables with String
+// relations. Do not add Prisma enums; they create native PostgreSQL enums.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Lookup: outcome of a completed submission attempt.
+model SubmissionOutcome {
+  value       String   @id
+  description String?
+  createdAt   DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+
+  submissions Submission[]
+
+  @@map("submission_outcome")
+}
+
+/// Lookup: business rejection code for a rejected submission attempt.
+model RejectionReason {
+  value       String   @id
+  description String?
+  createdAt   DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+
+  rejections SubmissionRejection[]
+
+  @@map("rejection_reason")
+}
+
+/// Warehouse and its current available inventory.
+model Warehouse {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name      String   @unique
+  latitude  Float
+  longitude Float
+  stock     Int
+  createdAt DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+
+  allocations OrderAllocation[]
+
+  @@map("warehouse")
+}
+
+/// One completed submission attempt keyed by the client submissionId.
+/// Holds the request inputs once; Order and rejection reference them.
+model Submission {
+  id                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  submissionKey        String   @unique @map("submission_key")
+  quantity             Int
+  destinationLatitude  Float    @map("destination_latitude")
+  destinationLongitude Float    @map("destination_longitude")
+  outcome              String
+  createdAt            DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+
+  submissionOutcome SubmissionOutcome    @relation(fields: [outcome], references: [value], onDelete: Restrict, onUpdate: Restrict)
+  order             Order?
+  rejection         SubmissionRejection?
+
+  @@unique([id, outcome], map: "submission_id_outcome_key")
+  @@map("submission")
+}
+
+/// Accepted Order with its immutable commercial snapshot.
+model Order {
+  id                         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orderNumber                String   @unique @map("order_number")
+  submissionId               String   @unique @map("submission_id") @db.Uuid
+  submissionOutcome          String   @default("ACCEPTED") @map("submission_outcome")
+  unitPrice                  Decimal  @map("unit_price") @db.Decimal(12, 2)
+  merchandiseSubtotal        Decimal  @map("merchandise_subtotal") @db.Decimal(12, 2)
+  discountRate               Decimal  @map("discount_rate") @db.Decimal(5, 4)
+  discountAmount             Decimal  @map("discount_amount") @db.Decimal(12, 2)
+  discountedMerchandiseTotal Decimal  @map("discounted_merchandise_total") @db.Decimal(12, 2)
+  shippingCost               Decimal  @map("shipping_cost") @db.Decimal(12, 2)
+  orderTotal                 Decimal  @map("order_total") @db.Decimal(12, 2)
+  createdAt                  DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+
+  submission  Submission        @relation(fields: [submissionId, submissionOutcome], references: [id, outcome], onDelete: Restrict, onUpdate: Restrict, map: "customer_order_submission_fkey")
+  allocations OrderAllocation[]
+
+  @@unique([submissionId, submissionOutcome], map: "customer_order_submission_id_outcome_key")
+  @@map("customer_order")
+}
+
+/// Quantity taken from one warehouse to fulfill an accepted Order.
+model OrderAllocation {
+  id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orderId     String   @map("order_id") @db.Uuid
+  warehouseId String   @map("warehouse_id") @db.Uuid
+  quantity    Int
+  createdAt   DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([orderId, warehouseId])
+  @@index([warehouseId])
+  @@map("order_allocation")
+}
+
+/// Business rejection outcome with its commercial snapshot.
+model SubmissionRejection {
+  submissionId               String   @id @map("submission_id") @db.Uuid
+  submissionOutcome          String   @default("REJECTED") @map("submission_outcome")
+  reason                     String
+  unitPrice                  Decimal  @map("unit_price") @db.Decimal(12, 2)
+  merchandiseSubtotal        Decimal  @map("merchandise_subtotal") @db.Decimal(12, 2)
+  discountRate               Decimal  @map("discount_rate") @db.Decimal(5, 4)
+  discountAmount             Decimal  @map("discount_amount") @db.Decimal(12, 2)
+  discountedMerchandiseTotal Decimal  @map("discounted_merchandise_total") @db.Decimal(12, 2)
+  shippingCost               Decimal? @map("shipping_cost") @db.Decimal(12, 2)
+  orderTotal                 Decimal? @map("order_total") @db.Decimal(12, 2)
+  createdAt                  DateTime @default(dbgenerated()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime @default(dbgenerated()) @map("updated_at") @db.Timestamptz(6)
+
+  submission      Submission      @relation(fields: [submissionId, submissionOutcome], references: [id, outcome], onDelete: Restrict, onUpdate: Restrict, map: "submission_rejection_submission_fkey")
+  rejectionReason RejectionReason @relation(fields: [reason], references: [value], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([submissionId, submissionOutcome], map: "submission_rejection_submission_id_outcome_key")
+  @@index([reason])
+  @@map("submission_rejection")
+}
