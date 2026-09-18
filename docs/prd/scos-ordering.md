@@ -27,7 +27,7 @@ issues: []
 
 People ordering SCOS Station P1 Pro devices need to know whether the requested quantity can be delivered, what it will cost after volume discounts, and whether shipping is within the permitted limit. An accepted order must use available warehouse stock without overselling or being duplicated when a caller retries after an uncertain response.
 
-The deliverable is a backend that separates advisory Order Estimates from committed Orders, selects the lowest-cost Shipping Plan, and exposes understandable documentation and repeatable verification for an evaluator.
+The assignment is backend-only; no frontend application is required. The deliverable is a backend that separates advisory Order Estimates from committed Orders, selects the lowest-cost Shipping Plan, and exposes understandable documentation and repeatable verification for an evaluator.
 
 Sources are the supplied `bangkok-software-engineer-interview-challenge-sc-1-.pdf` and the design discussion recorded in [design decisions](../design-decisions.md). The PDF is a requirements reference, not authorization to email, publish, or deploy. Domain language follows [CONTEXT.md](../../CONTEXT.md). Implementation constraints remain in the linked design decisions rather than being duplicated here.
 
@@ -45,7 +45,8 @@ Sources are the supplied `bangkok-software-engineer-interview-challenge-sc-1-.pd
 
 ## 3. Non-goals
 
-- A customer-facing frontend, shopping cart, payment collection, tax calculation, currency conversion, or multiple products.
+- Any frontend application, including customer-facing screens and admin dashboards. Served interactive API documentation remains part of the backend deliverable.
+- Shopping carts, payment collection, tax calculation, currency conversion, or multiple products.
 - Stock reservations or a guaranteed quote between verification and submission.
 - Partial fulfillment, backorders, order cancellation, order listing, or inventory administration.
 - Physical dispatch tracking, road-routing distance, carrier selection, or delivery-time guarantees.

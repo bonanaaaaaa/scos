@@ -3,6 +3,7 @@
 ## Agreed scope and constraints
 
 - Produce a submission-ready design before implementation.
+- The assignment is backend-only. Frontend applications, customer-facing screens, and admin dashboards are out of scope. Serving OpenAPI and interactive API documentation from the backend remains required.
 - Deadline: next Monday, interpreted as September 21, 2026, Bangkok time.
 - Budget: approximately four hours for core implementation, with separate review time.
 - AWS deployment provisioning has a separate budget from the four-hour core implementation.
