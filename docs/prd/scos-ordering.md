@@ -50,7 +50,6 @@ Sources are the supplied `bangkok-software-engineer-interview-challenge-sc-1-.pd
 - Stock reservations or a guaranteed quote between verification and submission.
 - Partial fulfillment, backorders, order cancellation, order listing, or inventory administration.
 - Physical dispatch tracking, road-routing distance, carrier selection, or delivery-time guarantees.
-- A full user-account, authorization, or multi-tenant product.
 - Automatic expiry of saved submission outcomes in this challenge.
 - Creating GitHub issues, sending the submission, merging PRs, or provisioning cloud resources as part of authoring this PRD.
 
