@@ -35,6 +35,7 @@
 ## Agreed architecture
 
 - The Order aggregate owns accepted order details and allocations. Quantity, destination, and money are value objects; discount and shipping-plan calculations are domain functions.
+- Use third normal form (3NF) as the relational database design baseline. Separate entity facts and relationships, enforce keys and foreign keys, and evaluate functional dependencies beyond the UUID primary key. Accepted order prices, discounts, shipping charges, and totals are immutable historical facts; preserve them rather than deriving them from current commercial rules. Any deliberate denormalization requires a documented reason.
 - Inventory is persisted separately. The SubmitOrder application use case coordinates inventory changes and order creation atomically.
 - Hono is an inbound adapter calling VerifyOrder and SubmitOrder application use cases. Lambda starts the application.
 - Application use cases depend on the domain model and application-owned persistence interfaces. The Prisma outbound adapter implements persistence and transaction locking.
