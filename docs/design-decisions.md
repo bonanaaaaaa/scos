@@ -79,7 +79,7 @@ sequenceDiagram
     DB-->>API: Current stock
     API->>API: Calculate pricing and shipping
     API-->>User: Estimate and validity
-    Note over API,DB: No Order created; no stock reserved or deducted
+    Note over API,DB: No Order created and no stock reserved or deducted
 
     Other->>API: Submit another order
     API->>DB: Accept order and deduct stock atomically
@@ -95,7 +95,7 @@ sequenceDiagram
         alt Fulfillable and shipping within limit
             API->>DB: Save Order, deduct stock, save outcome
         else Insufficient stock or shipping exceeds limit
-            API->>DB: Save rejection outcome; leave stock unchanged
+            API->>DB: Save rejection outcome and leave stock unchanged
         end
         API->>DB: Commit
     end
