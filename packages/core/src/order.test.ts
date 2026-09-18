@@ -86,17 +86,61 @@ describe("createOrder", () => {
 
   test("enforces amount invariants", () => {
     const base = validEstimate();
+    expect(base.discountRate).toBe("0.05");
     expectInvalid({ ...base, quantity: 0 }, /quantity/);
     expectInvalid({ ...base, merchandiseSubtotal: Money.parse("1.00") }, /unit price/);
-    expectInvalid({ ...base, discountAmount: Money.parse("0.00") }, /subtotal minus discount/);
+    expectInvalid({ ...base, discountedMerchandiseTotal: Money.parse("1.00") }, /minus discount/);
+    expectInvalid({ ...base, orderTotal: Money.parse("1.00") }, /Order total/);
+  });
+
+  test("rejects a discount rate that is not the quantity's tier, even with a matching amount", () => {
+    const base = validEstimate();
+    // 10% of 4500.00 is 450.00, internally consistent but the wrong tier for 30 units.
+    const discountAmount = Money.parse("450.00");
     expectInvalid(
       {
         ...base,
-        shippingCost: Money.parse("1000.00"),
-        orderTotal: base.discountedMerchandiseTotal.plus(Money.parse("1000.00")),
+        discountRate: "0.10",
+        discountAmount,
+        discountedMerchandiseTotal: base.merchandiseSubtotal.minus(discountAmount),
       },
-      /exceeds 15%/,
+      /highest tier/,
     );
-    expectInvalid({ ...base, orderTotal: Money.parse("1.00") }, /Order total/);
+  });
+
+  test("rejects a discount amount that does not match the rate", () => {
+    const base = validEstimate();
+    expectInvalid(
+      {
+        ...base,
+        discountAmount: Money.parse("0.00"),
+        discountedMerchandiseTotal: base.merchandiseSubtotal,
+      },
+      /subtotal times the discount rate/,
+    );
+  });
+
+  test("rejects shipping that differs from the charge recomputed from the allocations", () => {
+    const atWarehouse = estimateOrder({ quantity: 1 as Quantity, destination }, [
+      { warehouseId: "here", latitude: 0, longitude: 0, available: 1 },
+    ]);
+    expect(atWarehouse.valid).toBe(true);
+    expect(atWarehouse.shippingCost?.toString()).toBe("0.00");
+    const shippingCost = Money.parse("5.00");
+    expectInvalid(
+      {
+        ...atWarehouse,
+        shippingCost,
+        orderTotal: atWarehouse.discountedMerchandiseTotal.plus(shippingCost),
+      },
+      /combined charge/,
+    );
+  });
+
+  test("rejects shipping above the limit even when an estimate is marked valid", () => {
+    const far = estimateOrder({ quantity: 1 as Quantity, destination }, [
+      { warehouseId: "far", latitude: 0, longitude: 179, available: 1 },
+    ]);
+    expectInvalid({ ...far, valid: true, reason: null }, /exceeds 15%/);
   });
 });

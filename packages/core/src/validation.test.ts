@@ -9,6 +9,7 @@ import { MAX_QUANTITY, parseQuantity } from "./quantity.js";
 describe("parseQuantity", () => {
   test("derives MAX_QUANTITY from NUMERIC(12, 2) and the unit price", () => {
     expect(MAX_QUANTITY).toBe(66_666_666);
+    expect(Number.isSafeInteger(MAX_QUANTITY)).toBe(true);
     expect(UNIT_PRICE.times(MAX_QUANTITY).lessThanOrEqualTo(MONEY_MAX)).toBe(true);
     expect(UNIT_PRICE.times(MAX_QUANTITY + 1).greaterThan(MONEY_MAX)).toBe(true);
   });

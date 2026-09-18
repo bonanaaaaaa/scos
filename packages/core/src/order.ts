@@ -3,7 +3,13 @@ import type { Destination } from "./destination.js";
 import { DomainError } from "./errors.js";
 import { Money } from "./money.js";
 import type { OrderEstimate } from "./estimate.js";
-import { type DiscountRate, isShippingWithinLimit } from "./pricing.js";
+import { DomainDecimal } from "./decimal.js";
+import {
+  type DiscountRate,
+  discountRateFor,
+  isShippingWithinLimit,
+  shippingCostFor,
+} from "./pricing.js";
 import { UNIT_PRICE } from "./product.js";
 import { type Quantity, MAX_QUANTITY } from "./quantity.js";
 
@@ -80,10 +86,26 @@ export function createOrder(input: CreateOrderInput): Order {
     "Merchandise subtotal must equal quantity times unit price.",
   );
   invariant(
+    estimate.discountRate === discountRateFor(quantity),
+    "Discount rate must be the highest tier the quantity qualifies for.",
+  );
+  invariant(
+    estimate.discountAmount
+      .toDecimal()
+      .equals(
+        estimate.merchandiseSubtotal.toDecimal().times(new DomainDecimal(estimate.discountRate)),
+      ),
+    "Discount amount must equal subtotal times the discount rate.",
+  );
+  invariant(
     estimate.merchandiseSubtotal
       .minus(estimate.discountAmount)
       .equals(estimate.discountedMerchandiseTotal),
     "Discounted merchandise total must equal subtotal minus discount.",
+  );
+  invariant(
+    shippingCost.equals(shippingCostFor(allocations)),
+    "Shipping cost must equal the combined charge for the allocations' distances.",
   );
   invariant(
     isShippingWithinLimit(shippingCost, estimate.discountedMerchandiseTotal),

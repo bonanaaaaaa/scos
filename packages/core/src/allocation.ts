@@ -1,6 +1,7 @@
-import { type GeoPoint, isValidGeoPoint } from "./destination.js";
+import { type Destination, isValidGeoPoint } from "./destination.js";
 import { haversineDistanceKm } from "./distance.js";
 import { DomainError } from "./errors.js";
+import type { Quantity } from "./quantity.js";
 
 /** One warehouse's available stock in an immutable inventory snapshot. */
 export interface WarehouseStock {
@@ -54,9 +55,7 @@ function assertValidSnapshot(inventory: InventorySnapshot): void {
 
 /** Plain code-unit comparison so ordering is locale-independent. */
 function compareIds(left: string, right: string): number {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
+  return Number(left > right) - Number(left < right);
 }
 
 /**
@@ -72,8 +71,8 @@ function compareIds(left: string, right: string): number {
  * moving any unit to a farther warehouse can never lower the total.
  */
 export function allocateNearestFirst(
-  quantity: number,
-  destination: GeoPoint,
+  quantity: Quantity,
+  destination: Destination,
   inventory: InventorySnapshot,
 ): ShippingPlan | null {
   assertValidSnapshot(inventory);
@@ -96,7 +95,7 @@ export function allocateNearestFirst(
     );
 
   const allocations: WarehouseAllocation[] = [];
-  let remaining = quantity;
+  let remaining: number = quantity;
   for (const warehouse of ranked) {
     if (remaining === 0) break;
     const units = Math.min(remaining, warehouse.available);
@@ -110,9 +109,7 @@ export function allocateNearestFirst(
     remaining -= units;
   }
 
-  const [first, ...rest] = allocations;
-  if (first === undefined || remaining !== 0) {
-    return null;
-  }
-  return Object.freeze([first, ...rest]);
+  // quantity >= 1 and total stock >= quantity, so the loop allocates at least
+  // one warehouse and always drives `remaining` to zero.
+  return Object.freeze(allocations) as readonly WarehouseAllocation[] as ShippingPlan;
 }

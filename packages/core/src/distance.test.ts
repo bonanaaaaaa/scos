@@ -1,7 +1,12 @@
 import { describe, expect, test } from "vitest";
 
 import type { GeoPoint } from "./destination.js";
-import { EARTH_RADIUS_KM, haversineDistanceKm } from "./distance.js";
+import {
+  EARTH_RADIUS_KM,
+  centralAngleFromHaversine,
+  haversineDistanceKm,
+  haversineIntermediate,
+} from "./distance.js";
 
 const point = (latitude: number, longitude: number): GeoPoint => ({ latitude, longitude });
 
@@ -86,6 +91,42 @@ describe("haversineDistanceKm", () => {
     }
   });
 
+  test("clamps intermediates outside [0, 1] instead of producing NaN", () => {
+    // Without the upper clamp, sqrt(1 + 2 ulp) > 1 and asin returns NaN.
+    const aboveOne = 1 + 2 * Number.EPSILON;
+    expect(Number.isNaN(Math.asin(Math.sqrt(aboveOne)))).toBe(true);
+    expect(centralAngleFromHaversine(aboveOne)).toBe(Math.PI);
+    expect(centralAngleFromHaversine(1.5)).toBe(Math.PI);
+    // Without the lower clamp, sqrt of a negative drift value is NaN.
+    expect(centralAngleFromHaversine(-Number.EPSILON)).toBe(0);
+    expect(centralAngleFromHaversine(0.5)).toBeCloseTo(Math.PI / 2, 15);
+  });
+
+  test("handles a real pair whose Haversine intermediate rounds above 1", () => {
+    const from = point(-83.5582880963103, 39.932617928632226);
+    const to = point(83.5582880963103, -140.06738207136777);
+    expect(haversineIntermediate(from, to)).toBeGreaterThan(1);
+    const distance = haversineDistanceKm(from, to);
+    expect(Number.isFinite(distance)).toBe(true);
+    expect(distance).toBeCloseTo(Math.PI * EARTH_RADIUS_KM, 9);
+  });
+
+  test("near-antipodal pairs agree with the independent Vincenty sphere form", () => {
+    const pairs: [GeoPoint, GeoPoint][] = [
+      [point(10, 20), point(-10.001, -160)],
+      [point(10, 20), point(-10, -159.999)],
+      [point(0, 0), point(0.001, 180)],
+      [point(45, 30), point(-45.001, -150.001)],
+      [point(33.9425, -118.408056), point(-33.9435, 61.592944)],
+    ];
+    for (const [from, to] of pairs) {
+      const distance = haversineDistanceKm(from, to);
+      expect(distance).toBeLessThan(Math.PI * EARTH_RADIUS_KM);
+      // Within 1 mm despite Haversine's reduced conditioning near antipodes.
+      expect(Math.abs(distance - vincentySphereKm(from, to))).toBeLessThan(1e-6);
+    }
+  });
+
   test("is symmetric", () => {
     const a = point(-23.435556, -46.473056);
     const b = point(22.308889, 113.914444);
@@ -98,9 +139,17 @@ describe("haversineDistanceKm", () => {
     const distance = haversineDistanceKm(lax, jfk);
     expect(Math.abs(distance - vincentySphereKm(lax, jfk))).toBeLessThan(1e-9);
     expect(Math.abs(distance - lawOfCosinesKm(lax, jfk))).toBeLessThan(1e-6);
-    // Published great-circle distance on a 6371 km sphere is about 3974 km.
-    expect(distance).toBeGreaterThan(3973);
-    expect(distance).toBeLessThan(3975);
+  });
+
+  test("LAX to JFK matches the Aviation Formulary worked example's central angle", () => {
+    // Ed Williams, "Aviation Formulary V1.47", worked example: LAX
+    // (33deg57'N 118deg24'W) to JFK (40deg38'N 73deg47'W) is 0.623585 radians.
+    // http://www.edwilliams.org/avform147.htm
+    // The angle is independent of the Earth radius, which cancels out.
+    const lax = point(33 + 57 / 60, -(118 + 24 / 60));
+    const jfk = point(40 + 38 / 60, -(73 + 47 / 60));
+    const centralAngle = haversineDistanceKm(lax, jfk) / EARTH_RADIUS_KM;
+    expect(Math.abs(centralAngle - 0.623585)).toBeLessThan(1e-6);
   });
 
   test("agrees with the Vincenty sphere form across the PRD warehouse pairs", () => {

@@ -33,11 +33,26 @@ Order Estimates, and the Order aggregate. No HTTP, Prisma, or persistence types.
   values as malformed input (HTTP 400) using the exported constant.
 - **Destination:** finite latitude in `[-90, 90]` and longitude in
   `[-180, 180]`, inclusive.
-- Shipping and order totals for quantities within `MAX_QUANTITY` could only
-  overflow `NUMERIC(12, 2)` with tens of millions of units in stock; if that
-  ever happens `estimateOrder` throws `DomainError` `AMOUNT_OUT_OF_RANGE` rather
-  than returning an unstorable amount.
 
 Input validation (`parseQuantity`, `parseDestination`, `parseOrderRequest`)
 returns a `Result` with typed `ValidationError`s. Domain invariant violations
 (corrupt inventory, invalid orders, unrepresentable money) throw `DomainError`.
+
+### Overflow behaviour of `estimateOrder`
+
+- **Valid estimates cannot overflow.** Below 250 units every amount is under
+  $37,500. From 250 units the discounted total is at most 120 x 66,666,666 =
+  7,999,999,920.00. Shipping on a valid estimate is at most 15% of that, so the
+  order total is at most 9,199,999,908.00, which is below 9,999,999,999.99.
+- **Insufficient-stock estimates cannot overflow.** They carry merchandise
+  amounts only, which `MAX_QUANTITY` bounds.
+- **Only a shipping-exceeds-limit estimate can throw.** Shipping and the order
+  total are computed before the limit check, and `Money` refuses amounts
+  above NUMERIC(12, 2). The worst per-unit shipping charge is
+  0.00365 x pi x 6371.0088 km, about $73.06. Shipping alone therefore cannot
+  exceed the maximum within `MAX_QUANTITY`, but the order total
+  (at most about $193.06 per unit) can. That needs roughly 51.8 million units in
+  stock, allocated at near-antipodal distance. In that case `estimateOrder`
+  throws `DomainError` with code `AMOUNT_OUT_OF_RANGE` instead of returning a
+  rejection. Adapters should treat it as an unexpected server error, not as
+  client input.

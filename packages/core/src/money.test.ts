@@ -44,12 +44,45 @@ describe("Money", () => {
   });
 
   test("rejects sub-cent, negative, non-finite, and non-numeric amounts", () => {
-    expect(() => Money.parse("0.001")).toThrow(/cent scale/);
-    expect(() => Money.parse("-0.01")).toThrow(/non-negative/);
-    expect(() => Money.parse("Infinity")).toThrow(/finite/);
-    expect(() => Money.parse("NaN")).toThrow(/finite/);
-    expect(() => Money.parse("abc")).toThrow(/decimal string/);
+    expect(() => Money.fromDecimal(new DomainDecimal("-0.01"))).toThrow(/non-negative/);
+    expect(() => Money.fromDecimal(new DomainDecimal("Infinity"))).toThrow(/finite/);
+    expect(() => Money.fromDecimal(new DomainDecimal("NaN"))).toThrow(/finite/);
+    expect(() => Money.fromDecimal(new DomainDecimal("0.001"))).toThrow(/cent scale/);
     expect(() => Money.parse("1").minus(Money.parse("2"))).toThrow(DomainError);
+  });
+
+  test.each([
+    "0x10",
+    "0b11",
+    "0o7",
+    "1_000",
+    "1e2",
+    "1E2",
+    "+1.00",
+    "-1.00",
+    "-0.01",
+    " 1.00",
+    "1.00 ",
+    "1,000.00",
+    ".50",
+    "1.",
+    "0.001",
+    "10000000000",
+    "Infinity",
+    "NaN",
+    "abc",
+    "",
+  ])("parse rejects non-plain decimal %j", (value) => {
+    expect(() => Money.parse(value)).toThrow(DomainError);
+  });
+
+  test.each([
+    ["0", "0.00"],
+    ["1.5", "1.50"],
+    ["0000000001.25", "1.25"],
+    ["9999999999.99", "9999999999.99"],
+  ])("parse accepts plain decimal %j", (value, expected) => {
+    expect(Money.parse(value).toString()).toBe(expected);
   });
 
   test("normalises negative zero and compares by value", () => {

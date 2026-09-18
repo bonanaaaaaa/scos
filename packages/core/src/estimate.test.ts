@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { WarehouseStock } from "./allocation.js";
 import type { Destination } from "./destination.js";
 import { EARTH_RADIUS_KM } from "./distance.js";
+import { DomainError } from "./errors.js";
 import { type OrderEstimate, estimateOrder } from "./estimate.js";
 import type { Quantity } from "./quantity.js";
 
@@ -141,6 +142,16 @@ describe("estimateOrder", () => {
     expect(exact.allocations.reduce((sum, entry) => sum + entry.quantity, 0)).toBe(total);
     const over = estimateOrder({ quantity: q(total + 1), destination: at(0, 0) }, PRD_WAREHOUSES);
     expect(over.reason).toBe("INSUFFICIENT_STOCK");
+  });
+
+  test("throws AMOUNT_OUT_OF_RANGE when an excessive-shipping total cannot be stored", () => {
+    const quantity = 60_000_000;
+    const run = () =>
+      estimateOrder({ quantity: q(quantity), destination: at(0, 0) }, [
+        { warehouseId: "antipode", latitude: 0, longitude: 180, available: quantity },
+      ]);
+    expect(run).toThrow(DomainError);
+    expect(run).toThrow(/exceeds NUMERIC/);
   });
 
   test("returns a frozen estimate", () => {

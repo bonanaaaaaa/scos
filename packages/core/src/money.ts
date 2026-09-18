@@ -6,6 +6,8 @@ export const MONEY_MAX_STRING = "9999999999.99";
 export const MONEY_MAX: Decimal = new DomainDecimal(MONEY_MAX_STRING);
 export const MONEY_SCALE = 2;
 
+const PLAIN_DECIMAL = /^\d{1,10}(?:\.\d{1,2})?$/;
+
 /**
  * A non-negative USD amount at cent scale that fits NUMERIC(12, 2).
  *
@@ -45,15 +47,17 @@ export class Money {
     return new Money(new DomainDecimal(amount.abs()));
   }
 
-  /** Parses a decimal string such as "150.00" (for example, a stored amount). */
+  /**
+   * Parses a plain decimal string such as "150.00" (for example, a stored
+   * amount): 1-10 integer digits and at most two fractional digits, matching
+   * NUMERIC(12, 2). Signs, exponents, hex/binary/octal prefixes, separators,
+   * and whitespace are rejected.
+   */
   static parse(value: string): Money {
-    let amount: Decimal;
-    try {
-      amount = new DomainDecimal(value);
-    } catch {
-      throw new DomainError("INVALID_AMOUNT", `Money is not a decimal string: ${value}.`);
+    if (!PLAIN_DECIMAL.test(value)) {
+      throw new DomainError("INVALID_AMOUNT", `Money is not a plain decimal string: ${value}.`);
     }
-    return Money.fromDecimal(amount);
+    return Money.fromDecimal(new DomainDecimal(value));
   }
 
   /** Rounds an exact amount once to cents using ROUND_HALF_UP. */

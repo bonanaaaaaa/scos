@@ -1,9 +1,12 @@
 import { describe, expect, test } from "vitest";
 
 import { type WarehouseStock, allocateNearestFirst } from "./allocation.js";
+import type { Destination } from "./destination.js";
 import { DomainError } from "./errors.js";
+import type { Quantity } from "./quantity.js";
 
-const destination = { latitude: 0, longitude: 0 };
+const destination = { latitude: 0, longitude: 0 } as Destination;
+const q = (value: number): Quantity => value as Quantity;
 const stock = (
   warehouseId: string,
   longitude: number,
@@ -13,7 +16,7 @@ const stock = (
 
 describe("allocateNearestFirst", () => {
   test("takes everything from the nearest warehouse when it suffices", () => {
-    const plan = allocateNearestFirst(5, destination, [
+    const plan = allocateNearestFirst(q(5), destination, [
       stock("far", 20, 100),
       stock("near", 1, 10),
     ]);
@@ -24,7 +27,7 @@ describe("allocateNearestFirst", () => {
 
   test("splits across warehouses nearest-first without exceeding stock", () => {
     const inventory = [stock("c", 30, 100), stock("a", 10, 3), stock("b", 20, 4)];
-    const plan = allocateNearestFirst(10, destination, inventory);
+    const plan = allocateNearestFirst(q(10), destination, inventory);
     expect(plan?.map(({ warehouseId, quantity }) => [warehouseId, quantity])).toEqual([
       ["a", 3],
       ["b", 4],
@@ -34,19 +37,21 @@ describe("allocateNearestFirst", () => {
   });
 
   test("skips zero-stock warehouses even when nearest", () => {
-    const plan = allocateNearestFirst(2, destination, [stock("empty", 0, 0), stock("x", 5, 2)]);
+    const plan = allocateNearestFirst(q(2), destination, [stock("empty", 0, 0), stock("x", 5, 2)]);
     expect(plan?.map((entry) => entry.warehouseId)).toEqual(["x"]);
   });
 
   test("exhausts stock exactly", () => {
-    const plan = allocateNearestFirst(7, destination, [stock("a", 1, 3), stock("b", 2, 4)]);
+    const plan = allocateNearestFirst(q(7), destination, [stock("a", 1, 3), stock("b", 2, 4)]);
     expect(plan?.map((entry) => entry.quantity)).toEqual([3, 4]);
   });
 
   test("returns null for insufficient stock, including an empty or all-zero snapshot", () => {
-    expect(allocateNearestFirst(8, destination, [stock("a", 1, 3), stock("b", 2, 4)])).toBeNull();
-    expect(allocateNearestFirst(1, destination, [])).toBeNull();
-    expect(allocateNearestFirst(1, destination, [stock("a", 1, 0)])).toBeNull();
+    expect(
+      allocateNearestFirst(q(8), destination, [stock("a", 1, 3), stock("b", 2, 4)]),
+    ).toBeNull();
+    expect(allocateNearestFirst(q(1), destination, [])).toBeNull();
+    expect(allocateNearestFirst(q(1), destination, [stock("a", 1, 0)])).toBeNull();
   });
 
   test("breaks equal-distance ties by warehouse ID regardless of input order", () => {
@@ -59,7 +64,7 @@ describe("allocateNearestFirst", () => {
       [north, west, east],
       [east, north, west],
     ]) {
-      const plan = allocateNearestFirst(12, destination, inventory);
+      const plan = allocateNearestFirst(q(12), destination, inventory);
       expect(plan?.map(({ warehouseId, quantity }) => [warehouseId, quantity])).toEqual([
         ["wh-a", 5],
         ["wh-b", 5],
@@ -69,7 +74,7 @@ describe("allocateNearestFirst", () => {
   });
 
   test("uses code-unit ordering for tie-breaks, not locale ordering", () => {
-    const plan = allocateNearestFirst(1, destination, [stock("a", -10, 1), stock("B", 10, 1)]);
+    const plan = allocateNearestFirst(q(1), destination, [stock("a", -10, 1), stock("B", 10, 1)]);
     expect(plan?.[0]?.warehouseId).toBe("B");
   });
 
@@ -78,7 +83,7 @@ describe("allocateNearestFirst", () => {
       Object.freeze(stock("b", 2, 4)),
       Object.freeze(stock("a", 1, 3)),
     ]);
-    const plan = allocateNearestFirst(5, destination, inventory);
+    const plan = allocateNearestFirst(q(5), destination, inventory);
     expect(inventory.map((entry) => entry.warehouseId)).toEqual(["b", "a"]);
     expect(inventory.map((entry) => entry.available)).toEqual([4, 3]);
     expect(Object.isFrozen(plan)).toBe(true);
@@ -93,7 +98,7 @@ describe("allocateNearestFirst", () => {
     [[stock("a", 181, 1)], /coordinates/],
     [[stock("a", Number.NaN, 1)], /coordinates/],
   ])("rejects an invalid snapshot %#", (inventory, message) => {
-    expect(() => allocateNearestFirst(1, destination, inventory)).toThrow(DomainError);
-    expect(() => allocateNearestFirst(1, destination, inventory)).toThrow(message);
+    expect(() => allocateNearestFirst(q(1), destination, inventory)).toThrow(DomainError);
+    expect(() => allocateNearestFirst(q(1), destination, inventory)).toThrow(message);
   });
 });

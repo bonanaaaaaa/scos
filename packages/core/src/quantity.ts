@@ -16,15 +16,7 @@ export type Quantity = number & { readonly [quantityBrand]: true };
  * fit NUMERIC(12, 2); valid orders are further bounded by available stock.
  * Inbound adapters apply the same limit as a malformed-input (HTTP 400) check.
  */
-export const MAX_QUANTITY: number = deriveMaxQuantity();
-
-function deriveMaxQuantity(): number {
-  const max = MONEY_MAX.dividedToIntegerBy(UNIT_PRICE).toNumber();
-  if (!Number.isSafeInteger(max) || max < 1) {
-    throw new Error(`Derived MAX_QUANTITY is not a positive safe integer: ${max}.`);
-  }
-  return max;
-}
+export const MAX_QUANTITY: number = MONEY_MAX.dividedToIntegerBy(UNIT_PRICE).toNumber();
 
 export function parseQuantity(value: unknown): Result<Quantity, ValidationError> {
   if (typeof value !== "number") {

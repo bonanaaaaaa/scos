@@ -11,9 +11,12 @@ import { Decimal } from "decimal.js";
  * is a shipping contribution: quantity (at most 8 digits, see MAX_QUANTITY)
  * times the 0.00365 per-km rate (3 significant digits) times a distance
  * converted from a JavaScript number (at most 17 significant digits), which
- * needs at most 28 significant digits. Sums of contributions of magnitude up to
- * ~1e10 keep sub-cent digits far below the cent rounding point, so rounding at
- * 40 digits never changes a cent result.
+ * needs at most 28 significant digits, so each contribution is exact. A sum
+ * of contributions can need more digits than 40 when their magnitudes differ
+ * widely; the excess is then rounded away at the 40th significant digit. For
+ * sums below 1e10 that digit sits at or below 1e-30, so the only way it could
+ * change the final cent is if the exact sum lay within ~1e-30 of a half-cent
+ * boundary. That is practically never, but it is not a mathematical guarantee.
  */
 export const DomainDecimal: Decimal.Constructor = Decimal.clone({
   defaults: true,

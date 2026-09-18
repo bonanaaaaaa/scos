@@ -19,6 +19,11 @@ const DEGREES_TO_RADIANS = Math.PI / 180;
  * decimal.js through its string form for monetary arithmetic.
  */
 export function haversineDistanceKm(from: GeoPoint, to: GeoPoint): number {
+  return EARTH_RADIUS_KM * centralAngleFromHaversine(haversineIntermediate(from, to));
+}
+
+/** The unclamped Haversine intermediate a = hav(central angle). Internal. */
+export function haversineIntermediate(from: GeoPoint, to: GeoPoint): number {
   const lat1 = from.latitude * DEGREES_TO_RADIANS;
   const lat2 = to.latitude * DEGREES_TO_RADIANS;
   const deltaLat = (to.latitude - from.latitude) * DEGREES_TO_RADIANS;
@@ -26,8 +31,14 @@ export function haversineDistanceKm(from: GeoPoint, to: GeoPoint): number {
 
   const sinHalfLat = Math.sin(deltaLat / 2);
   const sinHalfLon = Math.sin(deltaLon / 2);
-  const a = sinHalfLat * sinHalfLat + Math.cos(lat1) * Math.cos(lat2) * sinHalfLon * sinHalfLon;
-  const clamped = Math.min(1, Math.max(0, a));
+  return sinHalfLat * sinHalfLat + Math.cos(lat1) * Math.cos(lat2) * sinHalfLon * sinHalfLon;
+}
 
-  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(clamped));
+/**
+ * Central angle in radians from a Haversine intermediate, clamped to [0, 1].
+ * Floating-point drift can push the intermediate just above 1 near antipodes;
+ * values beyond one ulp above 1 would make Math.asin(Math.sqrt(a)) NaN. Internal.
+ */
+export function centralAngleFromHaversine(a: number): number {
+  return 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, a))));
 }
