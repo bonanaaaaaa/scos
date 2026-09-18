@@ -1,7 +1,6 @@
-import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { formatMoney, toOrderRecord } from "../src/records.js";
 import {
@@ -97,12 +96,12 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         `SELECT migration_name, finished_at IS NOT NULL AND rolled_back_at IS NULL AS ok
          FROM _prisma_migrations ORDER BY migration_name`,
       );
-      assert.deepEqual(history.rows, [
+      expect(history.rows).toStrictEqual([
         { migration_name: "20260918000000_initial_ordering_schema", ok: true },
       ]);
 
       const redeploy = await runPrisma(["migrate", "deploy"], db.url);
-      assert.match(redeploy.stdout, /No pending migrations to apply/);
+      expect(redeploy.stdout).toMatch(/No pending migrations to apply/);
 
       const diff = await runPrisma(
         [
@@ -115,7 +114,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         ],
         db.url,
       );
-      assert.match(diff.stdout, /No difference detected/);
+      expect(diff.stdout).toMatch(/No difference detected/);
     });
 
     // No categorical value is persisted yet, so the schema has no lookup
@@ -128,13 +127,10 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
            AND table_name <> '_prisma_migrations'
          ORDER BY table_name`,
       );
-      assert.deepEqual(
-        tables.rows.map((row) => row.table_name),
-        applicationTables,
-      );
+      expect(tables.rows.map((row) => row.table_name)).toStrictEqual(applicationTables);
 
       const enums = await db.pool.query("SELECT 1 FROM pg_type WHERE typtype = 'e'");
-      assert.equal(enums.rowCount, 0);
+      expect(enums.rowCount).toBe(0);
     });
   });
 
@@ -153,11 +149,11 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
            AND column_name IN ('created_at', 'updated_at')
          ORDER BY table_name, column_name`,
       );
-      assert.equal(columns.rowCount, applicationTables.length * 2);
+      expect(columns.rowCount).toBe(applicationTables.length * 2);
       for (const column of columns.rows) {
-        assert.equal(column.data_type, "timestamp with time zone", JSON.stringify(column));
-        assert.equal(column.is_nullable, "NO", JSON.stringify(column));
-        assert.equal(column.column_default, "now()", JSON.stringify(column));
+        expect(column.data_type, JSON.stringify(column)).toBe("timestamp with time zone");
+        expect(column.is_nullable, JSON.stringify(column)).toBe("NO");
+        expect(column.column_default, JSON.stringify(column)).toBe("now()");
       }
 
       const triggers = await db.pool.query<{ table_name: string; trigger_name: string }>(
@@ -171,8 +167,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
            AND t.tgfoid = 'public.update_timestamp()'::regprocedure
          ORDER BY c.relname`,
       );
-      assert.deepEqual(
-        triggers.rows,
+      expect(triggers.rows).toStrictEqual(
         applicationTables.map((table) => ({
           table_name: table,
           trigger_name: `update_${table}_updated_at`,
@@ -186,7 +181,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
          RETURNING created_at = updated_at AS equal, created_at = NOW() AS at_now`,
         [unique("raw")],
       );
-      assert.deepEqual(raw.rows[0], { equal: true, at_now: true });
+      expect(raw.rows[0]).toStrictEqual({ equal: true, at_now: true });
 
       const checks = await db.prisma.$transaction(async (tx) => {
         const warehouse = await tx.warehouse.create({
@@ -211,7 +206,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
           FROM warehouse w, customer_order o
           WHERE w.id = ${warehouse.id}::uuid AND o.id = ${order.id}::uuid`;
       });
-      assert.deepEqual(checks, [{ equal: true, at_now: true }]);
+      expect(checks).toStrictEqual([{ equal: true, at_now: true }]);
     });
 
     test("raw SQL updates keep created_at and override a supplied updated_at", async () => {
@@ -221,7 +216,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
          RETURNING stock, created_at = '2000-01-01Z' AS created_kept, updated_at = NOW() AS updated_now`,
         [id],
       );
-      assert.deepEqual(updated.rows[0], { stock: 9, created_kept: true, updated_now: true });
+      expect(updated.rows[0]).toStrictEqual({ stock: 9, created_kept: true, updated_now: true });
     });
 
     test("Prisma updates keep created_at and override a supplied updatedAt", async () => {
@@ -236,12 +231,12 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
           FROM warehouse WHERE id = ${id}::uuid`;
         return { stock: warehouse.stock, returnedUpdatedAt: warehouse.updatedAt, check };
       });
-      assert.equal(result.stock, 8);
-      assert.deepEqual(result.check, { created_kept: true, updated_now: true });
-      assert.ok(
-        result.returnedUpdatedAt.getUTCFullYear() > 2000,
+      expect(result.stock).toBe(8);
+      expect(result.check).toStrictEqual({ created_kept: true, updated_now: true });
+      expect(
+        result.returnedUpdatedAt.getUTCFullYear(),
         "Prisma returns the trigger value",
-      );
+      ).toBeGreaterThan(2000);
     });
 
     test("a no-op update still refreshes updated_at to the transaction time", async () => {
@@ -251,7 +246,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
          RETURNING stock, updated_at = NOW() AS updated_now`,
         [id],
       );
-      assert.deepEqual(noop.rows[0], { stock: 10, updated_now: true });
+      expect(noop.rows[0]).toStrictEqual({ stock: 10, updated_now: true });
     });
 
     test("statements in one transaction share NOW(); repeated updates do not advance it", async () => {
@@ -283,7 +278,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
            FROM warehouse w, customer_order o WHERE w.id = $1 AND o.id = $2`,
           [id, order.rows[0]!.id],
         );
-        assert.deepEqual(check.rows[0], { shared: true, time_passed: true, stock: 3 });
+        expect(check.rows[0]).toStrictEqual({ shared: true, time_passed: true, stock: 3 });
         await client.query("COMMIT");
       } catch (error) {
         await client.query("ROLLBACK");
@@ -307,7 +302,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         "SELECT stock, updated_at = '2000-01-01Z' AS unchanged FROM warehouse WHERE id = $1",
         [id],
       );
-      assert.deepEqual(after.rows[0], { stock: 10, unchanged: true });
+      expect(after.rows[0]).toStrictEqual({ stock: 10, unchanged: true });
     });
 
     test("order and allocation updates are covered by the trigger", async () => {
@@ -328,14 +323,14 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
            RETURNING created_at = $2::timestamptz AS created_kept, updated_at = NOW() AS updated_now`,
           [orderId, before.rows[0]!.order_created],
         );
-        assert.deepEqual(order.rows[0], { created_kept: true, updated_now: true });
+        expect(order.rows[0]).toStrictEqual({ created_kept: true, updated_now: true });
         const allocation = await client.query(
           `UPDATE order_allocation SET quantity = quantity, updated_at = '1999-01-01Z'
            WHERE order_id = $1
            RETURNING created_at = $2::timestamptz AS created_kept, updated_at = NOW() AS updated_now`,
           [orderId, before.rows[0]!.allocation_created],
         );
-        assert.deepEqual(allocation.rows[0], { created_kept: true, updated_now: true });
+        expect(allocation.rows[0]).toStrictEqual({ created_kept: true, updated_now: true });
       } finally {
         await client.query("ROLLBACK");
         client.release();
@@ -350,7 +345,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         "SELECT updated_at = '2000-01-01Z' AS unchanged FROM warehouse WHERE id = $1",
         [id],
       );
-      assert.deepEqual(after.rows[0], { unchanged: true });
+      expect(after.rows[0]).toStrictEqual({ unchanged: true });
     });
   });
 
@@ -378,7 +373,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
            (SELECT uuid_extract_version(id) FROM order_allocation WHERE order_id = $2) AS allocation`,
         [warehouseId, order.id],
       );
-      assert.deepEqual(versions.rows[0], { warehouse: 7, order: 7, allocation: 7 });
+      expect(versions.rows[0]).toStrictEqual({ warehouse: 7, order: 7, allocation: 7 });
     });
   });
 
@@ -454,13 +449,13 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         { code: CHECK_VIOLATION, constraint: "customer_order_submission_key_check" },
       );
       const longestKey = `k${randomUUID()}`.padEnd(255, "x");
-      assert.equal(longestKey.length, 255);
+      expect(longestKey.length).toBe(255);
       await insertOrder({ submission_key: longestKey });
       const stored = await db.pool.query<{ length: number }>(
         "SELECT char_length(submission_key) AS length FROM customer_order WHERE submission_key = $1",
         [longestKey],
       );
-      assert.deepEqual(stored.rows, [{ length: 255 }]);
+      expect(stored.rows).toStrictEqual([{ length: 255 }]);
     });
 
     test("Orders require a positive quantity and a bounded destination", async () => {
@@ -508,22 +503,19 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
          WHERE conrelid = 'public.customer_order'::regclass AND contype = 'c'
          ORDER BY conname`,
       );
-      assert.deepEqual(
-        checks.rows.map((row) => row.conname),
-        [
-          "customer_order_destination_latitude_check",
-          "customer_order_destination_longitude_check",
-          "customer_order_discount_amount_check",
-          "customer_order_discount_rate_check",
-          "customer_order_merchandise_subtotal_range_check",
-          "customer_order_order_number_check",
-          "customer_order_order_total_range_check",
-          "customer_order_quantity_check",
-          "customer_order_shipping_cost_check",
-          "customer_order_submission_key_check",
-          "customer_order_unit_price_check",
-        ],
-      );
+      expect(checks.rows.map((row) => row.conname)).toStrictEqual([
+        "customer_order_destination_latitude_check",
+        "customer_order_destination_longitude_check",
+        "customer_order_discount_amount_check",
+        "customer_order_discount_rate_check",
+        "customer_order_merchandise_subtotal_range_check",
+        "customer_order_order_number_check",
+        "customer_order_order_total_range_check",
+        "customer_order_quantity_check",
+        "customer_order_shipping_cost_check",
+        "customer_order_submission_key_check",
+        "customer_order_unit_price_check",
+      ]);
     });
 
     test("stored commercial facts are nonnegative and the rate is bounded", async () => {
@@ -651,7 +643,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
          FROM customer_order WHERE id = ANY($1::uuid[])`,
         [ids],
       );
-      assert.equal(computed.rowCount, ids.length);
+      expect(computed.rowCount).toBe(ids.length);
       const rows = await db.prisma.order.findMany({
         where: { id: { in: ids } },
         include: { allocations: true },
@@ -661,13 +653,11 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         const { id, merchandiseSubtotal, discountedMerchandiseTotal, orderTotal } = mapped.get(
           expected.id,
         )!;
-        assert.deepEqual(
-          { id, merchandiseSubtotal, discountedMerchandiseTotal, orderTotal },
+        expect({ id, merchandiseSubtotal, discountedMerchandiseTotal, orderTotal }).toStrictEqual(
           expected,
         );
       }
-      assert.deepEqual(
-        computed.rows.map((row) => row.orderTotal).sort(),
+      expect(computed.rows.map((row) => row.orderTotal).sort()).toStrictEqual(
         ["10.30", "1510.00", "21474836.47", "7999992010.00"].sort(),
       );
     });
@@ -680,7 +670,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         "SELECT discount_rate FROM customer_order WHERE id = $1",
         [id],
       );
-      assert.deepEqual(stored.rows, [{ discount_rate: "0.13" }]);
+      expect(stored.rows).toStrictEqual([{ discount_rate: "0.13" }]);
       await assertDatabaseError(insertOrder({ discount_rate: "10.00" }), {
         code: NUMERIC_OVERFLOW,
       });
@@ -744,7 +734,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         "SELECT count(*)::int AS allocations FROM order_allocation WHERE order_id = $1",
         [orderId],
       );
-      assert.deepEqual(remaining.rows[0], { allocations: 1 });
+      expect(remaining.rows[0]).toStrictEqual({ allocations: 1 });
     });
   });
 
@@ -766,37 +756,34 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
             shippingCost: amount,
           },
         });
-        assert.equal(formatMoney(order.unitPrice), amount);
-        assert.equal(formatMoney(order.discountAmount), amount);
-        assert.equal(formatMoney(order.shippingCost), amount);
+        expect(formatMoney(order.unitPrice)).toBe(amount);
+        expect(formatMoney(order.discountAmount)).toBe(amount);
+        expect(formatMoney(order.shippingCost)).toBe(amount);
         const reread = await db.prisma.order.findUniqueOrThrow({
           where: { id: order.id },
           include: { allocations: true },
         });
         const record = toOrderRecord(reread);
-        assert.deepEqual(
-          {
-            unitPrice: record.unitPrice,
-            discountAmount: record.discountAmount,
-            shippingCost: record.shippingCost,
-            merchandiseSubtotal: record.merchandiseSubtotal,
-            discountedMerchandiseTotal: record.discountedMerchandiseTotal,
-            orderTotal: record.orderTotal,
-          },
-          {
-            unitPrice: amount,
-            discountAmount: amount,
-            shippingCost: amount,
-            merchandiseSubtotal: amount,
-            discountedMerchandiseTotal: "0.00",
-            orderTotal: amount,
-          },
-        );
+        expect({
+          unitPrice: record.unitPrice,
+          discountAmount: record.discountAmount,
+          shippingCost: record.shippingCost,
+          merchandiseSubtotal: record.merchandiseSubtotal,
+          discountedMerchandiseTotal: record.discountedMerchandiseTotal,
+          orderTotal: record.orderTotal,
+        }).toStrictEqual({
+          unitPrice: amount,
+          discountAmount: amount,
+          shippingCost: amount,
+          merchandiseSubtotal: amount,
+          discountedMerchandiseTotal: "0.00",
+          orderTotal: amount,
+        });
         const raw = await db.pool.query(
           "SELECT unit_price, discount_amount, shipping_cost FROM customer_order WHERE id = $1",
           [order.id],
         );
-        assert.deepEqual(raw.rows, [
+        expect(raw.rows).toStrictEqual([
           { unit_price: amount, discount_amount: amount, shipping_cost: amount },
         ]);
       });
@@ -811,7 +798,7 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         });
       }
       const orderNumber = unique("ORD");
-      await assert.rejects(
+      await expect(
         db.prisma.order.create({
           data: {
             orderNumber,
@@ -825,12 +812,11 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
             shippingCost: "0.00",
           },
         }),
-        /numeric field overflow|22003/i,
-      );
+      ).rejects.toThrow(/numeric field overflow|22003/i);
       const stored = await db.pool.query("SELECT 1 FROM customer_order WHERE order_number = $1", [
         orderNumber,
       ]);
-      assert.equal(stored.rowCount, 0);
+      expect(stored.rowCount).toBe(0);
     });
 
     test("an accepted Order round-trips through Prisma and the typed mappings", async () => {
@@ -862,53 +848,50 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
       // merchandiseSubtotal, discountedMerchandiseTotal, and orderTotal are
       // derived by the mapping; the row stores only the facts created above.
       const order = toOrderRecord(created);
-      assert.deepEqual(
-        {
-          orderNumber: order.orderNumber,
-          submissionKey: order.submissionKey,
-          quantity: order.quantity,
-          destination: order.destination,
-          unitPrice: order.unitPrice,
-          merchandiseSubtotal: order.merchandiseSubtotal,
-          discountRate: order.discountRate,
-          discountAmount: order.discountAmount,
-          discountedMerchandiseTotal: order.discountedMerchandiseTotal,
-          shippingCost: order.shippingCost,
-          orderTotal: order.orderTotal,
-          allocations: order.allocations.map(({ warehouseId, quantity }) => ({
-            warehouseId,
-            quantity,
-          })),
-        },
-        {
-          orderNumber,
-          submissionKey,
-          quantity: 30,
-          destination: { latitude: 13.7563, longitude: 100.5018 },
-          unitPrice: "150.00",
-          merchandiseSubtotal: "4500.00",
-          discountRate: "0.05",
-          discountAmount: "225.00",
-          discountedMerchandiseTotal: "4275.00",
-          shippingCost: "123.45",
-          orderTotal: "4398.45",
-          allocations: [
-            { warehouseId: warehouseA, quantity: 20 },
-            { warehouseId: warehouseB, quantity: 10 },
-          ],
-        },
-      );
-      assert.ok(order.createdAt instanceof Date);
+      expect({
+        orderNumber: order.orderNumber,
+        submissionKey: order.submissionKey,
+        quantity: order.quantity,
+        destination: order.destination,
+        unitPrice: order.unitPrice,
+        merchandiseSubtotal: order.merchandiseSubtotal,
+        discountRate: order.discountRate,
+        discountAmount: order.discountAmount,
+        discountedMerchandiseTotal: order.discountedMerchandiseTotal,
+        shippingCost: order.shippingCost,
+        orderTotal: order.orderTotal,
+        allocations: order.allocations.map(({ warehouseId, quantity }) => ({
+          warehouseId,
+          quantity,
+        })),
+      }).toStrictEqual({
+        orderNumber,
+        submissionKey,
+        quantity: 30,
+        destination: { latitude: 13.7563, longitude: 100.5018 },
+        unitPrice: "150.00",
+        merchandiseSubtotal: "4500.00",
+        discountRate: "0.05",
+        discountAmount: "225.00",
+        discountedMerchandiseTotal: "4275.00",
+        shippingCost: "123.45",
+        orderTotal: "4398.45",
+        allocations: [
+          { warehouseId: warehouseA, quantity: 20 },
+          { warehouseId: warehouseB, quantity: 10 },
+        ],
+      });
+      expect(order.createdAt).toBeInstanceOf(Date);
 
       const byNumber = await db.prisma.order.findUniqueOrThrow({
         where: { orderNumber },
         include: { allocations: true },
       });
-      assert.equal(toOrderRecord(byNumber).id, order.id);
+      expect(toOrderRecord(byNumber).id).toBe(order.id);
 
       // The duplicate-submission lookup used by order submission (ADR 0004).
       const byKey = await db.prisma.order.findUniqueOrThrow({ where: { submissionKey } });
-      assert.equal(byKey.id, order.id);
+      expect(byKey.id).toBe(order.id);
     });
   });
 });

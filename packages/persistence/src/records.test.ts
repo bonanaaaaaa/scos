@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import { test } from "vitest";
+import { expect, test } from "vitest";
 
 import { Prisma } from "./generated/prisma/client.js";
 import {
@@ -39,25 +38,25 @@ const derivedTotals = (overrides: Partial<typeof orderRow>) => {
 };
 
 test("money formats exactly to two decimal places without JavaScript numbers", () => {
-  assert.equal(formatMoney(decimal("0")), "0.00");
-  assert.equal(formatMoney(decimal("0.01")), "0.01");
-  assert.equal(formatMoney(decimal("150.5")), "150.50");
-  assert.equal(formatMoney(decimal("9999999999.99")), "9999999999.99");
-  assert.equal(formatMoney(decimal("1234567890.1")), "1234567890.10");
-  assert.equal(formatDiscountRate(decimal("0.05")), "0.05");
-  assert.equal(formatDiscountRate(decimal("1")), "1.00");
+  expect(formatMoney(decimal("0"))).toBe("0.00");
+  expect(formatMoney(decimal("0.01"))).toBe("0.01");
+  expect(formatMoney(decimal("150.5"))).toBe("150.50");
+  expect(formatMoney(decimal("9999999999.99"))).toBe("9999999999.99");
+  expect(formatMoney(decimal("1234567890.1"))).toBe("1234567890.10");
+  expect(formatDiscountRate(decimal("0.05"))).toBe("0.05");
+  expect(formatDiscountRate(decimal("1"))).toBe("1.00");
 });
 
 test("money and rates refuse values that would need rounding or are not finite", () => {
-  assert.throws(() => formatMoney(decimal("0.001")), /at most 2 decimal places/);
-  assert.throws(() => formatMoney(decimal("NaN")), /Money must be finite/);
-  assert.throws(() => formatMoney(decimal("Infinity")), /Money must be finite/);
-  assert.throws(() => formatDiscountRate(decimal("0.125")), /at most 2 decimal places/);
+  expect(() => formatMoney(decimal("0.001"))).toThrow(/at most 2 decimal places/);
+  expect(() => formatMoney(decimal("NaN"))).toThrow(/Money must be finite/);
+  expect(() => formatMoney(decimal("Infinity"))).toThrow(/Money must be finite/);
+  expect(() => formatDiscountRate(decimal("0.125"))).toThrow(/at most 2 decimal places/);
 });
 
 test("money refuses amounts outside NUMERIC(12,2)", () => {
-  assert.throws(() => formatMoney(decimal("10000000000.00")), /Money must fit NUMERIC\(12,2\)/);
-  assert.throws(() => formatMoney(decimal("-10000000000.00")), /Money must fit NUMERIC\(12,2\)/);
+  expect(() => formatMoney(decimal("10000000000.00"))).toThrow(/Money must fit NUMERIC\(12,2\)/);
+  expect(() => formatMoney(decimal("-10000000000.00"))).toThrow(/Money must fit NUMERIC\(12,2\)/);
 });
 
 test("warehouse rows map to plain records", () => {
@@ -70,11 +69,11 @@ test("warehouse rows map to plain records", () => {
     createdAt,
     updatedAt,
   };
-  assert.deepEqual(toWarehouseRecord(warehouse), warehouse);
+  expect(toWarehouseRecord(warehouse)).toStrictEqual(warehouse);
 });
 
 test("allocation rows map to warehouse quantities without the order ID", () => {
-  assert.deepEqual(
+  expect(
     toOrderAllocationRecord({
       id: "01996000-0000-7000-8000-0000000000cc",
       orderId: "01996000-0000-7000-8000-0000000000bb",
@@ -83,14 +82,13 @@ test("allocation rows map to warehouse quantities without the order ID", () => {
       createdAt,
       updatedAt,
     }),
-    {
-      id: "01996000-0000-7000-8000-0000000000cc",
-      warehouseId: "01996000-0000-7000-8000-000000000001",
-      quantity: 100,
-      createdAt,
-      updatedAt,
-    },
-  );
+  ).toStrictEqual({
+    id: "01996000-0000-7000-8000-0000000000cc",
+    warehouseId: "01996000-0000-7000-8000-000000000001",
+    quantity: 100,
+    createdAt,
+    updatedAt,
+  });
 });
 
 test("order rows map the request, stored facts, derived totals, and allocations", () => {
@@ -108,7 +106,7 @@ test("order rows map the request, stored facts, derived totals, and allocations"
     ],
   };
 
-  assert.deepEqual(toOrderRecord(order), {
+  expect(toOrderRecord(order)).toStrictEqual({
     id: order.id,
     orderNumber: "ORD-1",
     submissionKey: "attempt-1",
@@ -137,7 +135,7 @@ test("order rows map the request, stored facts, derived totals, and allocations"
 
 test("order totals are derived exactly from the stored facts", () => {
   // PRD-like: 30 x 150.00 with the 5% tier.
-  assert.deepEqual(
+  expect(
     derivedTotals({
       quantity: 30,
       unitPrice: decimal("150.00"),
@@ -145,14 +143,13 @@ test("order totals are derived exactly from the stored facts", () => {
       discountAmount: decimal("225.00"),
       shippingCost: decimal("123.45"),
     }),
-    {
-      merchandiseSubtotal: "4500.00",
-      discountedMerchandiseTotal: "4275.00",
-      orderTotal: "4398.45",
-    },
-  );
+  ).toStrictEqual({
+    merchandiseSubtotal: "4500.00",
+    discountedMerchandiseTotal: "4275.00",
+    orderTotal: "4398.45",
+  });
   // Cent-level: 0.01 x 2147483647 is not exactly representable as a double.
-  assert.deepEqual(
+  expect(
     derivedTotals({
       quantity: 2_147_483_647,
       unitPrice: decimal("0.01"),
@@ -160,14 +157,13 @@ test("order totals are derived exactly from the stored facts", () => {
       discountAmount: decimal("0.01"),
       shippingCost: decimal("0.01"),
     }),
-    {
-      merchandiseSubtotal: "21474836.47",
-      discountedMerchandiseTotal: "21474836.46",
-      orderTotal: "21474836.47",
-    },
-  );
+  ).toStrictEqual({
+    merchandiseSubtotal: "21474836.47",
+    discountedMerchandiseTotal: "21474836.46",
+    orderTotal: "21474836.47",
+  });
   // Every stored and derived amount at the NUMERIC(12,2) maximum.
-  assert.deepEqual(
+  expect(
     derivedTotals({
       quantity: 1,
       unitPrice: decimal("9999999999.99"),
@@ -175,13 +171,12 @@ test("order totals are derived exactly from the stored facts", () => {
       discountAmount: decimal("0.00"),
       shippingCost: decimal("0.00"),
     }),
-    {
-      merchandiseSubtotal: "9999999999.99",
-      discountedMerchandiseTotal: "9999999999.99",
-      orderTotal: "9999999999.99",
-    },
-  );
-  assert.deepEqual(
+  ).toStrictEqual({
+    merchandiseSubtotal: "9999999999.99",
+    discountedMerchandiseTotal: "9999999999.99",
+    orderTotal: "9999999999.99",
+  });
+  expect(
     derivedTotals({
       quantity: 1,
       unitPrice: decimal("9999999999.99"),
@@ -189,43 +184,37 @@ test("order totals are derived exactly from the stored facts", () => {
       discountAmount: decimal("9999999999.99"),
       shippingCost: decimal("9999999999.99"),
     }),
-    {
-      merchandiseSubtotal: "9999999999.99",
-      discountedMerchandiseTotal: "0.00",
-      orderTotal: "9999999999.99",
-    },
-  );
+  ).toStrictEqual({
+    merchandiseSubtotal: "9999999999.99",
+    discountedMerchandiseTotal: "0.00",
+    orderTotal: "9999999999.99",
+  });
 });
 
 test("derived totals beyond NUMERIC(12,2) are refused rather than rounded", () => {
   // 9999999999.99 x 2147483647 has 22 significant digits; Decimal would round
   // it to 20 and drop the cents.
-  assert.throws(
-    () => derivedTotals({ quantity: 2_147_483_647, unitPrice: decimal("9999999999.99") }),
-    /Money must fit NUMERIC\(12,2\)/,
-  );
-  assert.throws(
-    () =>
-      derivedTotals({
-        quantity: 1,
-        unitPrice: decimal("9999999999.99"),
-        discountAmount: decimal("0.00"),
-        shippingCost: decimal("0.01"),
-      }),
-    /Money must fit NUMERIC\(12,2\)/,
-  );
+  expect(() =>
+    derivedTotals({ quantity: 2_147_483_647, unitPrice: decimal("9999999999.99") }),
+  ).toThrow(/Money must fit NUMERIC\(12,2\)/);
+  expect(() =>
+    derivedTotals({
+      quantity: 1,
+      unitPrice: decimal("9999999999.99"),
+      discountAmount: decimal("0.00"),
+      shippingCost: decimal("0.01"),
+    }),
+  ).toThrow(/Money must fit NUMERIC\(12,2\)/);
 });
 
 test("order rows with unmappable amounts are refused rather than rounded", () => {
   const order = { ...orderRow, shippingCost: decimal("0.005") };
-  assert.throws(() => toOrderRecord(order), /Money must be finite with at most 2 decimal places/);
-  assert.throws(
-    () => toOrderRecord({ ...orderRow, discountRate: decimal("0.125") }),
+  expect(() => toOrderRecord(order)).toThrow(/Money must be finite with at most 2 decimal places/);
+  expect(() => toOrderRecord({ ...orderRow, discountRate: decimal("0.125") })).toThrow(
     /Discount rate must be finite with at most 2 decimal places/,
   );
   // A stored fact with excess scale makes the derived total inexact too.
-  assert.throws(
-    () => derivedTotals({ quantity: 1, unitPrice: decimal("150.005") }),
+  expect(() => derivedTotals({ quantity: 1, unitPrice: decimal("150.005") })).toThrow(
     /Money must be finite with at most 2 decimal places/,
   );
 });

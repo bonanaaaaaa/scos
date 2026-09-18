@@ -1,10 +1,10 @@
-import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { Client, DatabaseError, type Pool } from "pg";
+import { expect } from "vitest";
 
 import { createDatabasePool } from "../../src/database.js";
 import { createPrismaClient, type PrismaClient } from "../../src/prisma.js";
@@ -17,21 +17,20 @@ const prismaCli = fileURLToPath(new URL("../../node_modules/.bin/prisma", import
 /**
  * Returns DATABASE_TEST_URL after the same isolation guard as the connectivity
  * harness: it must name the dedicated scos_test database and differ from
- * DATABASE_URL.
+ * DATABASE_URL. These are safety guards rather than test expectations, so they
+ * throw plainly before any database is created or dropped.
  */
 export function requireTestDatabaseUrl(): string {
   const databaseTestUrl = process.env.DATABASE_TEST_URL;
-  assert.ok(databaseTestUrl, "DATABASE_TEST_URL must point to the isolated test database");
-  assert.notEqual(
-    databaseTestUrl,
-    process.env.DATABASE_URL,
-    "DATABASE_TEST_URL must differ from DATABASE_URL",
-  );
-  assert.equal(
-    new URL(databaseTestUrl).pathname,
-    "/scos_test",
-    "DATABASE_TEST_URL must name the dedicated scos_test database",
-  );
+  if (!databaseTestUrl) {
+    throw new Error("DATABASE_TEST_URL must point to the isolated test database");
+  }
+  if (databaseTestUrl === process.env.DATABASE_URL) {
+    throw new Error("DATABASE_TEST_URL must differ from DATABASE_URL");
+  }
+  if (new URL(databaseTestUrl).pathname !== "/scos_test") {
+    throw new Error("DATABASE_TEST_URL must name the dedicated scos_test database");
+  }
   return databaseTestUrl;
 }
 
@@ -76,13 +75,20 @@ export async function createMigratedDatabase(): Promise<MigratedDatabase> {
   const url = new URL(testUrl);
   url.pathname = `/${name}`;
   const databaseUrl = url.toString();
-  assert.notEqual(databaseUrl, process.env.DATABASE_URL);
+  if (databaseUrl === process.env.DATABASE_URL) {
+    throw new Error("The per-file test database URL must differ from DATABASE_URL");
+  }
 
   const admin = adminClient(testUrl);
   await admin.connect();
   try {
     const current = await admin.query<{ name: string }>("SELECT current_database() AS name");
-    assert.equal(current.rows[0]?.name, "scos_test");
+    const connectedDatabase = current.rows[0]?.name;
+    if (connectedDatabase !== "scos_test") {
+      throw new Error(
+        `Expected to be connected to scos_test, but current_database() is ${String(connectedDatabase)}`,
+      );
+    }
     await admin.query(`CREATE DATABASE "${name}"`);
   } finally {
     await admin.end();
@@ -133,12 +139,17 @@ export async function assertDatabaseError(
   operation: Promise<unknown>,
   expected: { code: string; constraint?: string },
 ): Promise<void> {
-  await assert.rejects(operation, (error: unknown) => {
-    assert.ok(error instanceof DatabaseError, `expected a PostgreSQL error, got ${String(error)}`);
-    assert.equal(error.code, expected.code, error.message);
-    if (expected.constraint !== undefined) {
-      assert.equal(error.constraint, expected.constraint, error.message);
-    }
-    return true;
-  });
+  const error: unknown = await operation.then(
+    () => expect.fail(`expected a PostgreSQL error ${expected.code}, but the operation resolved`),
+    (reason: unknown) => reason,
+  );
+  expect(error, `expected a PostgreSQL error, got ${String(error)}`).toBeInstanceOf(DatabaseError);
+  // Unreachable after the expect above; narrows the type for TypeScript.
+  if (!(error instanceof DatabaseError)) {
+    throw new TypeError(`expected a PostgreSQL error, got ${String(error)}`);
+  }
+  expect(error.code, error.message).toBe(expected.code);
+  if (expected.constraint !== undefined) {
+    expect(error.constraint, error.message).toBe(expected.constraint);
+  }
 }

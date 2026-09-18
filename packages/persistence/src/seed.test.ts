@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import { test } from "vitest";
+import { expect, test } from "vitest";
 
 import { runConfirmResetCommand, runSeedCommand } from "./commands.js";
 import { confirmDatabaseReset } from "./reset.js";
@@ -8,32 +7,30 @@ import { seedWarehouses, warehouseSeeds } from "./seed.js";
 const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 test("seed data matches the six PRD warehouses with stable UUIDv7 IDs", () => {
-  assert.deepEqual(
+  expect(
     warehouseSeeds.map(({ name, latitude, longitude, stock }) => [
       name,
       latitude,
       longitude,
       stock,
     ]),
-    [
-      ["Los Angeles", 33.9425, -118.408056, 355],
-      ["New York", 40.639722, -73.778889, 578],
-      ["São Paulo", -23.435556, -46.473056, 265],
-      ["Paris", 49.009722, 2.547778, 694],
-      ["Warsaw", 52.165833, 20.967222, 245],
-      ["Hong Kong", 22.308889, 113.914444, 419],
-    ],
-  );
+  ).toStrictEqual([
+    ["Los Angeles", 33.9425, -118.408056, 355],
+    ["New York", 40.639722, -73.778889, 578],
+    ["São Paulo", -23.435556, -46.473056, 265],
+    ["Paris", 49.009722, 2.547778, 694],
+    ["Warsaw", 52.165833, 20.967222, 245],
+    ["Hong Kong", 22.308889, 113.914444, 419],
+  ]);
   for (const seed of warehouseSeeds) {
-    assert.match(seed.id, uuidV7);
+    expect(seed.id).toMatch(uuidV7);
   }
-  assert.equal(new Set(warehouseSeeds.map((seed) => seed.id)).size, 6);
-  assert.deepEqual(
+  expect(new Set(warehouseSeeds.map((seed) => seed.id)).size).toBe(6);
+  expect(
     warehouseSeeds.map((seed) => seed.id),
-    warehouseSeeds.map((seed) => seed.id).toSorted(),
     "seed IDs sort in PRD order",
-  );
-  assert.ok(Object.isFrozen(warehouseSeeds));
+  ).toStrictEqual(warehouseSeeds.map((seed) => seed.id).toSorted());
+  expect(Object.isFrozen(warehouseSeeds)).toBe(true);
 });
 
 test("seeding inserts only missing warehouses and never updates existing stock", async () => {
@@ -45,25 +42,28 @@ test("seeding inserts only missing warehouses and never updates existing stock",
     },
   });
 
-  assert.deepEqual(result, { inserted: 2, existing: 4 });
-  assert.equal(calls.length, 1);
+  expect(result).toStrictEqual({ inserted: 2, existing: 4 });
+  expect(calls.length).toBe(1);
   const [call] = calls;
-  assert.ok(call);
-  assert.match(call.text, /INSERT INTO warehouse \(id, name, latitude, longitude, stock\)/);
-  assert.match(call.text, /ON CONFLICT \(id\) DO NOTHING\s*$/);
-  assert.doesNotMatch(call.text, /UPDATE|DO UPDATE/i);
-  assert.equal(call.values.length, 30);
-  assert.deepEqual(call.values.slice(0, 5), [
+  expect(call).toBeDefined();
+  if (call === undefined) {
+    throw new Error("seeding must issue exactly one query");
+  }
+  expect(call.text).toMatch(/INSERT INTO warehouse \(id, name, latitude, longitude, stock\)/);
+  expect(call.text).toMatch(/ON CONFLICT \(id\) DO NOTHING\s*$/);
+  expect(call.text).not.toMatch(/UPDATE|DO UPDATE/i);
+  expect(call.values.length).toBe(30);
+  expect(call.values.slice(0, 5)).toStrictEqual([
     "01996000-0000-7000-8000-000000000001",
     "Los Angeles",
     33.9425,
     -118.408056,
     355,
   ]);
-  assert.match(call.text, /\(\$26::uuid, \$27, \$28::double precision/);
+  expect(call.text).toMatch(/\(\$26::uuid, \$27, \$28::double precision/);
 
   const unknownCount = await seedWarehouses({ query: async () => ({ rowCount: null }) });
-  assert.deepEqual(unknownCount, { inserted: 0, existing: 6 });
+  expect(unknownCount).toStrictEqual({ inserted: 0, existing: 6 });
 });
 
 test("the seed command reports the result and always ends its pool", async () => {
@@ -78,12 +78,12 @@ test("the seed command reports the result and always ends its pool", async () =>
     }),
     log: (message) => messages.push(message),
   });
-  assert.deepEqual(messages, [
+  expect(messages).toStrictEqual([
     "Seeded warehouses: 6 inserted, 0 already present (stock unchanged).",
   ]);
-  assert.equal(ended, 1);
+  expect(ended).toBe(1);
 
-  await assert.rejects(
+  await expect(
     runSeedCommand({
       createPool: () => ({
         query: async () => {
@@ -93,49 +93,41 @@ test("the seed command reports the result and always ends its pool", async () =>
           ended += 1;
         },
       }),
-      log: () => assert.fail("must not report success"),
+      log: () => expect.fail("must not report success"),
     }),
-    /connection refused/,
-  );
-  assert.equal(ended, 2);
+  ).rejects.toThrow(/connection refused/);
+  expect(ended).toBe(2);
 });
 
 test("database reset refuses without an exact confirmation of the target database", () => {
   const url = "postgresql://scos:secret@localhost:5432/scos_wt_abc";
-  assert.throws(() => confirmDatabaseReset({}), /DATABASE_URL is required/);
-  assert.throws(
-    () => confirmDatabaseReset({ DATABASE_URL: url }),
+  expect(() => confirmDatabaseReset({})).toThrow(/DATABASE_URL is required/);
+  expect(() => confirmDatabaseReset({ DATABASE_URL: url })).toThrow(
     /Refusing to reset database "scos_wt_abc"/,
   );
-  assert.throws(
-    () => confirmDatabaseReset({ DATABASE_URL: url, SCOS_CONFIRM_DATABASE_RESET: "1" }),
-    /SCOS_CONFIRM_DATABASE_RESET=scos_wt_abc/,
-  );
-  assert.throws(
-    () => confirmDatabaseReset({ DATABASE_URL: url, SCOS_CONFIRM_DATABASE_RESET: "scos" }),
-    /Refusing/,
-  );
-  assert.throws(
-    () => confirmDatabaseReset({ DATABASE_URL: "not a url", SCOS_CONFIRM_DATABASE_RESET: "x" }),
-    /valid PostgreSQL connection URL/,
-  );
-  assert.throws(
-    () =>
-      confirmDatabaseReset({
-        DATABASE_URL: "postgresql://scos@localhost:5432",
-        SCOS_CONFIRM_DATABASE_RESET: "",
-      }),
-    /must name the database/,
-  );
-  assert.equal(
+  expect(() =>
+    confirmDatabaseReset({ DATABASE_URL: url, SCOS_CONFIRM_DATABASE_RESET: "1" }),
+  ).toThrow(/SCOS_CONFIRM_DATABASE_RESET=scos_wt_abc/);
+  expect(() =>
+    confirmDatabaseReset({ DATABASE_URL: url, SCOS_CONFIRM_DATABASE_RESET: "scos" }),
+  ).toThrow(/Refusing/);
+  expect(() =>
+    confirmDatabaseReset({ DATABASE_URL: "not a url", SCOS_CONFIRM_DATABASE_RESET: "x" }),
+  ).toThrow(/valid PostgreSQL connection URL/);
+  expect(() =>
+    confirmDatabaseReset({
+      DATABASE_URL: "postgresql://scos@localhost:5432",
+      SCOS_CONFIRM_DATABASE_RESET: "",
+    }),
+  ).toThrow(/must name the database/);
+  expect(
     confirmDatabaseReset({ DATABASE_URL: url, SCOS_CONFIRM_DATABASE_RESET: "scos_wt_abc" }),
-    "scos_wt_abc",
-  );
+  ).toBe("scos_wt_abc");
   const secretFree: string[] = [];
   runConfirmResetCommand(
     { DATABASE_URL: url, SCOS_CONFIRM_DATABASE_RESET: "scos_wt_abc" },
     (message) => secretFree.push(message),
   );
-  assert.deepEqual(secretFree, ['Confirmed destructive reset of database "scos_wt_abc".']);
-  assert.throws(() => runConfirmResetCommand({ DATABASE_URL: url }), /Refusing/);
+  expect(secretFree).toStrictEqual(['Confirmed destructive reset of database "scos_wt_abc".']);
+  expect(() => runConfirmResetCommand({ DATABASE_URL: url })).toThrow(/Refusing/);
 });
