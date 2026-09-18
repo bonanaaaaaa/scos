@@ -1,4 +1,4 @@
-import { orderingPackage } from "@scos/ordering";
+import { corePackage } from "@scos/core";
 import { persistencePackage } from "@scos/persistence";
 import { Hono } from "hono";
 
@@ -13,5 +13,5 @@ export function createApp(): Hono {
 export const app = createApp();
 
 export function workspaceComposition(): readonly string[] {
-  return [orderingPackage.name, persistencePackage.name];
+  return [corePackage.name, persistencePackage.name];
 }

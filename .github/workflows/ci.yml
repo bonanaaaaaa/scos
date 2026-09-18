@@ -63,7 +63,7 @@ jobs:
           path: |
             coverage/coverage-summary.json
             apps/api/coverage/coverage-summary.json
-            packages/ordering/coverage/coverage-summary.json
+            packages/core/coverage/coverage-summary.json
             packages/persistence/coverage/coverage-summary.json
           retention-days: 7
           if-no-files-found: error

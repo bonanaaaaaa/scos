@@ -21,7 +21,7 @@
     "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
-    "@scos/ordering": "workspace:*",
+    "@scos/core": "workspace:*",
     "pg": "8.23.0"
   },
   "devDependencies": {

@@ -3,8 +3,8 @@ import { test } from "vitest";
 
 import { createDatabasePool, persistencePackage, readDatabaseUrl } from "./index.js";
 
-test("the persistence adapter points inward to ordering", () => {
-  assert.deepEqual(persistencePackage, { name: "persistence", supports: "ordering" });
+test("the persistence adapter points inward to core", () => {
+  assert.deepEqual(persistencePackage, { name: "persistence", supports: "core" });
 });
 
 test("database configuration fails clearly when missing", () => {

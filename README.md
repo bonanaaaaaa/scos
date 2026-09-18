@@ -26,9 +26,9 @@ The compiler command must report `Version 7.0.2`. The separate quality commands 
 
 The workspace contains:
 
-- `packages/ordering`: dependency-free domain/application boundary
-- `packages/persistence`: outbound database adapter boundary, depending inward on ordering
-- `apps/api`: composition root, depending on ordering and persistence
+- `packages/core`: framework-independent business core; ordering rules, use cases, and ports belong here
+- `packages/persistence`: outbound database adapter boundary, depending inward on core
+- `apps/api`: composition root, depending on core and persistence
 - `libs/typescript-config`: shared TypeScript compiler policy consumed through the `@scos/typescript-config` workspace package
 
 Application and adapter package exports point to compiled files in each package's `dist` directory. Turbo treats the shared TypeScript configuration as a global dependency so compiler-policy changes invalidate affected cached tasks.
@@ -101,7 +101,7 @@ The workflow exposes these stable check names:
 
 The title and code-scanner checks use local composite actions copied from the repository-management baseline. The title composite passes untrusted title text through an environment variable to the repository's tested Node validator; it never interpolates the title into a shell command. The scanner checks full history with TruffleHog's verified-secret mode and converts scanner failure into a failed check.
 
-The workspace job uploads the root, API, ordering, and persistence JSON coverage summaries even when a coverage threshold rejects the test step. A separate same-repository pull-request job receives only `pull-requests: write` permission to create or update the aggregate coverage comment. Fork pull requests skip that comment job and receive no write permission.
+The workspace job uploads the root, API, core, and persistence JSON coverage summaries even when a coverage threshold rejects the test step. A separate same-repository pull-request job receives only `pull-requests: write` permission to create or update the aggregate coverage comment. Fork pull requests skip that comment job and receive no write permission.
 
 The workspace and PostgreSQL jobs use the repository's `TURBO_API` and `TURBO_TEAM` variables with the `TURBO_TOKEN` and `TURBO_REMOTE_CACHE_SIGNATURE_KEY` secrets for signed remote caching. Pull requests without those secrets, including forks, continue with Turbo's local cache. Database integration remains uncached. Cache configuration is consumed by Turbo itself and is not passed through to application tasks.
 

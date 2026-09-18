@@ -197,9 +197,9 @@ importers:
       '@hono/node-server':
         specifier: 2.1.1
         version: 2.1.1(hono@4.13.8)
-      '@scos/ordering':
+      '@scos/core':
         specifier: workspace:*
-        version: link:../../packages/ordering
+        version: link:../../packages/core
       '@scos/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
@@ -222,7 +222,7 @@ importers:
 
   libs/typescript-config: {}
 
-  packages/ordering:
+  packages/core:
     devDependencies:
       '@scos/typescript-config':
         specifier: workspace:*
@@ -239,9 +239,9 @@ importers:
 
   packages/persistence:
     dependencies:
-      '@scos/ordering':
+      '@scos/core':
         specifier: workspace:*
-        version: link:../ordering
+        version: link:../core
       pg:
         specifier: 8.23.0
         version: 8.23.0

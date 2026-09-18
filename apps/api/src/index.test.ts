@@ -5,7 +5,7 @@ import { app, workspaceComposition } from "./index.js";
 import { parsePort, startServer } from "./server.js";
 
 test("the API composition root can import the inward packages", () => {
-  assert.deepEqual(workspaceComposition(), ["ordering", "persistence"]);
+  assert.deepEqual(workspaceComposition(), ["core", "persistence"]);
 });
 
 test("GET /health reports application liveness without external services", async () => {

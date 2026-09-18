@@ -5,7 +5,7 @@ const path = require("node:path");
 const reports = [
   ["Tooling", "coverage/coverage-summary.json"],
   ["API", "apps/api/coverage/coverage-summary.json"],
-  ["Ordering", "packages/ordering/coverage/coverage-summary.json"],
+  ["Core", "packages/core/coverage/coverage-summary.json"],
   ["Persistence", "packages/persistence/coverage/coverage-summary.json"],
 ];
 const metrics = ["statements", "branches", "functions", "lines"];
