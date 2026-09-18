@@ -8,7 +8,7 @@
 - Budget: approximately four hours for core implementation, with separate review time.
 - AWS deployment provisioning has a separate budget from the four-hour core implementation.
 - Stack: TypeScript 7 (required), Hono, Prisma, PostgreSQL; deploy on AWS Lambda. PostgreSQL hosting and the database connection approach remain undecided.
-- Use a pnpm workspace and Turborepo monorepo. Oxlint is the selected linter. Type-aware rule configuration and the formatter remain implementation choices to finalize; Oxfmt has been recommended but not explicitly selected.
+- Use a pnpm workspace and Turborepo monorepo. Oxlint is the selected linter and Oxfmt is the selected formatter. Type-aware lint rule configuration remains an implementation choice to finalize.
 - Use hexagonal architecture and domain-driven design (DDD), with one Ordering bounded context covering pricing, shipping allocation, orders, and available inventory.
 - Do not use the experimental, non-standard Idempotency-Key HTTP header. Use a client-generated submissionId in the JSON request body as the idempotency key.
 - Target a disposable demo deployment with documented teardown. The user has no existing AWS infrastructure or PostgreSQL database to reuse; the monthly budget is not yet specified.
