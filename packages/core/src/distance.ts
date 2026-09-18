@@ -2,8 +2,12 @@ import type { GeoPoint } from "./destination";
 
 /**
  * Mean Earth radius in kilometres: the IUGG mean radius R1 = (2a + b) / 3 of
- * the WGS84 ellipsoid, 6371.0088 km (Moritz, "Geodetic Reference System 1980",
- * as adopted by the IUGG). Used consistently for verification and submission.
+ * the GRS80 ellipsoid, 6371.0088 km (WGS84 gives the same value to this
+ * precision). Used consistently for verification and submission.
+ *
+ * @see H. Moritz, "Geodetic Reference System 1980", Journal of Geodesy 74
+ *   (2000) 128–133, https://doi.org/10.1007/s001900050278 — mean radius
+ *   R1 = 6371.0088 km.
  */
 export const EARTH_RADIUS_KM = 6371.0088;
 
@@ -26,6 +30,15 @@ const DEGREES_TO_RADIANS = Math.PI / 180;
  * intermediate is clamped to [0, 1] so floating-point drift near identical or
  * antipodal points cannot produce NaN. The result is not rounded; convert it to
  * decimal.js through its string form for monetary arithmetic.
+ *
+ * @see R. W. Sinnott, "Virtues of the Haversine", Sky and Telescope 68(2)
+ *   (1984) 159 — original formulation.
+ * @see https://en.wikipedia.org/wiki/Haversine_formula — formula and the
+ *   note that rounding error can push `a` slightly outside [0, 1].
+ * @see https://www.movable-type.co.uk/scripts/latlong.html — reference
+ *   JavaScript implementation of the same formula.
+ * @see ../../../docs/design-decisions.md "Distance calculation and precision"
+ *   — project policy for number arithmetic, clamping and no rounding.
  */
 export function haversineDistanceKm(from: GeoPoint, to: GeoPoint): number {
   return EARTH_RADIUS_KM * centralAngleFromHaversine(haversineIntermediate(from, to));
