@@ -5,7 +5,8 @@ Order Estimates, and the Order aggregate. No HTTP, Prisma, or persistence types.
 
 ## Layout
 
-Hexagonal layering; adapters import only the package root (`src/index.ts`).
+Hexagonal layering (see [architecture](../../docs/architecture.md)); adapters
+import only the package root (`src/index.ts`).
 
 - `src/domain/`: value objects, pricing, distance, allocation, estimates and the
   Order aggregate. Pure, with no I/O and no ports.

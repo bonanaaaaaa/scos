@@ -44,6 +44,8 @@ The workspace contains:
 - `apps/api`: composition root, depending on core and persistence
 - `libs/typescript-config`: shared TypeScript compiler policy consumed through the `@scos/typescript-config` workspace package
 
+See [architecture](docs/architecture.md) for the hexagonal layering, the dependency rule, and where new code belongs.
+
 The library packages (`packages/core`, `packages/persistence`) build with tsdown into ESM JavaScript and declaration files in their `dist` directories, and package exports point to those files. Their third-party and `@scos/*` dependencies stay external. Declarations are emitted by the TypeScript 7 compiler; `tsc --noEmit` remains the type checker.
 
 The API application builds with esbuild (`apps/api/build.mjs`) into a self-contained ESM bundle, `apps/api/dist/server.js`, for Node.js and AWS Lambda. It inlines the built workspace libraries and third-party runtime dependencies, so it runs without `node_modules`. Only Node.js built-ins and pg's optional native addon, `pg-native`, stay external. The API publishes no package exports or declarations.
