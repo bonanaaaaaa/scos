@@ -90,7 +90,7 @@ The `CI` workflow runs for pull requests targeting `main` and pushes to `main`. 
 
 The workflow exposes these stable check names:
 
-- `Workspace checks`: frozen install, exact TypeScript 7 compiler verification, build, typecheck, Oxlint, Oxfmt, and current tests through `pnpm check`
+- `Workspace checks`: frozen install, build, typecheck, Oxlint, Oxfmt, and current tests through `pnpm check`
 - `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached `pnpm test:integration` connectivity and rollback smoke test
 - `PR title`: Conventional Commit title validation on opened, edited, reopened, and synchronized pull requests
 - `Code scanner`: verified-secret scanning across the pull request's explicit base and head revisions

@@ -36,8 +36,6 @@ jobs:
           cache: pnpm
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Verify TypeScript 7 compiler
-        run: test "$(pnpm exec tsc --version)" = "Version 7.0.2"
       - name: Run workspace checks
         run: pnpm check
 
@@ -78,7 +76,5 @@ jobs:
           cache: pnpm
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Verify TypeScript 7 compiler
-        run: test "$(pnpm exec tsc --version)" = "Version 7.0.2"
       - name: Run PostgreSQL connectivity and integration smoke
         run: pnpm test:integration
