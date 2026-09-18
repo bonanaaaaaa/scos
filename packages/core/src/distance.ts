@@ -13,6 +13,15 @@ const DEGREES_TO_RADIANS = Math.PI / 180;
  * Great-circle distance in kilometres using the Haversine formula on a
  * spherical Earth with JavaScript number arithmetic.
  *
+ * With φ = latitude and λ = longitude in radians, Δφ = φ₂ − φ₁,
+ * Δλ = λ₂ − λ₁ and R = {@link EARTH_RADIUS_KM}:
+ *
+ * ```text
+ * a = sin²(Δφ / 2) + cos φ₁ · cos φ₂ · sin²(Δλ / 2)
+ * θ = 2 · asin(√clamp(a, 0, 1))
+ * d = R · θ
+ * ```
+ *
  * Coordinates are used exactly as supplied (no rounding). The Haversine
  * intermediate is clamped to [0, 1] so floating-point drift near identical or
  * antipodal points cannot produce NaN. The result is not rounded; convert it to
@@ -22,7 +31,13 @@ export function haversineDistanceKm(from: GeoPoint, to: GeoPoint): number {
   return EARTH_RADIUS_KM * centralAngleFromHaversine(haversineIntermediate(from, to));
 }
 
-/** The unclamped Haversine intermediate a = hav(central angle). Internal. */
+/**
+ * The unclamped Haversine intermediate, a = hav(θ). Internal.
+ *
+ * ```text
+ * a = sin²(Δφ / 2) + cos φ₁ · cos φ₂ · sin²(Δλ / 2)
+ * ```
+ */
 export function haversineIntermediate(from: GeoPoint, to: GeoPoint): number {
   const lat1 = from.latitude * DEGREES_TO_RADIANS;
   const lat2 = to.latitude * DEGREES_TO_RADIANS;
@@ -36,6 +51,11 @@ export function haversineIntermediate(from: GeoPoint, to: GeoPoint): number {
 
 /**
  * Central angle in radians from a Haversine intermediate, clamped to [0, 1].
+ *
+ * ```text
+ * θ = 2 · asin(√min(1, max(0, a)))
+ * ```
+ *
  * Floating-point drift can push the intermediate just above 1 near antipodes;
  * values beyond one ulp above 1 would make Math.asin(Math.sqrt(a)) NaN. Internal.
  */

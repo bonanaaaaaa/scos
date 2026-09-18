@@ -59,6 +59,23 @@ export type OrderEstimate =
  * Calculates an Order Estimate against an immutable inventory snapshot. The
  * snapshot is not modified and nothing is reserved.
  *
+ * For quantity q, discount rate r (highest tier with q ≥ threshold: 0, 0.05,
+ * 0.10, 0.15, 0.20 at 0, 25, 50, 100, 250) and nearest-first allocations
+ * (qᵢ units from warehouse i at dᵢ km, Σ qᵢ = q):
+ *
+ * ```text
+ * subtotal   = 150 · q
+ * discount   = subtotal · r
+ * discounted = subtotal − discount
+ * shipping   = round_half_up(Σᵢ qᵢ · 0.365 kg · 0.01 $/kg/km · dᵢ, 2)
+ * total      = discounted + shipping
+ * valid      ⇔ Σ qᵢ = q  ∧  shipping ≤ 0.15 · discounted
+ * ```
+ *
+ * If available stock is below q the estimate is INSUFFICIENT_STOCK with null
+ * shipping and total; if shipping exceeds the limit it is
+ * SHIPPING_EXCEEDS_LIMIT with every amount retained.
+ *
  * Throws DomainError AMOUNT_OUT_OF_RANGE if shipping or the order total would
  * exceed NUMERIC(12, 2); that needs tens of millions of units in stock.
  */
