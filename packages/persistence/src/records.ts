@@ -1,41 +1,8 @@
-import type {
-  Order,
-  OrderAllocation,
-  Prisma,
-  Submission,
-  SubmissionRejection,
-  Warehouse,
-} from "./generated/prisma/client.js";
+import type { Order, OrderAllocation, Prisma, Warehouse } from "./generated/prisma/client.js";
 
 // Persistence-local typed records. Rows from Prisma are mapped here so that
-// Prisma Decimal and lookup strings never leave the adapter. Money is a fixed
-// two-decimal string produced from the Decimal itself, never via JS number.
-
-export const submissionOutcomes = ["ACCEPTED", "REJECTED"] as const;
-export type SubmissionOutcomeValue = (typeof submissionOutcomes)[number];
-
-export const rejectionReasons = ["INSUFFICIENT_STOCK", "SHIPPING_EXCEEDS_LIMIT"] as const;
-export type RejectionReasonValue = (typeof rejectionReasons)[number];
-
-function parseLookupValue<T extends string>(
-  allowed: readonly T[],
-  value: string,
-  lookup: string,
-): T {
-  const match = allowed.find((candidate) => candidate === value);
-  if (match === undefined) {
-    throw new Error(`Unknown ${lookup} value: ${JSON.stringify(value)}`);
-  }
-  return match;
-}
-
-export function parseSubmissionOutcome(value: string): SubmissionOutcomeValue {
-  return parseLookupValue(submissionOutcomes, value, "submission outcome");
-}
-
-export function parseRejectionReason(value: string): RejectionReasonValue {
-  return parseLookupValue(rejectionReasons, value, "rejection reason");
-}
+// Prisma Decimal values never leave the adapter. Money is a fixed two-decimal
+// string produced from the Decimal itself, never via JS number.
 
 function formatFixed(value: Prisma.Decimal, scale: number, label: string): string {
   if (!value.isFinite() || value.decimalPlaces() > scale) {
@@ -54,10 +21,6 @@ export function formatDiscountRate(value: Prisma.Decimal): string {
   return formatFixed(value, 2, "Discount rate");
 }
 
-function formatOptionalMoney(value: Prisma.Decimal | null): string | null {
-  return value === null ? null : formatMoney(value);
-}
-
 export interface Timestamps {
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -72,14 +35,6 @@ export interface WarehouseRecord extends Timestamps, Coordinates {
   readonly id: string;
   readonly name: string;
   readonly stock: number;
-}
-
-export interface SubmissionRecord extends Timestamps {
-  readonly id: string;
-  readonly submissionKey: string;
-  readonly quantity: number;
-  readonly destination: Coordinates;
-  readonly outcome: SubmissionOutcomeValue;
 }
 
 export interface CommercialSnapshot {
@@ -99,31 +54,13 @@ export interface OrderAllocationRecord extends Timestamps {
 export interface OrderRecord extends Timestamps, CommercialSnapshot {
   readonly id: string;
   readonly orderNumber: string;
-  readonly submissionId: string;
+  readonly submissionKey: string;
+  readonly quantity: number;
+  readonly destination: Coordinates;
   readonly shippingCost: string;
   readonly orderTotal: string;
   readonly allocations: readonly OrderAllocationRecord[];
 }
-
-interface RejectionRecordBase extends Timestamps, CommercialSnapshot {
-  readonly submissionId: string;
-}
-
-export interface InsufficientStockRejectionRecord extends RejectionRecordBase {
-  readonly reason: "INSUFFICIENT_STOCK";
-  readonly shippingCost: null;
-  readonly orderTotal: null;
-}
-
-export interface ShippingExceedsLimitRejectionRecord extends RejectionRecordBase {
-  readonly reason: "SHIPPING_EXCEEDS_LIMIT";
-  readonly shippingCost: string;
-  readonly orderTotal: string;
-}
-
-export type SubmissionRejectionRecord =
-  | InsufficientStockRejectionRecord
-  | ShippingExceedsLimitRejectionRecord;
 
 export function toWarehouseRecord(row: Warehouse): WarehouseRecord {
   return {
@@ -137,19 +74,7 @@ export function toWarehouseRecord(row: Warehouse): WarehouseRecord {
   };
 }
 
-export function toSubmissionRecord(row: Submission): SubmissionRecord {
-  return {
-    id: row.id,
-    submissionKey: row.submissionKey,
-    quantity: row.quantity,
-    destination: { latitude: row.destinationLatitude, longitude: row.destinationLongitude },
-    outcome: parseSubmissionOutcome(row.outcome),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-function toCommercialSnapshot(row: Order | SubmissionRejection): CommercialSnapshot {
+function toCommercialSnapshot(row: Order): CommercialSnapshot {
   return {
     unitPrice: formatMoney(row.unitPrice),
     merchandiseSubtotal: formatMoney(row.merchandiseSubtotal),
@@ -172,13 +97,12 @@ export function toOrderAllocationRecord(row: OrderAllocation): OrderAllocationRe
 export function toOrderRecord(
   row: Order & { readonly allocations: readonly OrderAllocation[] },
 ): OrderRecord {
-  if (parseSubmissionOutcome(row.submissionOutcome) !== "ACCEPTED") {
-    throw new Error("An Order must reference an ACCEPTED submission");
-  }
   return {
     id: row.id,
     orderNumber: row.orderNumber,
-    submissionId: row.submissionId,
+    submissionKey: row.submissionKey,
+    quantity: row.quantity,
+    destination: { latitude: row.destinationLatitude, longitude: row.destinationLongitude },
     ...toCommercialSnapshot(row),
     shippingCost: formatMoney(row.shippingCost),
     orderTotal: formatMoney(row.orderTotal),
@@ -186,27 +110,4 @@ export function toOrderRecord(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
-}
-
-export function toSubmissionRejectionRecord(row: SubmissionRejection): SubmissionRejectionRecord {
-  if (parseSubmissionOutcome(row.submissionOutcome) !== "REJECTED") {
-    throw new Error("A rejection must reference a REJECTED submission");
-  }
-  const base: RejectionRecordBase = {
-    submissionId: row.submissionId,
-    ...toCommercialSnapshot(row),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-  const shippingCost = formatOptionalMoney(row.shippingCost);
-  const orderTotal = formatOptionalMoney(row.orderTotal);
-  const reason = parseRejectionReason(row.reason);
-
-  if (reason === "INSUFFICIENT_STOCK" && shippingCost === null && orderTotal === null) {
-    return { ...base, reason, shippingCost, orderTotal };
-  }
-  if (reason === "SHIPPING_EXCEEDS_LIMIT" && shippingCost !== null && orderTotal !== null) {
-    return { ...base, reason, shippingCost, orderTotal };
-  }
-  throw new Error(`Rejection ${reason} has inconsistent shipping cost and order total`);
 }

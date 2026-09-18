@@ -5,11 +5,8 @@ import { Prisma } from "./generated/prisma/client.js";
 import {
   formatDiscountRate,
   formatMoney,
-  parseRejectionReason,
-  parseSubmissionOutcome,
+  toOrderAllocationRecord,
   toOrderRecord,
-  toSubmissionRecord,
-  toSubmissionRejectionRecord,
   toWarehouseRecord,
 } from "./records.js";
 
@@ -24,31 +21,6 @@ const snapshot = {
   discountAmount: decimal("2250"),
   discountedMerchandiseTotal: decimal("12750"),
 };
-
-const rejectionRow = (
-  reason: string,
-  shippingCost: Prisma.Decimal | null,
-  orderTotal: Prisma.Decimal | null,
-) => ({
-  submissionId: "01996000-0000-7000-8000-0000000000aa",
-  submissionOutcome: "REJECTED",
-  reason,
-  ...snapshot,
-  shippingCost,
-  orderTotal,
-  createdAt,
-  updatedAt,
-});
-
-test("lookup values parse to their string-literal unions and reject unknown values", () => {
-  assert.equal(parseSubmissionOutcome("ACCEPTED"), "ACCEPTED");
-  assert.equal(parseSubmissionOutcome("REJECTED"), "REJECTED");
-  assert.equal(parseRejectionReason("INSUFFICIENT_STOCK"), "INSUFFICIENT_STOCK");
-  assert.equal(parseRejectionReason("SHIPPING_EXCEEDS_LIMIT"), "SHIPPING_EXCEEDS_LIMIT");
-  assert.throws(() => parseSubmissionOutcome("accepted"), /Unknown submission outcome value/);
-  assert.throws(() => parseSubmissionOutcome("CONFLICT"), /Unknown submission outcome value/);
-  assert.throws(() => parseRejectionReason(""), /Unknown rejection reason value/);
-});
 
 test("money formats exactly to two decimal places without JavaScript numbers", () => {
   assert.equal(formatMoney(decimal("0")), "0.00");
@@ -67,7 +39,7 @@ test("money and rates refuse values that would need rounding or are not finite",
   assert.throws(() => formatDiscountRate(decimal("0.125")), /at most 2 decimal places/);
 });
 
-test("warehouse and submission rows map to plain records", () => {
+test("warehouse rows map to plain records", () => {
   const warehouse = {
     id: "01996000-0000-7000-8000-000000000001",
     name: "Los Angeles",
@@ -78,50 +50,36 @@ test("warehouse and submission rows map to plain records", () => {
     updatedAt,
   };
   assert.deepEqual(toWarehouseRecord(warehouse), warehouse);
+});
 
+test("allocation rows map to warehouse quantities without the order ID", () => {
   assert.deepEqual(
-    toSubmissionRecord({
-      id: "01996000-0000-7000-8000-0000000000aa",
-      submissionKey: "attempt-1",
+    toOrderAllocationRecord({
+      id: "01996000-0000-7000-8000-0000000000cc",
+      orderId: "01996000-0000-7000-8000-0000000000bb",
+      warehouseId: "01996000-0000-7000-8000-000000000001",
       quantity: 100,
-      destinationLatitude: -90,
-      destinationLongitude: 180,
-      outcome: "ACCEPTED",
       createdAt,
       updatedAt,
     }),
     {
-      id: "01996000-0000-7000-8000-0000000000aa",
-      submissionKey: "attempt-1",
+      id: "01996000-0000-7000-8000-0000000000cc",
+      warehouseId: "01996000-0000-7000-8000-000000000001",
       quantity: 100,
-      destination: { latitude: -90, longitude: 180 },
-      outcome: "ACCEPTED",
       createdAt,
       updatedAt,
     },
   );
-  assert.throws(
-    () =>
-      toSubmissionRecord({
-        id: "01996000-0000-7000-8000-0000000000aa",
-        submissionKey: "attempt-1",
-        quantity: 1,
-        destinationLatitude: 0,
-        destinationLongitude: 0,
-        outcome: "PENDING",
-        createdAt,
-        updatedAt,
-      }),
-    /Unknown submission outcome value/,
-  );
 });
 
-test("order rows map to snapshots with decimal strings and allocations", () => {
+test("order rows map the request, snapshot decimal strings, and allocations", () => {
   const order = {
     id: "01996000-0000-7000-8000-0000000000bb",
     orderNumber: "ORD-1",
-    submissionId: "01996000-0000-7000-8000-0000000000aa",
-    submissionOutcome: "ACCEPTED",
+    submissionKey: "attempt-1",
+    quantity: 100,
+    destinationLatitude: -90,
+    destinationLongitude: 180,
     ...snapshot,
     shippingCost: decimal("0.01"),
     orderTotal: decimal("12750.01"),
@@ -142,7 +100,9 @@ test("order rows map to snapshots with decimal strings and allocations", () => {
   assert.deepEqual(toOrderRecord(order), {
     id: order.id,
     orderNumber: "ORD-1",
-    submissionId: order.submissionId,
+    submissionKey: "attempt-1",
+    quantity: 100,
+    destination: { latitude: -90, longitude: 180 },
     unitPrice: "150.00",
     merchandiseSubtotal: "15000.00",
     discountRate: "0.15",
@@ -162,48 +122,27 @@ test("order rows map to snapshots with decimal strings and allocations", () => {
     createdAt,
     updatedAt,
   });
-  assert.throws(
-    () => toOrderRecord({ ...order, submissionOutcome: "REJECTED" }),
-    /must reference an ACCEPTED submission/,
-  );
 });
 
-test("rejection rows map to a discriminated union by reason", () => {
-  const insufficient = toSubmissionRejectionRecord(rejectionRow("INSUFFICIENT_STOCK", null, null));
-  assert.equal(insufficient.reason, "INSUFFICIENT_STOCK");
-  assert.equal(insufficient.shippingCost, null);
-  assert.equal(insufficient.orderTotal, null);
-  assert.equal(insufficient.discountedMerchandiseTotal, "12750.00");
-  assert.equal(insufficient.discountRate, "0.15");
-
-  const excessive = toSubmissionRejectionRecord(
-    rejectionRow("SHIPPING_EXCEEDS_LIMIT", decimal("1912.51"), decimal("14662.51")),
-  );
-  assert.deepEqual(
-    { reason: excessive.reason, shipping: excessive.shippingCost, total: excessive.orderTotal },
-    { reason: "SHIPPING_EXCEEDS_LIMIT", shipping: "1912.51", total: "14662.51" },
-  );
-});
-
-test("inconsistent rejection rows are refused rather than silently mapped", () => {
-  assert.throws(
-    () => toSubmissionRejectionRecord(rejectionRow("INSUFFICIENT_STOCK", decimal("1.00"), null)),
-    /inconsistent shipping cost and order total/,
-  );
-  assert.throws(
-    () => toSubmissionRejectionRecord(rejectionRow("SHIPPING_EXCEEDS_LIMIT", null, null)),
-    /inconsistent shipping cost and order total/,
-  );
-  assert.throws(
-    () => toSubmissionRejectionRecord(rejectionRow("OUT_OF_STOCK", null, null)),
-    /Unknown rejection reason value/,
-  );
+test("order rows with unmappable amounts are refused rather than rounded", () => {
+  const order = {
+    id: "01996000-0000-7000-8000-0000000000bb",
+    orderNumber: "ORD-2",
+    submissionKey: "attempt-2",
+    quantity: 1,
+    destinationLatitude: 0,
+    destinationLongitude: 0,
+    ...snapshot,
+    shippingCost: decimal("0.005"),
+    orderTotal: decimal("12750.01"),
+    createdAt,
+    updatedAt,
+    allocations: [],
+  };
+  assert.throws(() => toOrderRecord(order), /Money must be finite with at most 2 decimal places/);
   assert.throws(
     () =>
-      toSubmissionRejectionRecord({
-        ...rejectionRow("INSUFFICIENT_STOCK", null, null),
-        submissionOutcome: "ACCEPTED",
-      }),
-    /must reference a REJECTED submission/,
+      toOrderRecord({ ...order, shippingCost: decimal("0.01"), discountRate: decimal("0.125") }),
+    /Discount rate must be finite with at most 2 decimal places/,
   );
 });

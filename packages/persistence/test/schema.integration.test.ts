@@ -3,12 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, describe, test } from "vitest";
 
-import {
-  formatMoney,
-  toOrderRecord,
-  toSubmissionRecord,
-  toSubmissionRejectionRecord,
-} from "../src/records.js";
+import { formatMoney, toOrderRecord } from "../src/records.js";
 import {
   assertDatabaseError,
   createMigratedDatabase,
@@ -22,15 +17,7 @@ const FOREIGN_KEY_VIOLATION = "23503";
 const RESTRICT_VIOLATION = "23001";
 const NUMERIC_OVERFLOW = "22003";
 
-const applicationTables = [
-  "customer_order",
-  "order_allocation",
-  "rejection_reason",
-  "submission",
-  "submission_outcome",
-  "submission_rejection",
-  "warehouse",
-];
+const applicationTables = ["customer_order", "order_allocation", "warehouse"];
 
 let db: MigratedDatabase;
 
@@ -55,16 +42,13 @@ async function insertBackdatedWarehouse(): Promise<string> {
   return result.rows[0]!.id;
 }
 
-async function insertSubmission(outcome: "ACCEPTED" | "REJECTED", quantity = 10): Promise<string> {
-  const result = await db.pool.query<{ id: string }>(
-    `INSERT INTO submission (submission_key, quantity, destination_latitude, destination_longitude, outcome)
-     VALUES ($1, $2, 1.5, -2.5, $3) RETURNING id`,
-    [unique("attempt"), quantity, outcome],
-  );
-  return result.rows[0]!.id;
-}
-
-const acceptedAmounts = {
+// An accepted Order carries the client's duplicate-request key and the Order
+// Request it fulfilled: quantity 10 at 150.00 each, with no discount and
+// 10.00 shipping.
+const acceptedOrder = {
+  quantity: "10",
+  destination_latitude: "1.5",
+  destination_longitude: "-2.5",
   unit_price: "150.00",
   merchandise_subtotal: "1500.00",
   discount_rate: "0.00",
@@ -74,16 +58,15 @@ const acceptedAmounts = {
   order_total: "1510.00",
 };
 
-async function insertOrder(
-  submissionId: string,
-  overrides: Partial<
-    Record<keyof typeof acceptedAmounts | "submission_outcome" | "order_number", string>
-  > = {},
-): Promise<string> {
+type OrderOverrides = Partial<
+  Record<keyof typeof acceptedOrder | "order_number" | "submission_key", string>
+>;
+
+async function insertOrder(overrides: OrderOverrides = {}): Promise<string> {
   const row: Record<string, string> = {
     order_number: unique("ORD"),
-    submission_id: submissionId,
-    ...acceptedAmounts,
+    submission_key: unique("attempt"),
+    ...acceptedOrder,
     ...overrides,
   };
   const columns = Object.keys(row);
@@ -99,22 +82,6 @@ async function insertAllocation(orderId: string, warehouseId: string, quantity =
   await db.pool.query(
     "INSERT INTO order_allocation (order_id, warehouse_id, quantity) VALUES ($1, $2, $3)",
     [orderId, warehouseId, quantity],
-  );
-}
-
-async function insertRejection(
-  submissionId: string,
-  reason: string,
-  shippingCost: string | null,
-  orderTotal: string | null,
-  outcome = "REJECTED",
-) {
-  await db.pool.query(
-    `INSERT INTO submission_rejection (submission_id, submission_outcome, reason, unit_price,
-       merchandise_subtotal, discount_rate, discount_amount, discounted_merchandise_total,
-       shipping_cost, order_total)
-     VALUES ($1, $2, $3, '150.00', '1500.00', '0.00', '0.00', '1500.00', $4, $5)`,
-    [submissionId, outcome, reason, shippingCost, orderTotal],
   );
 }
 
@@ -154,6 +121,9 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
       assert.match(diff.stdout, /No difference detected/);
     });
 
+    // No categorical value is persisted yet, so the schema has no lookup
+    // tables. Native enums stay banned: a future categorical column must use a
+    // text lookup table rather than a Prisma enum.
     test("create exactly the application tables and no native enums", async () => {
       const tables = await db.pool.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
@@ -168,25 +138,6 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
 
       const enums = await db.pool.query("SELECT 1 FROM pg_type WHERE typtype = 'e'");
       assert.equal(enums.rowCount, 0);
-    });
-
-    test("insert lookup values with descriptions and timestamps", async () => {
-      const outcomes = await db.pool.query(
-        `SELECT value, description IS NOT NULL AS described, created_at = updated_at AS fresh
-         FROM submission_outcome ORDER BY value`,
-      );
-      assert.deepEqual(outcomes.rows, [
-        { value: "ACCEPTED", described: true, fresh: true },
-        { value: "REJECTED", described: true, fresh: true },
-      ]);
-      const reasons = await db.pool.query(
-        `SELECT value, description IS NOT NULL AS described, created_at = updated_at AS fresh
-         FROM rejection_reason ORDER BY value`,
-      );
-      assert.deepEqual(reasons.rows, [
-        { value: "INSUFFICIENT_STOCK", described: true, fresh: true },
-        { value: "SHIPPING_EXCEEDS_LIMIT", described: true, fresh: true },
-      ]);
     });
   });
 
@@ -244,20 +195,27 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         const warehouse = await tx.warehouse.create({
           data: { name: unique("prisma"), latitude: 0, longitude: 0, stock: 1 },
         });
-        const submission = await tx.submission.create({
+        const order = await tx.order.create({
           data: {
+            orderNumber: unique("ORD"),
             submissionKey: unique("attempt"),
             quantity: 1,
             destinationLatitude: 0,
             destinationLongitude: 0,
-            outcome: "REJECTED",
+            unitPrice: "150.00",
+            merchandiseSubtotal: "150.00",
+            discountRate: "0.00",
+            discountAmount: "0.00",
+            discountedMerchandiseTotal: "150.00",
+            shippingCost: "10.00",
+            orderTotal: "160.00",
           },
         });
         return tx.$queryRaw<{ equal: boolean; at_now: boolean }[]>`
-          SELECT w.created_at = w.updated_at AND s.created_at = s.updated_at AS equal,
-                 w.created_at = NOW() AND s.created_at = NOW() AS at_now
-          FROM warehouse w, submission s
-          WHERE w.id = ${warehouse.id}::uuid AND s.id = ${submission.id}::uuid`;
+          SELECT w.created_at = w.updated_at AND o.created_at = o.updated_at AS equal,
+                 w.created_at = NOW() AND o.created_at = NOW() AS at_now
+          FROM warehouse w, customer_order o
+          WHERE w.id = ${warehouse.id}::uuid AND o.id = ${order.id}::uuid`;
       });
       assert.deepEqual(checks, [{ equal: true, at_now: true }]);
     });
@@ -315,18 +273,22 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         await client.query("UPDATE warehouse SET stock = stock - 1 WHERE id = $1", [id]);
         await client.query("SELECT pg_sleep(0.02)");
         await client.query("UPDATE warehouse SET stock = stock - 1 WHERE id = $1", [id]);
-        const submission = await client.query<{ id: string }>(
-          `INSERT INTO submission (submission_key, quantity, destination_latitude, destination_longitude, outcome)
-           VALUES ($1, 1, 0, 0, 'REJECTED') RETURNING id`,
-          [unique("txn")],
+        const order = await client.query<{ id: string }>(
+          `INSERT INTO customer_order (order_number, submission_key, quantity,
+             destination_latitude, destination_longitude, unit_price, merchandise_subtotal,
+             discount_rate, discount_amount, discounted_merchandise_total, shipping_cost,
+             order_total)
+           VALUES ($1, $2, 1, 0, 0, '150.00', '150.00', '0.00', '0.00', '150.00', '10.00', '160.00')
+           RETURNING id`,
+          [unique("ORD"), unique("attempt")],
         );
         const check = await client.query(
           `SELECT w.created_at = NOW() AND w.updated_at = NOW()
-                  AND s.created_at = NOW() AND s.updated_at = NOW() AS shared,
+                  AND o.created_at = NOW() AND o.updated_at = NOW() AS shared,
                   clock_timestamp() > NOW() + interval '30 milliseconds' AS time_passed,
                   w.stock
-           FROM warehouse w, submission s WHERE w.id = $1 AND s.id = $2`,
-          [id, submission.rows[0]!.id],
+           FROM warehouse w, customer_order o WHERE w.id = $1 AND o.id = $2`,
+          [id, order.rows[0]!.id],
         );
         assert.deepEqual(check.rows[0], { shared: true, time_passed: true, stock: 3 });
         await client.query("COMMIT");
@@ -355,20 +317,32 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
       assert.deepEqual(after.rows[0], { stock: 10, unchanged: true });
     });
 
-    test("lookup table updates are covered by the trigger", async () => {
+    test("order and allocation updates are covered by the trigger", async () => {
+      const orderId = await insertOrder();
+      await insertAllocation(orderId, await insertWarehouse());
       const client = await db.pool.connect();
       try {
         await client.query("BEGIN");
-        const before = await client.query<{ created_at: string }>(
-          "SELECT created_at::text AS created_at FROM rejection_reason WHERE value = 'INSUFFICIENT_STOCK'",
+        const before = await client.query<{ order_created: string; allocation_created: string }>(
+          `SELECT o.created_at::text AS order_created, a.created_at::text AS allocation_created
+           FROM customer_order o JOIN order_allocation a ON a.order_id = o.id
+           WHERE o.id = $1`,
+          [orderId],
         );
-        const updated = await client.query(
-          `UPDATE rejection_reason SET description = description, updated_at = '1999-01-01Z'
-           WHERE value = 'INSUFFICIENT_STOCK'
-           RETURNING created_at = $1::timestamptz AS created_kept, updated_at = NOW() AS updated_now`,
-          [before.rows[0]!.created_at],
+        const order = await client.query(
+          `UPDATE customer_order SET order_number = order_number, updated_at = '1999-01-01Z'
+           WHERE id = $1
+           RETURNING created_at = $2::timestamptz AS created_kept, updated_at = NOW() AS updated_now`,
+          [orderId, before.rows[0]!.order_created],
         );
-        assert.deepEqual(updated.rows[0], { created_kept: true, updated_now: true });
+        assert.deepEqual(order.rows[0], { created_kept: true, updated_now: true });
+        const allocation = await client.query(
+          `UPDATE order_allocation SET quantity = quantity, updated_at = '1999-01-01Z'
+           WHERE order_id = $1
+           RETURNING created_at = $2::timestamptz AS created_kept, updated_at = NOW() AS updated_now`,
+          [orderId, before.rows[0]!.allocation_created],
+        );
+        assert.deepEqual(allocation.rows[0], { created_kept: true, updated_now: true });
       } finally {
         await client.query("ROLLBACK");
         client.release();
@@ -390,26 +364,31 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
   describe("generated identifiers", () => {
     test("database defaults generate UUIDv7 values for Prisma and raw SQL inserts", async () => {
       const warehouseId = await insertWarehouse();
-      const submission = await db.prisma.submission.create({
+      const order = await db.prisma.order.create({
         data: {
+          orderNumber: unique("ORD"),
           submissionKey: unique("attempt"),
           quantity: 1,
           destinationLatitude: 0,
           destinationLongitude: 0,
-          outcome: "ACCEPTED",
+          unitPrice: "150.00",
+          merchandiseSubtotal: "150.00",
+          discountRate: "0.00",
+          discountAmount: "0.00",
+          discountedMerchandiseTotal: "150.00",
+          shippingCost: "10.00",
+          orderTotal: "160.00",
         },
       });
-      const orderId = await insertOrder(submission.id);
-      await insertAllocation(orderId, warehouseId);
+      await insertAllocation(order.id, warehouseId);
       const versions = await db.pool.query(
         `SELECT
            (SELECT uuid_extract_version(id) FROM warehouse WHERE id = $1) AS warehouse,
-           (SELECT uuid_extract_version(id) FROM submission WHERE id = $2) AS submission,
-           (SELECT uuid_extract_version(id) FROM customer_order WHERE id = $3) AS "order",
-           (SELECT uuid_extract_version(id) FROM order_allocation WHERE order_id = $3) AS allocation`,
-        [warehouseId, submission.id, orderId],
+           (SELECT uuid_extract_version(id) FROM customer_order WHERE id = $2) AS "order",
+           (SELECT uuid_extract_version(id) FROM order_allocation WHERE order_id = $2) AS allocation`,
+        [warehouseId, order.id],
       );
-      assert.deepEqual(versions.rows[0], { warehouse: 7, submission: 7, order: 7, allocation: 7 });
+      assert.deepEqual(versions.rows[0], { warehouse: 7, order: 7, allocation: 7 });
     });
   });
 
@@ -448,103 +427,152 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
       );
     });
 
-    test("submissions require a unique nonblank key of at most 255 characters, positive quantity, and bounded destination", async () => {
-      const key = unique("attempt");
-      const insert = (submissionKey: string, quantity: number, latitude = 0, longitude = 0) =>
-        db.pool.query(
-          `INSERT INTO submission (submission_key, quantity, destination_latitude, destination_longitude, outcome)
-           VALUES ($1, $2, $3, $4, 'ACCEPTED')`,
-          [submissionKey, quantity, latitude, longitude],
-        );
-      await insert(key, 1);
-      await assertDatabaseError(insert(key, 1), {
+    test("Orders require a unique nonblank order number", async () => {
+      const orderNumber = unique("ORD");
+      await insertOrder({ order_number: orderNumber });
+      await assertDatabaseError(insertOrder({ order_number: orderNumber }), {
         code: UNIQUE_VIOLATION,
-        constraint: "submission_submission_key_key",
+        constraint: "customer_order_order_number_key",
       });
-      await assertDatabaseError(insert("", 1), {
+      await assertDatabaseError(insertOrder({ order_number: "" }), {
         code: CHECK_VIOLATION,
-        constraint: "submission_submission_key_check",
+        constraint: "customer_order_order_number_check",
       });
-      await assertDatabaseError(insert("   ", 1), {
+      await assertDatabaseError(insertOrder({ order_number: "   " }), {
         code: CHECK_VIOLATION,
-        constraint: "submission_submission_key_check",
+        constraint: "customer_order_order_number_check",
       });
-      await assertDatabaseError(insert(`k${randomUUID()}`.padEnd(256, "x"), 1), {
+    });
+
+    test("one Order per duplicate-request key, non-blank and at most 255 characters", async () => {
+      const submissionKey = unique("attempt");
+      await insertOrder({ submission_key: submissionKey });
+      await assertDatabaseError(insertOrder({ submission_key: submissionKey }), {
+        code: UNIQUE_VIOLATION,
+        constraint: "customer_order_submission_key_key",
+      });
+      await assertDatabaseError(insertOrder({ submission_key: "" }), {
         code: CHECK_VIOLATION,
-        constraint: "submission_submission_key_check",
+        constraint: "customer_order_submission_key_check",
       });
+      await assertDatabaseError(insertOrder({ submission_key: "   " }), {
+        code: CHECK_VIOLATION,
+        constraint: "customer_order_submission_key_check",
+      });
+      await assertDatabaseError(
+        insertOrder({ submission_key: `k${randomUUID()}`.padEnd(256, "x") }),
+        { code: CHECK_VIOLATION, constraint: "customer_order_submission_key_check" },
+      );
       const longestKey = `k${randomUUID()}`.padEnd(255, "x");
       assert.equal(longestKey.length, 255);
-      await insert(longestKey, 1);
+      await insertOrder({ submission_key: longestKey });
       const stored = await db.pool.query<{ length: number }>(
-        "SELECT char_length(submission_key) AS length FROM submission WHERE submission_key = $1",
+        "SELECT char_length(submission_key) AS length FROM customer_order WHERE submission_key = $1",
         [longestKey],
       );
       assert.deepEqual(stored.rows, [{ length: 255 }]);
-      await assertDatabaseError(insert(unique("attempt"), 0), {
-        code: CHECK_VIOLATION,
-        constraint: "submission_quantity_check",
-      });
-      await assertDatabaseError(insert(unique("attempt"), 1, 91, 0), {
-        code: CHECK_VIOLATION,
-        constraint: "submission_destination_latitude_check",
-      });
-      await assertDatabaseError(insert(unique("attempt"), 1, 0, -180.5), {
-        code: CHECK_VIOLATION,
-        constraint: "submission_destination_longitude_check",
-      });
-      await assertDatabaseError(
-        db.pool.query(
-          `INSERT INTO submission (submission_key, quantity, destination_latitude, destination_longitude, outcome)
-           VALUES ($1, 1, 0, 0, 'PENDING')`,
-          [unique("attempt")],
-        ),
-        { code: FOREIGN_KEY_VIOLATION, constraint: "submission_outcome_fkey" },
-      );
     });
 
-    test("one accepted Order per submission, never on a rejected submission", async () => {
-      const accepted = await insertSubmission("ACCEPTED");
-      await insertOrder(accepted);
-      await assertDatabaseError(insertOrder(accepted), {
-        code: UNIQUE_VIOLATION,
-        constraint: "customer_order_submission_id_key",
-      });
-
-      const rejected = await insertSubmission("REJECTED");
-      await assertDatabaseError(insertOrder(rejected), {
-        code: FOREIGN_KEY_VIOLATION,
-        constraint: "customer_order_submission_fkey",
-      });
-      await assertDatabaseError(insertOrder(rejected, { submission_outcome: "REJECTED" }), {
+    test("Orders require a positive quantity and a bounded destination", async () => {
+      // Quantity participates in the subtotal CHECK, so consistent amounts
+      // isolate the quantity constraint.
+      const zeroQuantity = {
+        quantity: "0",
+        merchandise_subtotal: "0.00",
+        discounted_merchandise_total: "0.00",
+        order_total: "10.00",
+      };
+      await assertDatabaseError(insertOrder(zeroQuantity), {
         code: CHECK_VIOLATION,
-        constraint: "customer_order_submission_outcome_check",
+        constraint: "customer_order_quantity_check",
       });
-      await assertDatabaseError(insertOrder(randomUUID()), {
-        code: FOREIGN_KEY_VIOLATION,
-        constraint: "customer_order_submission_fkey",
-      });
-
-      const other = await insertSubmission("ACCEPTED");
-      const orderNumber = unique("ORD");
-      await insertOrder(other, { order_number: orderNumber });
       await assertDatabaseError(
-        insertOrder(await insertSubmission("ACCEPTED"), { order_number: orderNumber }),
-        { code: UNIQUE_VIOLATION, constraint: "customer_order_order_number_key" },
+        insertOrder({ ...zeroQuantity, quantity: "-5", unit_price: "0.00" }),
+        { code: CHECK_VIOLATION, constraint: "customer_order_quantity_check" },
       );
+
+      for (const [column, value] of [
+        ["destination_latitude", "90.000001"],
+        ["destination_latitude", "-90.000001"],
+        ["destination_latitude", "Infinity"],
+        ["destination_longitude", "180.000001"],
+        ["destination_longitude", "-180.000001"],
+        ["destination_longitude", "NaN"],
+      ] as const) {
+        await assertDatabaseError(insertOrder({ [column]: value }), {
+          code: CHECK_VIOLATION,
+          constraint: `customer_order_${column}_check`,
+        });
+      }
+      await insertOrder({ destination_latitude: "-90", destination_longitude: "180" });
+      await insertOrder({ destination_latitude: "90", destination_longitude: "-180" });
     });
 
-    test("an accepted submission's outcome cannot be changed once it has an Order", async () => {
-      const accepted = await insertSubmission("ACCEPTED");
-      await insertOrder(accepted);
+    test("the merchandise subtotal must equal unit price times quantity", async () => {
       await assertDatabaseError(
-        db.pool.query("UPDATE submission SET outcome = 'REJECTED' WHERE id = $1", [accepted]),
-        { code: RESTRICT_VIOLATION, constraint: "customer_order_submission_fkey" },
+        insertOrder({
+          merchandise_subtotal: "1500.01",
+          discounted_merchandise_total: "1500.01",
+          order_total: "1510.01",
+        }),
+        { code: CHECK_VIOLATION, constraint: "customer_order_merchandise_subtotal_check" },
+      );
+      await assertDatabaseError(
+        insertOrder({
+          quantity: "11",
+          merchandise_subtotal: "1500.00",
+        }),
+        { code: CHECK_VIOLATION, constraint: "customer_order_merchandise_subtotal_check" },
+      );
+      // A negative unit price cannot be stored either: the product is
+      // negative, and every amount derived from it must be nonnegative.
+      // PostgreSQL evaluates CHECKs in constraint-name order, so the
+      // discounted total rejects the row first.
+      await assertDatabaseError(
+        insertOrder({
+          unit_price: "-150.00",
+          merchandise_subtotal: "-1500.00",
+          discounted_merchandise_total: "-1500.00",
+          order_total: "-1490.00",
+        }),
+        { code: CHECK_VIOLATION, constraint: "customer_order_discounted_merchandise_total_check" },
+      );
+
+      // Exact NUMERIC arithmetic: cent-level prices and large quantities
+      // multiply without rounding.
+      await insertOrder({
+        quantity: "3",
+        unit_price: "0.10",
+        merchandise_subtotal: "0.30",
+        discounted_merchandise_total: "0.30",
+        order_total: "10.30",
+      });
+      await insertOrder({
+        quantity: "1000000",
+        unit_price: "9999.99",
+        merchandise_subtotal: "9999990000.00",
+        discount_rate: "0.20",
+        discount_amount: "1999998000.00",
+        discounted_merchandise_total: "7999992000.00",
+        order_total: "7999992010.00",
+      });
+      // The product is computed in unbounded NUMERIC, so a subtotal beyond
+      // NUMERIC(12,2) fails as an overflow before any CHECK is evaluated
+      // rather than making the CHECK misbehave.
+      await assertDatabaseError(
+        insertOrder({
+          quantity: "2",
+          unit_price: "9999999999.99",
+          merchandise_subtotal: "19999999999.98",
+          discounted_merchandise_total: "19999999999.98",
+          order_total: "20000000009.98",
+        }),
+        { code: NUMERIC_OVERFLOW },
       );
     });
 
     test("Order snapshots are nonnegative and arithmetically consistent", async () => {
-      const cases: [Partial<Record<keyof typeof acceptedAmounts, string>>, string][] = [
+      const cases: [OrderOverrides, string][] = [
         [{ order_total: "1510.01" }, "customer_order_order_total_check"],
         [
           { discounted_merchandise_total: "1499.00", order_total: "1509.00" },
@@ -552,16 +580,19 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         ],
         [{ discount_rate: "1.50" }, "customer_order_discount_rate_check"],
         [{ discount_rate: "-0.01" }, "customer_order_discount_rate_check"],
-        [{ unit_price: "-1.00" }, "customer_order_unit_price_check"],
+        [
+          { discount_amount: "-10.00", discounted_merchandise_total: "1510.00" },
+          "customer_order_discount_amount_check",
+        ],
         [{ shipping_cost: "-10.00", order_total: "1490.00" }, "customer_order_shipping_cost_check"],
       ];
       for (const [overrides, constraint] of cases) {
-        await assertDatabaseError(insertOrder(await insertSubmission("ACCEPTED"), overrides), {
+        await assertDatabaseError(insertOrder(overrides), {
           code: CHECK_VIOLATION,
           constraint,
         });
       }
-      await insertOrder(await insertSubmission("ACCEPTED"), {
+      await insertOrder({
         discount_rate: "0.15",
         discount_amount: "225.00",
         discounted_merchandise_total: "1275.00",
@@ -570,9 +601,23 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
       });
     });
 
+    test("discount rates beyond NUMERIC(3,2) are rounded to scale or overflow", async () => {
+      // PostgreSQL rounds excess scale instead of rejecting it, so a finer tier
+      // needs a wider column first (see docs/database-schema.md).
+      const id = await insertOrder({ discount_rate: "0.125" });
+      const stored = await db.pool.query<{ discount_rate: string }>(
+        "SELECT discount_rate FROM customer_order WHERE id = $1",
+        [id],
+      );
+      assert.deepEqual(stored.rows, [{ discount_rate: "0.13" }]);
+      await assertDatabaseError(insertOrder({ discount_rate: "10.00" }), {
+        code: NUMERIC_OVERFLOW,
+      });
+    });
+
     test("allocations are positive, unique per warehouse, and reference existing rows", async () => {
       const warehouseId = await insertWarehouse();
-      const orderId = await insertOrder(await insertSubmission("ACCEPTED"));
+      const orderId = await insertOrder();
       await assertDatabaseError(insertAllocation(orderId, warehouseId, 0), {
         code: CHECK_VIOLATION,
         constraint: "order_allocation_quantity_check",
@@ -596,88 +641,10 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
       });
     });
 
-    test("rejections reference rejected submissions and valid reasons with consistent amounts", async () => {
-      await insertRejection(await insertSubmission("REJECTED"), "INSUFFICIENT_STOCK", null, null);
-      await insertRejection(
-        await insertSubmission("REJECTED"),
-        "SHIPPING_EXCEEDS_LIMIT",
-        "300.00",
-        "1800.00",
-      );
-
-      await assertDatabaseError(
-        insertRejection(
-          await insertSubmission("REJECTED"),
-          "INSUFFICIENT_STOCK",
-          "10.00",
-          "1510.00",
-        ),
-        { code: CHECK_VIOLATION, constraint: "submission_rejection_reason_amounts_check" },
-      );
-      await assertDatabaseError(
-        insertRejection(await insertSubmission("REJECTED"), "INSUFFICIENT_STOCK", "10.00", null),
-        { code: CHECK_VIOLATION, constraint: "submission_rejection_reason_amounts_check" },
-      );
-      await assertDatabaseError(
-        insertRejection(await insertSubmission("REJECTED"), "SHIPPING_EXCEEDS_LIMIT", null, null),
-        { code: CHECK_VIOLATION, constraint: "submission_rejection_reason_amounts_check" },
-      );
-      await assertDatabaseError(
-        insertRejection(
-          await insertSubmission("REJECTED"),
-          "SHIPPING_EXCEEDS_LIMIT",
-          "300.00",
-          "1799.99",
-        ),
-        { code: CHECK_VIOLATION, constraint: "submission_rejection_order_total_check" },
-      );
-      // The reason/amount CHECK rejects unknown reasons before the foreign key
-      // is evaluated; the reason foreign key is exercised by the restricted
-      // lookup deletion below.
-      await assertDatabaseError(
-        insertRejection(await insertSubmission("REJECTED"), "OUT_OF_STOCK", null, null),
-        { code: CHECK_VIOLATION, constraint: "submission_rejection_reason_amounts_check" },
-      );
-      await assertDatabaseError(
-        insertRejection(await insertSubmission("ACCEPTED"), "INSUFFICIENT_STOCK", null, null),
-        { code: FOREIGN_KEY_VIOLATION, constraint: "submission_rejection_submission_fkey" },
-      );
-      await assertDatabaseError(
-        insertRejection(
-          await insertSubmission("ACCEPTED"),
-          "INSUFFICIENT_STOCK",
-          null,
-          null,
-          "ACCEPTED",
-        ),
-        { code: CHECK_VIOLATION, constraint: "submission_rejection_submission_outcome_check" },
-      );
-      const once = await insertSubmission("REJECTED");
-      await insertRejection(once, "INSUFFICIENT_STOCK", null, null);
-      await assertDatabaseError(insertRejection(once, "INSUFFICIENT_STOCK", null, null), {
-        code: UNIQUE_VIOLATION,
-        constraint: "submission_rejection_pkey",
-      });
-    });
-
-    test("lookup values must be uppercase identifiers", async () => {
-      await assertDatabaseError(
-        db.pool.query("INSERT INTO submission_outcome (value) VALUES ('accepted')"),
-        { code: CHECK_VIOLATION, constraint: "submission_outcome_value_check" },
-      );
-      await assertDatabaseError(
-        db.pool.query("INSERT INTO rejection_reason (value) VALUES ('BAD-CODE')"),
-        { code: CHECK_VIOLATION, constraint: "rejection_reason_value_check" },
-      );
-    });
-
     test("historical records cannot be deleted through referenced rows", async () => {
       const warehouseId = await insertWarehouse();
-      const submissionId = await insertSubmission("ACCEPTED");
-      const orderId = await insertOrder(submissionId);
+      const orderId = await insertOrder();
       await insertAllocation(orderId, warehouseId);
-      const rejectedId = await insertSubmission("REJECTED");
-      await insertRejection(rejectedId, "INSUFFICIENT_STOCK", null, null);
 
       await assertDatabaseError(
         db.pool.query("DELETE FROM warehouse WHERE id = $1", [warehouseId]),
@@ -694,57 +661,32 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         },
       );
       await assertDatabaseError(
-        db.pool.query("DELETE FROM submission WHERE id = $1", [submissionId]),
-        {
-          code: RESTRICT_VIOLATION,
-          constraint: "customer_order_submission_fkey",
-        },
-      );
-      await assertDatabaseError(
-        db.pool.query("DELETE FROM submission WHERE id = $1", [rejectedId]),
-        {
-          code: RESTRICT_VIOLATION,
-          constraint: "submission_rejection_submission_fkey",
-        },
-      );
-      await assertDatabaseError(
-        db.pool.query("DELETE FROM submission_outcome WHERE value = 'ACCEPTED'"),
-        { code: RESTRICT_VIOLATION, constraint: "submission_outcome_fkey" },
-      );
-      await assertDatabaseError(
-        db.pool.query("DELETE FROM rejection_reason WHERE value = 'INSUFFICIENT_STOCK'"),
-        { code: RESTRICT_VIOLATION, constraint: "submission_rejection_reason_fkey" },
-      );
-      await assertDatabaseError(
         db.pool.query("UPDATE warehouse SET id = uuidv7() WHERE id = $1", [warehouseId]),
         { code: RESTRICT_VIOLATION, constraint: "order_allocation_warehouse_id_fkey" },
       );
+      await assertDatabaseError(
+        db.pool.query("UPDATE customer_order SET id = uuidv7() WHERE id = $1", [orderId]),
+        { code: RESTRICT_VIOLATION, constraint: "order_allocation_order_id_fkey" },
+      );
 
       const remaining = await db.pool.query(
-        `SELECT (SELECT count(*) FROM order_allocation WHERE order_id = $1)::int AS allocations,
-                (SELECT count(*) FROM submission_rejection WHERE submission_id = $2)::int AS rejections`,
-        [orderId, rejectedId],
+        "SELECT count(*)::int AS allocations FROM order_allocation WHERE order_id = $1",
+        [orderId],
       );
-      assert.deepEqual(remaining.rows[0], { allocations: 1, rejections: 1 });
+      assert.deepEqual(remaining.rows[0], { allocations: 1 });
     });
   });
 
-  describe("money and outcome round-trips", () => {
+  describe("money round-trips", () => {
     for (const amount of ["0.00", "0.01", "9999999999.99"]) {
       test(`NUMERIC(12,2) round-trips ${amount} exactly through Prisma and pg`, async () => {
-        const submission = await db.prisma.submission.create({
-          data: {
-            submissionKey: unique("money"),
-            quantity: 1,
-            destinationLatitude: 0,
-            destinationLongitude: 0,
-            outcome: "ACCEPTED",
-          },
-        });
         const order = await db.prisma.order.create({
           data: {
             orderNumber: unique("ORD"),
-            submissionId: submission.id,
+            submissionKey: unique("attempt"),
+            quantity: 1,
+            destinationLatitude: 0,
+            destinationLongitude: 0,
             unitPrice: amount,
             merchandiseSubtotal: amount,
             discountRate: "0.00",
@@ -768,17 +710,24 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
 
     test("amounts beyond NUMERIC(12,2) are rejected rather than stored", async () => {
       await assertDatabaseError(
-        insertOrder(await insertSubmission("ACCEPTED"), {
+        insertOrder({
+          quantity: "1",
           unit_price: "10000000000.00",
+          merchandise_subtotal: "10000000000.00",
+          discounted_merchandise_total: "10000000000.00",
+          order_total: "10000000010.00",
         }),
         { code: NUMERIC_OVERFLOW },
       );
-      const submission = await insertSubmission("ACCEPTED");
+      const orderNumber = unique("ORD");
       await assert.rejects(
         db.prisma.order.create({
           data: {
-            orderNumber: unique("ORD"),
-            submissionId: submission,
+            orderNumber,
+            submissionKey: unique("attempt"),
+            quantity: 1,
+            destinationLatitude: 0,
+            destinationLongitude: 0,
             unitPrice: "10000000000.00",
             merchandiseSubtotal: "10000000000.00",
             discountRate: "0.00",
@@ -790,52 +739,48 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
         }),
         /numeric field overflow|22003/i,
       );
-      const stored = await db.pool.query("SELECT 1 FROM customer_order WHERE submission_id = $1", [
-        submission,
+      const stored = await db.pool.query("SELECT 1 FROM customer_order WHERE order_number = $1", [
+        orderNumber,
       ]);
       assert.equal(stored.rowCount, 0);
     });
 
-    test("an accepted outcome round-trips through Prisma and the typed mappings", async () => {
+    test("an accepted Order round-trips through Prisma and the typed mappings", async () => {
       const warehouseA = await insertWarehouse(100);
       const warehouseB = await insertWarehouse(100);
-      const key = unique("accepted");
-      const submission = await db.prisma.submission.create({
+      const orderNumber = unique("ORD");
+      const submissionKey = unique("attempt");
+      const created = await db.prisma.order.create({
         data: {
-          submissionKey: key,
+          orderNumber,
+          submissionKey,
           quantity: 30,
           destinationLatitude: 13.7563,
           destinationLongitude: 100.5018,
-          outcome: "ACCEPTED",
-          order: {
-            create: {
-              orderNumber: unique("ORD"),
-              unitPrice: "150.00",
-              merchandiseSubtotal: "4500.00",
-              discountRate: "0.05",
-              discountAmount: "225.00",
-              discountedMerchandiseTotal: "4275.00",
-              shippingCost: "123.45",
-              orderTotal: "4398.45",
-              allocations: {
-                create: [
-                  { warehouseId: warehouseA, quantity: 20 },
-                  { warehouseId: warehouseB, quantity: 10 },
-                ],
-              },
-            },
+          unitPrice: "150.00",
+          merchandiseSubtotal: "4500.00",
+          discountRate: "0.05",
+          discountAmount: "225.00",
+          discountedMerchandiseTotal: "4275.00",
+          shippingCost: "123.45",
+          orderTotal: "4398.45",
+          allocations: {
+            create: [
+              { warehouseId: warehouseA, quantity: 20 },
+              { warehouseId: warehouseB, quantity: 10 },
+            ],
           },
         },
-        include: { order: { include: { allocations: { orderBy: { quantity: "desc" } } } } },
+        include: { allocations: { orderBy: { quantity: "desc" } } },
       });
 
-      const submissionRecord = toSubmissionRecord(submission);
-      assert.equal(submissionRecord.outcome, "ACCEPTED");
-      assert.deepEqual(submissionRecord.destination, { latitude: 13.7563, longitude: 100.5018 });
-      assert.ok(submission.order);
-      const order = toOrderRecord(submission.order);
+      const order = toOrderRecord(created);
       assert.deepEqual(
         {
+          orderNumber: order.orderNumber,
+          submissionKey: order.submissionKey,
+          quantity: order.quantity,
+          destination: order.destination,
           unitPrice: order.unitPrice,
           merchandiseSubtotal: order.merchandiseSubtotal,
           discountRate: order.discountRate,
@@ -849,6 +794,10 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
           })),
         },
         {
+          orderNumber,
+          submissionKey,
+          quantity: 30,
+          destination: { latitude: 13.7563, longitude: 100.5018 },
           unitPrice: "150.00",
           merchandiseSubtotal: "4500.00",
           discountRate: "0.05",
@@ -864,77 +813,15 @@ describe("PostgreSQL ordering schema", { timeout: 30_000 }, () => {
       );
       assert.ok(order.createdAt instanceof Date);
 
-      const byKey = await db.prisma.submission.findUniqueOrThrow({
-        where: { submissionKey: key },
-        include: { order: { include: { allocations: true } }, rejection: true },
+      const byNumber = await db.prisma.order.findUniqueOrThrow({
+        where: { orderNumber },
+        include: { allocations: true },
       });
-      assert.equal(byKey.rejection, null);
-      assert.equal(toOrderRecord(byKey.order!).id, order.id);
-    });
+      assert.equal(toOrderRecord(byNumber).id, order.id);
 
-    test("both rejection outcomes round-trip through Prisma and the typed mappings", async () => {
-      const insufficient = await db.prisma.submission.create({
-        data: {
-          submissionKey: unique("rejected"),
-          quantity: 5000,
-          destinationLatitude: 0,
-          destinationLongitude: 0,
-          outcome: "REJECTED",
-          rejection: {
-            create: {
-              reason: "INSUFFICIENT_STOCK",
-              unitPrice: "150.00",
-              merchandiseSubtotal: "750000.00",
-              discountRate: "0.20",
-              discountAmount: "150000.00",
-              discountedMerchandiseTotal: "600000.00",
-            },
-          },
-        },
-        include: { rejection: true, order: true },
-      });
-      assert.equal(toSubmissionRecord(insufficient).outcome, "REJECTED");
-      assert.equal(insufficient.order, null);
-      assert.deepEqual(toSubmissionRejectionRecord(insufficient.rejection!), {
-        submissionId: insufficient.id,
-        reason: "INSUFFICIENT_STOCK",
-        unitPrice: "150.00",
-        merchandiseSubtotal: "750000.00",
-        discountRate: "0.20",
-        discountAmount: "150000.00",
-        discountedMerchandiseTotal: "600000.00",
-        shippingCost: null,
-        orderTotal: null,
-        createdAt: insufficient.rejection!.createdAt,
-        updatedAt: insufficient.rejection!.updatedAt,
-      });
-
-      const excessive = await db.prisma.submission.create({
-        data: {
-          submissionKey: unique("rejected"),
-          quantity: 1,
-          destinationLatitude: -89.9,
-          destinationLongitude: 179.9,
-          outcome: "REJECTED",
-          rejection: {
-            create: {
-              reason: "SHIPPING_EXCEEDS_LIMIT",
-              unitPrice: "150.00",
-              merchandiseSubtotal: "150.00",
-              discountRate: "0.00",
-              discountAmount: "0.00",
-              discountedMerchandiseTotal: "150.00",
-              shippingCost: "22.51",
-              orderTotal: "172.51",
-            },
-          },
-        },
-        include: { rejection: true },
-      });
-      const record = toSubmissionRejectionRecord(excessive.rejection!);
-      assert.equal(record.reason, "SHIPPING_EXCEEDS_LIMIT");
-      assert.equal(record.shippingCost, "22.51");
-      assert.equal(record.orderTotal, "172.51");
+      // The duplicate-submission lookup used by order submission (ADR 0004).
+      const byKey = await db.prisma.order.findUniqueOrThrow({ where: { submissionKey } });
+      assert.equal(byKey.id, order.id);
     });
   });
 });

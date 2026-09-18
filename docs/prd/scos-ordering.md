@@ -4,7 +4,7 @@ parent_issue: ""
 related_adrs:
   - docs/adr/0003-database-managed-timestamps.md
   - docs/adr/0001-advisory-verification.md
-  - docs/adr/0002-replay-submission-outcomes.md
+  - docs/adr/0004-deduplicate-accepted-orders.md
 context_terms:
   - Destination
   - Warehouse Inventory
@@ -26,7 +26,7 @@ issues: []
 
 ## 1. Problem
 
-People ordering SCOS Station P1 Pro devices need to know whether the requested quantity can be delivered, what it will cost after volume discounts, and whether shipping is within the permitted limit. An accepted order must use available warehouse stock without overselling or being duplicated when a caller retries after an uncertain response.
+People ordering SCOS Station P1 Pro devices need to know whether the requested quantity can be delivered, what it will cost after volume discounts, and whether shipping is within the permitted limit. An accepted order must use available warehouse stock without overselling or being duplicated when a caller repeats a submission after an uncertain response.
 
 The assignment is backend-only; no frontend application is required. The deliverable is a backend that separates advisory Order Estimates from committed Orders, selects the lowest-cost Shipping Plan, and exposes understandable documentation and repeatable verification for an evaluator.
 
@@ -34,14 +34,14 @@ Sources are the supplied `bangkok-software-engineer-interview-challenge-sc-1-.pd
 
 ### Users
 
-- **Ordering representative or integrating client:** submits an Order Request on behalf of a buyer, inspects an Order Estimate, and deliberately submits or retries an order attempt. This is a working persona, not a requirement for accounts or authentication.
+- **Ordering representative or integrating client:** submits an Order Request on behalf of a buyer, inspects an Order Estimate, and deliberately submits or repeats an order submission. This is a working persona, not a requirement for accounts or authentication.
 - **Challenge evaluator or developer:** starts the backend, reads its served API documentation, exercises the flows, and verifies the required behavior.
 
 ## 2. Goals
 
 - Help callers determine whether a requested quantity is fulfillable and understand its discounted merchandise, shipping, and total cost.
 - Accept complete Orders against current inventory without overselling or leaving partial effects.
-- Let callers recover a stable submission outcome after an uncertain response without creating duplicate Orders.
+- Let callers repeat a submission after an uncertain response without creating duplicate Orders.
 - Make the backend understandable and reproducible through served API documentation, documented setup, and verifiable acceptance criteria.
 
 ## 3. Non-goals
@@ -51,7 +51,7 @@ Sources are the supplied `bangkok-software-engineer-interview-challenge-sc-1-.pd
 - Stock reservations or a guaranteed quote between verification and submission.
 - Partial fulfillment, backorders, order cancellation, order listing, or inventory administration.
 - Physical dispatch tracking, road-routing distance, carrier selection, or delivery-time guarantees.
-- Automatic expiry of saved submission outcomes in this challenge.
+- Storing or replaying business rejections. Only accepted Orders are deduplicated ([ADR 0004](../adr/0004-deduplicate-accepted-orders.md)).
 - Creating GitHub issues, sending the submission, merging PRs, or provisioning cloud resources as part of authoring this PRD.
 
 ## 4. Requirements
@@ -85,31 +85,29 @@ These rules apply to estimation and submission:
 - **Given** an accepted Order, **when** its record is inspected, **then** it preserves quantity, Destination, applied pricing and discount, Shipping Cost, Order Total, and Warehouse Allocations as accepted at submission.
 - **Given** inventory changed after verification, **when** the request is submitted, **then** the result is recalculated; it may cost more or become invalid rather than honoring stale availability.
 - **Given** two submissions compete for remaining inventory, **when** processed concurrently, **then** only fulfillable Orders succeed and no warehouse stock becomes negative.
-- **Given** a failure before acceptance is committed, **when** processing terminates, **then** no partial Order, partial inventory deduction, or completed submission outcome remains.
-- **Given** a business rejection, **when** submission completes, **then** no Order is created and inventory is unchanged, while the rejection remains available for replay under the retry requirements.
+- **Given** a failure before acceptance is committed, **when** processing terminates, **then** no partial Order or partial inventory deduction remains.
+- **Given** a business rejection, **when** submission completes, **then** no Order is created, inventory is unchanged, and the rejection is returned without being stored.
 
-#### Retry safely
+#### Repeat safely
 
-- **Given** a submission attempt identifier and the same request inputs, **when** the caller retries after successful acceptance, **then** it receives the original accepted outcome without another Order or inventory deduction.
-- **Given** a business rejection saved for an attempt, **when** the same attempt is retried, **then** the original rejection is returned even if circumstances have changed.
-- **Given** a deliberate new attempt after rejection, **when** the caller uses a new identifier, **then** the request is evaluated against current circumstances.
-- **Given** an identifier already belongs to different inputs, **when** it is reused, **then** a conflict is returned and its original outcome remains unchanged.
-- **Given** simultaneous requests with the same identifier, **when** both finish, **then** at most one Order exists and matching requests observe the same business outcome.
-- **Given** malformed input or a transient failure that did not commit an outcome, **when** the request is corrected or retried, **then** the identifier has not been consumed by that failed attempt.
-- **Given** a completed business outcome, **when** the application restarts, **then** replay remains available. No automatic expiry is required for this challenge.
+- **Given** a submission identifier and the same request inputs, **when** the caller repeats the submission after acceptance, **then** it receives the original Order without another Order or inventory deduction.
+- **Given** an identifier already belongs to an Order with different inputs, **when** it is reused, **then** a conflict is returned and the Order remains unchanged.
+- **Given** simultaneous requests with the same identifier, **when** both finish, **then** at most one Order exists.
+- **Given** a business rejection, malformed input, or a failure that committed nothing, **when** the same identifier is submitted again, **then** the identifier has not been consumed and the request is evaluated against current circumstances. Rejections are not stored ([ADR 0004](../adr/0004-deduplicate-accepted-orders.md)).
+- **Given** an accepted Order, **when** the application restarts, **then** its identifier still returns that Order. No automatic expiry is required for this challenge.
 
 #### Understand invalid requests
 
 - **Given** zero, negative, fractional, missing, or otherwise invalid quantity, or missing/non-finite/out-of-range coordinates, **when** a request is received, **then** it is rejected as invalid input without inventory or Order changes.
 - **Given** coordinates at valid geographic boundaries, **when** verification or submission occurs, **then** the boundaries are accepted: latitude -90 through 90 and longitude -180 through 180, inclusive.
 - **Given** a well-formed but unfulfillable request, **when** verified, **then** the availability check succeeds and reports invalidity; **when** submitted, **then** it reports a business rejection. A business rejection is distinguishable from malformed input, identifier conflict, and temporary service failure.
-- **Given** a temporary processing failure, **when** the caller receives the error, **then** the response does not imply acceptance; repeating the same attempt can recover any previously committed result.
+- **Given** a temporary processing failure, **when** the caller receives the error, **then** the response does not imply acceptance; repeating the same submission identifier returns the Order if one was committed and otherwise evaluates the request again.
 
 #### Discover the interface
 
 - **Given** the application is running, **when** an evaluator requests its API specification, **then** the application serves a machine-readable OpenAPI document describing verification, submission, and health behavior.
 - **Given** the application is running, **when** an evaluator opens its documentation, **then** interactive API documentation is served by the application itself.
-- **Given** the documentation, **when** an evaluator follows its examples, **then** request constraints, decimal-string amounts, nullable totals, successful outcomes, rejections, conflicts, and retry semantics match actual behavior.
+- **Given** the documentation, **when** an evaluator follows its examples, **then** request constraints, decimal-string amounts, nullable totals, successful outcomes, rejections, conflicts, and repeat-submission semantics match actual behavior.
 - **Given** an interface change, **when** verification runs, **then** specification validity and representative response conformance are checked so published documentation cannot silently drift.
 
 #### Reproduce and verify
@@ -122,19 +120,19 @@ These rules apply to estimation and submission:
   - Paris: 49.009722, 2.547778; 694 units.
   - Warsaw: 52.165833, 20.967222; 245 units.
   - Hong Kong: 22.308889, 113.914444; 419 units.
-- **Given** the verification suite, **when** executed, **then** it exercises the commercial boundaries, allocation, rollback, concurrent submissions, and replay scenarios defined above. Database-dependent guarantees are checked against a real database.
+- **Given** the verification suite, **when** executed, **then** it exercises the commercial boundaries, allocation, rollback, concurrent-submission, and duplicate-submission scenarios defined above. Database-dependent guarantees are checked against a real database.
 - **Given** unfinished or deferred work, **when** the evaluator reads the README, **then** limitations and next steps are explicit rather than represented as complete.
 
 #### Edge cases
 
 - **Empty state:** zero available inventory is Insufficient Stock for every otherwise-valid positive quantity. No partial shipment is presented as a complete estimate.
-- **Loading state:** no product UI is required. Clients can have an in-flight submission with an unknown outcome; repeating its identifier follows the retry requirements rather than creating a deliberate new attempt.
-- **Mid-flow failure:** order creation, inventory consumption, and accepted-outcome persistence succeed together or leave no partial effects. Committed business rejections remain replayable. A lost response after commit is recovered by retrying the same attempt.
+- **Loading state:** no product UI is required. Clients can have an in-flight submission with an unknown outcome; repeating its identifier follows the duplicate-submission requirements rather than creating a second Order.
+- **Mid-flow failure:** order creation and inventory consumption succeed together or leave no partial effects. A response lost after commit is recovered by repeating the same submission identifier.
 - **Permissions/authentication:** user accounts, roles, and entitlements are not defined by the challenge. This does not authorize public unauthenticated exposure; access controls remain a deployment decision.
 - **Boundary inputs:** test 24/25, 49/50, 99/100, and 249/250 units; exact stock exhaustion; valid coordinate endpoints; and shipping below, equal to, and above the limit after rounding.
-- **Repeated/concurrent actions:** identical attempts replay; conflicting reuse fails; separate attempts compete against current inventory without overselling.
+- **Repeated/concurrent actions:** a repeated identifier returns its accepted Order; conflicting reuse fails; separate submissions compete against current inventory without overselling.
 - **Distance and rounding:** a Destination at a warehouse may have zero shipping cost; equal-distance stock choices are deterministic. Rounding individual allocations must not replace the agreed combined-charge rounding rule.
-- **Historical values:** subsequent inventory or commercial changes do not rewrite accepted Order amounts or saved submission outcomes.
+- **Historical values:** subsequent inventory or commercial changes do not rewrite accepted Order amounts.
 
 ### Optional: hosted demonstration (P2)
 
@@ -156,9 +154,9 @@ These rules apply to estimation and submission:
 - Core implementation was budgeted at approximately four hours, with review and deployment effort separate. The target discussed was Monday, September 21, 2026, Bangkok time; no more precise cutoff was given.
 - [Design decisions](../design-decisions.md) contain the agreed language/runtime, monorepo, architecture, persistence, enum-table, and served API contract constraints. These remain binding even though the PRD focuses on product behavior.
 - The relational schema follows third normal form (3NF), with accepted order amounts retained as historical snapshots; see the [design decisions](../design-decisions.md#agreed-architecture).
-- Generated database entity IDs use UUIDv7 for time-oriented sorting, as specified in the design decisions. Enum lookup tables retain text keys; submission retry identifiers retain their existing contract.
+- Generated database entity IDs use UUIDv7 for time-oriented sorting, as specified in the design decisions. Any persisted categorical values use text-key lookup tables; the submission identifier is a separate text key on the Order.
 - [Advisory verification ADR](../adr/0001-advisory-verification.md) defines the distinction between an estimate and acceptance.
-- [Submission replay ADR](../adr/0002-replay-submission-outcomes.md) defines stable outcomes per attempt and new identifiers for new attempts.
+- [Order deduplication ADR](../adr/0004-deduplicate-accepted-orders.md) supersedes the [submission replay ADR](../adr/0002-replay-submission-outcomes.md): accepted Orders are deduplicated by submission identifier, and rejections are not stored.
 - Dollar amounts are treated as USD for this single-currency challenge; international tax and customs charges are outside the supplied calculation rules.
 
 ### Feasibility and delivery dependencies
@@ -176,7 +174,7 @@ The implementation must establish its workspace, runtime, local database, and ve
 ## 6. Success metrics
 
 - Every P1 acceptance scenario has an executable check or documented reproducible verification, with no unresolved failing required check at handoff.
-- Concurrency tests produce zero negative-stock results and zero duplicate Orders for the same submission attempt.
+- Concurrency tests produce zero negative-stock results and zero duplicate Orders for the same submission identifier.
 - Failure-injection tests leave zero partial inventory deductions or partial Orders after rollback.
 - Pricing tests select the correct discount on both sides of every tier boundary and accept shipping equal to, but not above, the agreed limit.
 - The running application serves both forms of API documentation; the specification validates and representative responses conform.
