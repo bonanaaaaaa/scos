@@ -201,12 +201,20 @@ importers:
         specifier: 4.13.8
         version: 4.13.8
     devDependencies:
+      '@scos/typescript-config':
+        specifier: workspace:*
+        version: link:../../libs/typescript-config
       '@types/node':
         specifier: 24.13.5
         version: 24.13.5
 
+  libs/typescript-config: {}
+
   packages/ordering:
     devDependencies:
+      '@scos/typescript-config':
+        specifier: workspace:*
+        version: link:../../libs/typescript-config
       '@types/node':
         specifier: 24.13.5
         version: 24.13.5
@@ -220,6 +228,9 @@ importers:
         specifier: 8.23.0
         version: 8.23.0
     devDependencies:
+      '@scos/typescript-config':
+        specifier: workspace:*
+        version: link:../../libs/typescript-config
       '@types/node':
         specifier: 24.13.5
         version: 24.13.5

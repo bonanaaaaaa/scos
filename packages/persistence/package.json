@@ -25,6 +25,7 @@
     "pg": "8.23.0"
   },
   "devDependencies": {
+    "@scos/typescript-config": "workspace:*",
     "@types/node": "24.13.5",
     "@types/pg": "8.23.1"
   }

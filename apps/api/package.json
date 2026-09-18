@@ -24,6 +24,7 @@
     "hono": "4.13.8"
   },
   "devDependencies": {
+    "@scos/typescript-config": "workspace:*",
     "@types/node": "24.13.5"
   }
 }

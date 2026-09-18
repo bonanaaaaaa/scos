@@ -29,8 +29,9 @@ The workspace contains:
 - `packages/ordering`: dependency-free domain/application boundary
 - `packages/persistence`: outbound database adapter boundary, depending inward on ordering
 - `apps/api`: composition root, depending on ordering and persistence
+- `libs/typescript-config`: shared TypeScript compiler policy consumed through the `@scos/typescript-config` workspace package
 
-Package exports point to compiled files in each package's `dist` directory.
+Application and adapter package exports point to compiled files in each package's `dist` directory. Turbo treats the shared TypeScript configuration as a global dependency so compiler-policy changes invalidate affected cached tasks.
 
 ## Local API
 
