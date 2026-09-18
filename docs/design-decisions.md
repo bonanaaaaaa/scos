@@ -22,7 +22,7 @@
 - Apply the highest eligible volume-discount tier to the entire order, independent of warehouse splits.
 - Reject insufficient stock explicitly, without changing inventory or offering partial fulfillment.
 - For insufficient stock, verification returns HTTP 200 with valid: false, reason INSUFFICIENT_STOCK, calculated merchandise and discount amounts, and null shippingCost and orderTotal. Submission returns HTTP 422 with INSUFFICIENT_STOCK and creates no order.
-- Use decimal.js for application monetary calculations behind domain value objects and pricing functions, independently of Prisma types. Construct monetary constants and persisted amounts from decimal strings. Use an isolated Decimal configuration with explicit intermediate precision and ROUND_HALF_UP; choose and validate sufficient significant-digit precision for supported inputs rather than setting calculation precision to the two-decimal storage scale. Sum unrounded shipping contributions before the final cent rounding. Distance calculation precision remains a separate design choice; decimal arithmetic does not remove approximation in geographic distances.
+- Use decimal.js for application monetary calculations behind domain value objects and pricing functions, independently of Prisma types. Construct monetary constants and persisted amounts from decimal strings. Use an isolated Decimal configuration with explicit intermediate precision and ROUND_HALF_UP; choose and validate sufficient significant-digit precision for supported inputs rather than setting calculation precision to the two-decimal storage scale. Sum unrounded shipping contributions before the final cent rounding. Geographic distance follows the precision policy below; decimal arithmetic does not remove approximation in geographic distances.
 - Persist monetary amounts using PostgreSQL NUMERIC(12, 2): 12 total digits, including two fractional digits. Use exact monetary arithmetic in the application, preserving intermediate precision until the agreed rounding point. Round combined shipping once to two decimal places using half-up rounding, then compare that charge against 15% of the discounted merchandise total; equality passes. Persist the same monetary amounts returned to the customer.
 - Calculate great-circle distances and allocate nearest warehouses first until fulfilled; use stable warehouse IDs to break equal-distance ties.
 - Prevent overselling by locking all six warehouse inventory rows in stable ID order inside a database transaction before reading stock and calculating allocation. Validate the request, decrement stock, and save the order within that transaction; retry temporary transaction conflicts a bounded number of times.
@@ -50,9 +50,18 @@
 - Maintain lookup values through versioned migrations. Prisma represents these as String fields and relations; domain types remain string literal unions with validation at the adapter seam. Referenced values cannot be removed until references are migrated; avoid cascading deletion of historical records.
 - Enum-table reference: https://hasura.io/docs/2.0/schema/postgres/enums/ . Follow its compatible table shape: one text primary-key column, optionally one text description column, no other columns, at least one value, and GraphQL-compatible value names. Insert initial values in migrations rather than relying on development seeds. Hasura metadata configuration is not needed in our Hono/Prisma stack.
 
+## Distance calculation and precision
+
+- Use the Haversine formula for great-circle distance on a spherical Earth, with JavaScript number arithmetic for trigonometry. Use one documented Earth-radius constant in kilometres consistently for verification and submission; its exact value must be fixed alongside reference-distance tests during implementation.
+- Preserve the supplied warehouse coordinates and accepted client coordinates without deliberate decimal-place rounding. JavaScript number representation remains finite precision; do not claim arbitrary-precision coordinates or measurement accuracy from the number of supplied digits.
+- Keep computed distances in kilometres without rounding to whole metres, whole kilometres, or a fixed number of decimal places. Use those distances for allocation and convert each result via its decimal string representation into decimal.js for shipping arithmetic.
+- Multiply using decimal constants for unit weight and shipping rate, sum all warehouse shipping contributions, and round the combined charge once to cents using ROUND_HALF_UP. Do not round individual contributions or distance values first.
+- Clamp the Haversine intermediate to the mathematical range [0, 1] before calculating the central angle to avoid floating-point drift producing invalid results at geographic extremes.
+- Coordinate precision is distinct from measurement accuracy and spherical-model accuracy. The [OpenStreetMap coordinate precision reference](https://wiki.openstreetmap.org/wiki/Precision_of_coordinates) informs this distinction; its local distance approximation is not the algorithm for globally distributed warehouses.
+
 ## Agreed validation strategy
 
-- Unit tests cover discount boundaries, allocation, rounding, and the shipping limit.
+- Unit tests cover discount boundaries, allocation, rounding, and the shipping limit. Distance tests cover identical locations, geographic boundaries, international date-line crossings, nearly antipodal points, and reference distances under the chosen Earth-radius constant.
 - Real PostgreSQL integration tests cover rollback, simultaneous submissions, and idempotency.
 - Provide easy local start/test commands and documented API examples.
 
