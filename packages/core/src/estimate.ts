@@ -1,5 +1,6 @@
 import { type InventorySnapshot, type ShippingPlan, allocateNearestFirst } from "./allocation.js";
-import type { Destination } from "./destination.js";
+import { type Destination, isValidGeoPoint } from "./destination.js";
+import { DomainError } from "./errors.js";
 import type { Money } from "./money.js";
 import {
   type DiscountRate,
@@ -7,7 +8,7 @@ import {
   priceMerchandise,
   shippingCostFor,
 } from "./pricing.js";
-import type { Quantity } from "./quantity.js";
+import { type Quantity, parseQuantity } from "./quantity.js";
 
 export type EstimateRejectionReason = "INSUFFICIENT_STOCK" | "SHIPPING_EXCEEDS_LIMIT";
 
@@ -63,6 +64,11 @@ export type OrderEstimate =
  */
 export function estimateOrder(request: OrderRequest, inventory: InventorySnapshot): OrderEstimate {
   const { quantity, destination } = request;
+  // The brands are compile-time only; re-check so unbranded callers cannot
+  // obtain a "valid" estimate for a non-positive or fractional quantity.
+  if (!parseQuantity(quantity).ok || !isValidGeoPoint(destination)) {
+    throw new DomainError("INVALID_REQUEST", "Order request was not validated.");
+  }
   const base: EstimateBase = { quantity, destination, ...priceMerchandise(quantity) };
 
   const allocations = allocateNearestFirst(quantity, destination, inventory);

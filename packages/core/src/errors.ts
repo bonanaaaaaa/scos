@@ -2,6 +2,7 @@ export type DomainErrorCode =
   | "INVALID_AMOUNT"
   | "AMOUNT_OUT_OF_RANGE"
   | "INVALID_INVENTORY"
+  | "INVALID_REQUEST"
   | "INVALID_ORDER";
 
 /**

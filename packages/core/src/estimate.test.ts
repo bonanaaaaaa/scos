@@ -160,3 +160,17 @@ describe("estimateOrder", () => {
     expect(Object.isFrozen(estimate.allocations)).toBe(true);
   });
 });
+
+describe("unvalidated requests", () => {
+  test.each([0, -1, 2.5, Number.NaN])("quantity %s is rejected at runtime", (value) => {
+    expect(() => estimateOrder({ quantity: q(value), destination: at(0, 0) }, [])).toThrow(
+      expect.objectContaining({ code: "INVALID_REQUEST" }),
+    );
+  });
+
+  test("an out-of-range destination is rejected at runtime", () => {
+    expect(() => estimateOrder({ quantity: q(1), destination: at(91, 0) }, [])).toThrow(
+      DomainError,
+    );
+  });
+});
