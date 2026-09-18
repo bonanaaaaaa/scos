@@ -50,6 +50,10 @@ export function isValidGeoPoint(point: GeoPoint): boolean {
   );
 }
 
+/**
+ * Validates client-supplied coordinates. Returns every field error at once as a
+ * `Result` rather than throwing (see "Error handling" in packages/core/README.md).
+ */
 export function parseDestination(
   latitude: unknown,
   longitude: unknown,

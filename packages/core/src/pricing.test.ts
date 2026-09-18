@@ -13,9 +13,16 @@ import {
 } from "./pricing";
 import { MAX_QUANTITY, type Quantity } from "./quantity";
 
-const q = (value: number): Quantity => value as Quantity;
-const allocation = (warehouseId: string, quantity: number, distanceKm: number) =>
-  ({ warehouseId, quantity, distanceKm }) satisfies WarehouseAllocation;
+const asQuantity = (value: number): Quantity => value as Quantity;
+const allocation = ({
+  warehouseId = "a",
+  quantity,
+  distanceKm,
+}: {
+  warehouseId?: string;
+  quantity: number;
+  distanceKm: number;
+}): WarehouseAllocation => ({ warehouseId, quantity, distanceKm });
 
 describe("volume discount", () => {
   test.each([
@@ -33,7 +40,7 @@ describe("volume discount", () => {
     "%s units: rate %s, subtotal %s, discount %s, discounted %s",
     (units, rate, sub, disc, net) => {
       expect(discountRateFor(units)).toBe(rate);
-      const pricing = priceMerchandise(q(units));
+      const pricing = priceMerchandise(asQuantity(units));
       expect(pricing.discountRate).toBe(rate);
       expect(pricing.merchandiseSubtotal.toString()).toBe(sub);
       expect(pricing.discountAmount.toString()).toBe(disc);
@@ -43,7 +50,7 @@ describe("volume discount", () => {
 
   test("discount and discounted totals are exact at cents for every quantity (no rounding)", () => {
     for (let units = 1; units <= 1000; units += 1) {
-      const pricing = priceMerchandise(q(units));
+      const pricing = priceMerchandise(asQuantity(units));
       const exactDiscount = pricing.merchandiseSubtotal
         .toDecimal()
         .times(new DomainDecimal(pricing.discountRate));
@@ -52,7 +59,7 @@ describe("volume discount", () => {
   });
 
   test("the largest supported quantity is representable", () => {
-    const pricing = priceMerchandise(q(MAX_QUANTITY));
+    const pricing = priceMerchandise(asQuantity(MAX_QUANTITY));
     expect(pricing.merchandiseSubtotal.toString()).toBe("9999999900.00");
     expect(pricing.discountedMerchandiseTotal.toString()).toBe("7999999920.00");
   });
@@ -64,22 +71,29 @@ describe("volume discount", () => {
 
 describe("shipping cost", () => {
   test("is units x 0.365 kg x $0.01/kg/km x distance", () => {
-    expect(unroundedShippingCost([allocation("a", 10, 1000)]).toString()).toBe("36.5");
-    expect(shippingCostFor([allocation("a", 10, 1000)]).toString()).toBe("36.50");
-    expect(shippingCostFor([allocation("a", 5, 0)]).toString()).toBe("0.00");
+    expect(unroundedShippingCost([allocation({ quantity: 10, distanceKm: 1000 })]).toString()).toBe(
+      "36.5",
+    );
+    expect(shippingCostFor([allocation({ quantity: 10, distanceKm: 1000 })]).toString()).toBe(
+      "36.50",
+    );
+    expect(shippingCostFor([allocation({ quantity: 5, distanceKm: 0 })]).toString()).toBe("0.00");
     expect(shippingCostFor([]).toString()).toBe("0.00");
   });
 
   test("uses the distance's full string representation without rounding it", () => {
     const distanceKm = 1706.3754409277303;
-    expect(unroundedShippingCost([allocation("a", 1, distanceKm)]).toString()).toBe(
+    expect(unroundedShippingCost([allocation({ quantity: 1, distanceKm })]).toString()).toBe(
       new DomainDecimal("0.00365").times(new DomainDecimal("1706.3754409277303")).toString(),
     );
   });
 
   test("rounds the combined charge once, not each contribution (rounds up)", () => {
     // Each contribution is 0.00438, which alone rounds to 0.00.
-    const plan = [allocation("a", 1, 1.2), allocation("b", 1, 1.2)];
+    const plan = [
+      allocation({ quantity: 1, distanceKm: 1.2 }),
+      allocation({ warehouseId: "b", quantity: 1, distanceKm: 1.2 }),
+    ];
     const separately = plan
       .map((entry) => shippingCostFor([entry]).toDecimal())
       .reduce((sum, value) => sum.plus(value), new DomainDecimal(0));
@@ -89,15 +103,32 @@ describe("shipping cost", () => {
 
   test("rounds the combined charge once, not each contribution (rounds down)", () => {
     // Each contribution is 0.0060225, which alone rounds to 0.01.
-    const plan = [allocation("a", 1, 1.65), allocation("b", 1, 1.65)];
-    expect(shippingCostFor([allocation("a", 1, 1.65)]).toString()).toBe("0.01");
+    const plan = [
+      allocation({ quantity: 1, distanceKm: 1.65 }),
+      allocation({ warehouseId: "b", quantity: 1, distanceKm: 1.65 }),
+    ];
+    expect(shippingCostFor([allocation({ quantity: 1, distanceKm: 1.65 })]).toString()).toBe(
+      "0.01",
+    );
     expect(shippingCostFor(plan).toString()).toBe("0.01");
+  });
+
+  test("keeps contributions exact beyond the decimal.js default precision of 20 digits", () => {
+    // Exactly 22184.004999999999999880576; 20 significant digits would give
+    // 22184.005 and round up to 22184.01.
+    const plan = [allocation({ quantity: 25_833_059, distanceKm: 0.23527254705070336 })];
+    expect(unroundedShippingCost(plan).toString()).toBe("22184.004999999999999880576");
+    expect(shippingCostFor(plan).toString()).toBe("22184.00");
   });
 
   test("rounds half-up at the cent boundary", () => {
     // 0.00365 x 1 x 1.37 = 0.0050005 -> 0.01; 1 x 1.36 = 0.004964 -> 0.00
-    expect(shippingCostFor([allocation("a", 1, 1.37)]).toString()).toBe("0.01");
-    expect(shippingCostFor([allocation("a", 1, 1.36)]).toString()).toBe("0.00");
+    expect(shippingCostFor([allocation({ quantity: 1, distanceKm: 1.37 })]).toString()).toBe(
+      "0.01",
+    );
+    expect(shippingCostFor([allocation({ quantity: 1, distanceKm: 1.36 })]).toString()).toBe(
+      "0.00",
+    );
     // An exact half cent rounds up.
     expect(Money.roundToCents(new DomainDecimal("22.505")).toString()).toBe("22.51");
   });

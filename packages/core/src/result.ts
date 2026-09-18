@@ -1,3 +1,8 @@
+/**
+ * Outcome of an operation that can fail in an expected way, such as client-input
+ * validation. Unexpected failures throw `DomainError` instead; see the
+ * "Error handling" section of packages/core/README.md for the convention.
+ */
 export type Result<T, E> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: E };

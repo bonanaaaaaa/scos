@@ -1,25 +1,26 @@
-import assert from "node:assert/strict";
-import { test } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import * as core from "./index";
 
-test("the core package exposes its public entry point", () => {
-  assert.equal(core.corePackage.name, "core");
-});
+describe("@scos/core public entry point", () => {
+  test("the core package exposes its public entry point", () => {
+    expect(core.corePackage.name).toBe("core");
+  });
 
-test("the public entry point exposes adapter-facing API only", () => {
-  assert.deepEqual(Object.keys(core).sort(), [
-    "DomainError",
-    "LATITUDE_LIMIT",
-    "LONGITUDE_LIMIT",
-    "MAX_QUANTITY",
-    "MONEY_MAX_STRING",
-    "Money",
-    "corePackage",
-    "createOrder",
-    "estimateOrder",
-    "parseDestination",
-    "parseOrderRequest",
-    "parseQuantity",
-  ]);
+  test("the public entry point exposes adapter-facing API only", () => {
+    expect(Object.keys(core).sort()).toStrictEqual([
+      "DomainError",
+      "LATITUDE_LIMIT",
+      "LONGITUDE_LIMIT",
+      "MAX_QUANTITY",
+      "MONEY_MAX_STRING",
+      "Money",
+      "corePackage",
+      "createOrder",
+      "estimateOrder",
+      "parseDestination",
+      "parseOrderRequest",
+      "parseQuantity",
+    ]);
+  });
 });

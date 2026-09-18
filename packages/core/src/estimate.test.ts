@@ -7,8 +7,8 @@ import { DomainError } from "./errors";
 import { type OrderEstimate, estimateOrder } from "./estimate";
 import type { Quantity } from "./quantity";
 
-const q = (value: number): Quantity => value as Quantity;
-const at = (latitude: number, longitude: number): Destination =>
+const asQuantity = (value: number): Quantity => value as Quantity;
+const destinationAt = (latitude: number, longitude: number): Destination =>
   ({ latitude, longitude }) as Destination;
 
 /** Equator longitude whose distance from (0, 0) is `km`. */
@@ -37,7 +37,7 @@ const summarise = (estimate: OrderEstimate) => ({
 
 describe("estimateOrder", () => {
   test("a destination at a warehouse ships for free", () => {
-    const estimate = estimateOrder({ quantity: q(3), destination: at(0, 0) }, [
+    const estimate = estimateOrder({ quantity: asQuantity(3), destination: destinationAt(0, 0) }, [
       { warehouseId: "w", latitude: 0, longitude: 0, available: 3 },
     ]);
     expect(summarise(estimate)).toEqual({
@@ -55,7 +55,7 @@ describe("estimateOrder", () => {
   });
 
   test("insufficient stock retains merchandise and discount with null shipping and total", () => {
-    const estimate = estimateOrder({ quantity: q(30), destination: at(0, 0) }, [
+    const estimate = estimateOrder({ quantity: asQuantity(30), destination: destinationAt(0, 0) }, [
       { warehouseId: "w", latitude: 0, longitude: 0, available: 29 },
       { warehouseId: "empty", latitude: 0, longitude: 1, available: 0 },
     ]);
@@ -73,16 +73,17 @@ describe("estimateOrder", () => {
   });
 
   test("zero inventory is insufficient stock", () => {
-    expect(estimateOrder({ quantity: q(1), destination: at(0, 0) }, []).reason).toBe(
-      "INSUFFICIENT_STOCK",
-    );
+    expect(
+      estimateOrder({ quantity: asQuantity(1), destination: destinationAt(0, 0) }, []).reason,
+    ).toBe("INSUFFICIENT_STOCK");
   });
 
   describe("shipping limit after rounding (1 unit: limit is exactly 22.50)", () => {
     const estimateAtKm = (km: number) =>
-      estimateOrder({ quantity: q(1), destination: at(0, longitudeForKm(km)) }, [
-        { warehouseId: "w", latitude: 0, longitude: 0, available: 1 },
-      ]);
+      estimateOrder(
+        { quantity: asQuantity(1), destination: destinationAt(0, longitudeForKm(km)) },
+        [{ warehouseId: "w", latitude: 0, longitude: 0, available: 1 }],
+      );
 
     test("below the limit is valid", () => {
       const estimate = estimateAtKm(6160); // 22.484 -> 22.48
@@ -116,8 +117,8 @@ describe("estimateOrder", () => {
   });
 
   test("uses the PRD warehouses nearest-first with a split allocation", () => {
-    const destination = at(13.75, 100.5); // Bangkok
-    const estimate = estimateOrder({ quantity: q(500), destination }, PRD_WAREHOUSES);
+    const destination = destinationAt(13.75, 100.5); // Bangkok
+    const estimate = estimateOrder({ quantity: asQuantity(500), destination }, PRD_WAREHOUSES);
     expect(summarise(estimate)).toEqual({
       valid: true,
       reason: null,
@@ -137,17 +138,23 @@ describe("estimateOrder", () => {
   test("the whole PRD inventory can be exhausted but not exceeded", () => {
     const total = PRD_WAREHOUSES.reduce((sum, warehouse) => sum + warehouse.available, 0);
     expect(total).toBe(2556);
-    const exact = estimateOrder({ quantity: q(total), destination: at(0, 0) }, PRD_WAREHOUSES);
+    const exact = estimateOrder(
+      { quantity: asQuantity(total), destination: destinationAt(0, 0) },
+      PRD_WAREHOUSES,
+    );
     expect(exact.allocations).toHaveLength(6);
     expect(exact.allocations.reduce((sum, entry) => sum + entry.quantity, 0)).toBe(total);
-    const over = estimateOrder({ quantity: q(total + 1), destination: at(0, 0) }, PRD_WAREHOUSES);
+    const over = estimateOrder(
+      { quantity: asQuantity(total + 1), destination: destinationAt(0, 0) },
+      PRD_WAREHOUSES,
+    );
     expect(over.reason).toBe("INSUFFICIENT_STOCK");
   });
 
   test("throws AMOUNT_OUT_OF_RANGE when an excessive-shipping total cannot be stored", () => {
     const quantity = 60_000_000;
     const run = () =>
-      estimateOrder({ quantity: q(quantity), destination: at(0, 0) }, [
+      estimateOrder({ quantity: asQuantity(quantity), destination: destinationAt(0, 0) }, [
         { warehouseId: "antipode", latitude: 0, longitude: 180, available: quantity },
       ]);
     expect(run).toThrow(DomainError);
@@ -155,7 +162,10 @@ describe("estimateOrder", () => {
   });
 
   test("returns a frozen estimate", () => {
-    const estimate = estimateOrder({ quantity: q(1), destination: at(0, 0) }, PRD_WAREHOUSES);
+    const estimate = estimateOrder(
+      { quantity: asQuantity(1), destination: destinationAt(0, 0) },
+      PRD_WAREHOUSES,
+    );
     expect(Object.isFrozen(estimate)).toBe(true);
     expect(Object.isFrozen(estimate.allocations)).toBe(true);
   });
@@ -163,14 +173,14 @@ describe("estimateOrder", () => {
 
 describe("unvalidated requests", () => {
   test.each([0, -1, 2.5, Number.NaN])("quantity %s is rejected at runtime", (value) => {
-    expect(() => estimateOrder({ quantity: q(value), destination: at(0, 0) }, [])).toThrow(
-      expect.objectContaining({ code: "INVALID_REQUEST" }),
-    );
+    expect(() =>
+      estimateOrder({ quantity: asQuantity(value), destination: destinationAt(0, 0) }, []),
+    ).toThrow(expect.objectContaining({ code: "INVALID_REQUEST" }));
   });
 
   test("an out-of-range destination is rejected at runtime", () => {
-    expect(() => estimateOrder({ quantity: q(1), destination: at(91, 0) }, [])).toThrow(
-      DomainError,
-    );
+    expect(() =>
+      estimateOrder({ quantity: asQuantity(1), destination: destinationAt(91, 0) }, []),
+    ).toThrow(DomainError);
   });
 });

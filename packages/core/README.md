@@ -23,6 +23,42 @@ Order Estimates, and the Order aggregate. No HTTP, Prisma, or persistence types.
   intermediate clamped to `[0, 1]`, and unrounded kilometres converted to decimal
   through `String(distanceKm)`.
 
+## Error handling
+
+Core separates three kinds of failure, and each has one mechanism:
+
+| Failure                                   | Mechanism                                                | Examples                                                               |
+| ----------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Malformed client input (expected)         | `Result` with typed `ValidationError`s (`ok` / `err`)    | `parseQuantity`, `parseDestination`, `parseOrderRequest`               |
+| Business rejection of a well-formed order | A typed estimate outcome: `valid: false` with a `reason` | `INSUFFICIENT_STOCK`, `SHIPPING_EXCEEDS_LIMIT` from `estimateOrder`    |
+| Violated domain invariant or bug          | `throw new DomainError(code, message)`                   | corrupt inventory, inconsistent order, amount outside `NUMERIC(12, 2)` |
+
+- **Validation returns `Result`, not exceptions.** Bad input is an expected
+  outcome, so it is a return value the caller must handle, not control flow by
+  exception. Multi-field parsers collect every field error instead of stopping at the first,
+  so an adapter can answer with a single HTTP 400 that lists all problems.
+- **Business rejections are data.** Verification must still report the
+  merchandise and discount amounts for a rejected order, so the estimate carries
+  `valid`, `reason`, and the amounts; nothing is thrown.
+- **`DomainError` means something is wrong on our side.** Core throws it only
+  when an invariant is broken (data or programming error). Callers do not catch
+  it for normal flow.
+
+HTTP request validation is Zod in the inbound adapter (`@hono/standard-validator`, see
+[design decisions](../../docs/design-decisions.md)); core stays independent of Zod and Hono.
+The adapter's schema rejects malformed requests first, then converts the parsed body
+with `parseOrderRequest`, which acts as the domain's own guard and should not fail
+for input the schema accepted. Schema limits must match core's (`MAX_QUANTITY`,
+`LATITUDE_LIMIT`, `LONGITUDE_LIMIT`).
+
+Inbound adapters (#9–#11) must follow this mapping:
+
+- Zod schema failures, and any `Result` validation error -> HTTP 400 listing every problem;
+- business outcomes -> their documented status (verification 200 with
+  `valid: false`; submission 422);
+- `DomainError` (and any other thrown error) -> HTTP 500, without leaking
+  internal details.
+
 ## Supported input bounds
 
 - **Quantity:** a positive integer no greater than `MAX_QUANTITY` (66,666,666 =
@@ -34,9 +70,7 @@ Order Estimates, and the Order aggregate. No HTTP, Prisma, or persistence types.
 - **Destination:** finite latitude in `[-90, 90]` and longitude in
   `[-180, 180]`, inclusive.
 
-Input validation (`parseQuantity`, `parseDestination`, `parseOrderRequest`)
-returns a `Result` with typed `ValidationError`s. Domain invariant violations
-(corrupt inventory, invalid orders, unrepresentable money) throw `DomainError`.
+Input validation returns a `Result`; see [Error handling](#error-handling).
 
 ### Overflow behaviour of `estimateOrder`
 

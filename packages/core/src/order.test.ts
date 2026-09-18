@@ -20,7 +20,11 @@ function validEstimate(): ValidOrderEstimate {
   return estimate;
 }
 
-const expectInvalid = (estimate: unknown, message: RegExp, id = "id-1", orderNumber = "SO-1") => {
+const expectInvalid = (
+  estimate: unknown,
+  message: RegExp,
+  { id = "id-1", orderNumber = "SO-1" }: { id?: string; orderNumber?: string } = {},
+) => {
   const run = () => createOrder({ id, orderNumber, estimate: estimate as OrderEstimate });
   expect(run).toThrow(DomainError);
   expect(run).toThrow(message);
@@ -54,8 +58,8 @@ describe("createOrder", () => {
   });
 
   test("requires identifiers", () => {
-    expectInvalid(validEstimate(), /id is required/, "");
-    expectInvalid(validEstimate(), /number is required/, "id", "");
+    expectInvalid(validEstimate(), /id is required/, { id: "" });
+    expectInvalid(validEstimate(), /number is required/, { id: "id", orderNumber: "" });
   });
 
   test("enforces allocation invariants", () => {

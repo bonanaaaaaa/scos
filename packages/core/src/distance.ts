@@ -5,9 +5,13 @@ import type { GeoPoint } from "./destination";
  * the GRS80 ellipsoid, 6371.0088 km (WGS84 gives the same value to this
  * precision). Used consistently for verification and submission.
  *
+ * @see H. Moritz, "Geodetic Reference System 1980", Bulletin Géodésique 54
+ *   (1980) — defines the GRS80 ellipsoid and its mean radius R1.
  * @see H. Moritz, "Geodetic Reference System 1980", Journal of Geodesy 74
- *   (2000) 128–133, https://doi.org/10.1007/s001900050278 — mean radius
- *   R1 = 6371.0088 km.
+ *   (2000) 128–133, https://doi.org/10.1007/s001900050278 — republished
+ *   GRS80 document; mean radius R1 = 6371.0088 km.
+ * @see https://en.wikipedia.org/wiki/Earth_radius#Arithmetic_mean_radius —
+ *   readable summary of the IUGG mean radius R1 = 6371.0088 km.
  */
 export const EARTH_RADIUS_KM = 6371.0088;
 
@@ -71,6 +75,11 @@ export function haversineIntermediate(from: GeoPoint, to: GeoPoint): number {
  *
  * Floating-point drift can push the intermediate just above 1 near antipodes;
  * values beyond one ulp above 1 would make Math.asin(Math.sqrt(a)) NaN. Internal.
+ *
+ * @see https://en.wikipedia.org/wiki/Haversine_formula — notes that rounding
+ *   error can push the intermediate outside [0, 1], so it must be kept in range.
+ * @see https://www.movable-type.co.uk/scripts/latlong.html — reference
+ *   implementation of the same Haversine formula.
  */
 export function centralAngleFromHaversine(a: number): number {
   return 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, a))));

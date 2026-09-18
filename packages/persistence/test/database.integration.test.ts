@@ -1,8 +1,7 @@
-import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { Client } from "pg";
-import { test } from "vitest";
+import { expect, test } from "vitest";
 
 const databaseTestUrl = process.env.DATABASE_TEST_URL;
 
@@ -10,17 +9,15 @@ test(
   "real PostgreSQL transactions roll back without retaining test rows",
   { timeout: 20_000 },
   async () => {
-    assert.ok(databaseTestUrl, "DATABASE_TEST_URL must point to the isolated test database");
-    assert.notEqual(
-      databaseTestUrl,
+    // expect.assert narrows databaseTestUrl to a truthy string for the checks below.
+    expect.assert(databaseTestUrl, "DATABASE_TEST_URL must point to the isolated test database");
+    expect(databaseTestUrl, "DATABASE_TEST_URL must differ from DATABASE_URL").not.toBe(
       process.env.DATABASE_URL,
-      "DATABASE_TEST_URL must differ from DATABASE_URL",
     );
-    assert.equal(
+    expect(
       new URL(databaseTestUrl).pathname,
-      "/scos_test",
       "DATABASE_TEST_URL must name the dedicated scos_test database",
-    );
+    ).toBe("/scos_test");
 
     const client = new Client({
       connectionString: databaseTestUrl,
@@ -37,7 +34,7 @@ test(
       connected = true;
 
       const database = await client.query<{ name: string }>("SELECT current_database() AS name");
-      assert.equal(database.rows[0]?.name, "scos_test");
+      expect(database.rows[0]?.name).toBe("scos_test");
 
       await client.query(`CREATE SCHEMA ${schema}`);
       await client.query(`CREATE TABLE ${schema}.rollback_probe (id integer PRIMARY KEY)`);
@@ -47,14 +44,14 @@ test(
       const insideTransaction = await client.query<{ count: string }>(
         `SELECT count(*) FROM ${schema}.rollback_probe`,
       );
-      assert.equal(insideTransaction.rows[0]?.count, "1");
+      expect(insideTransaction.rows[0]?.count).toBe("1");
 
       await client.query("ROLLBACK");
 
       const afterRollback = await client.query<{ count: string }>(
         `SELECT count(*) FROM ${schema}.rollback_probe`,
       );
-      assert.equal(afterRollback.rows[0]?.count, "0");
+      expect(afterRollback.rows[0]?.count).toBe("0");
     } catch (error) {
       testFailure = error;
     }
