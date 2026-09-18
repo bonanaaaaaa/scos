@@ -2,6 +2,7 @@
 github_project: "https://github.com/users/bonanaaaaaa/projects/1"
 parent_issue: ""
 related_adrs:
+  - docs/adr/0003-database-managed-timestamps.md
   - docs/adr/0001-advisory-verification.md
   - docs/adr/0002-replay-submission-outcomes.md
 context_terms:
@@ -143,6 +144,8 @@ These rules apply to estimation and submission:
 ## 5. Assumptions and open questions
 
 ### Accepted constraints and references
+
+- All application-owned tables include created_at and updated_at, with database-managed updates, as specified in the [timestamp ADR](../adr/0003-database-managed-timestamps.md).
 
 - Distances use Haversine with JavaScript number arithmetic and remain unrounded in kilometres before conversion to decimal.js. Preserve supplied coordinate precision without deliberate rounding; see the [distance precision policy](../design-decisions.md#distance-calculation-and-precision).
 
