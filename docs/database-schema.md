@@ -124,6 +124,7 @@ All three application tables follow [ADR 0003](adr/0003-database-managed-timesta
 ## Prisma client and connection pooling
 
 - The Prisma 7 client is generated into `packages/persistence/src/generated/prisma`. It is gitignored and excluded from lint, formatting, and coverage. The Turbo `generate` task runs `prisma generate` before `build` and `typecheck`, so a clean checkout builds without a committed client or a database connection.
+- `build` bundles the package with tsdown (`tsdown.config.ts`) into `dist/`: `index.js` and `database.js` with bundled `.d.ts` declarations for the package exports, plus `bin/seed.js` and `bin/confirm-reset.js` for `db:seed` and `db:reset`. The generated client is bundled; `@prisma/client` stays external and loads Prisma's query compiler (WASM) at run time.
 - `createPrismaClient(pool)` builds the client with `new PrismaPg(pool)` over the pool returned by `createDatabasePool`. There is no second pool. The caller owns the pool: call `prisma.$disconnect()`, then `pool.end()`.
 - `prisma.config.ts` reads `DATABASE_URL` from the environment. Prisma 7 does not load `.env` files.
 
