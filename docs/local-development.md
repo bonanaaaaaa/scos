@@ -1,0 +1,77 @@
+# Local development
+
+These scripts follow the one-time setup / daily startup pattern from
+[ed-creative-fusion](https://github.com/amity-arac/ed-creative-fusion), adapted to
+SCOS. Each agent can prepare and run its own worktree while sharing the local
+PostgreSQL container.
+
+## First run in each worktree
+
+Install the Node.js version in `.node-version`, Corepack, and Docker with
+Compose v2. Start Docker, then run:
+
+```sh
+./setup.sh
+./dev.sh
+```
+
+`setup.sh` checks prerequisites, selects the pinned pnpm through Corepack,
+installs with a frozen lockfile, and creates `.env` only if absent. Existing
+configuration is preserved. Rerun setup when dependencies change. Both scripts
+resolve paths from their own location, so they work from another directory.
+
+## Shared PostgreSQL, separate worktree databases
+
+`dev.sh` reuses a running PostgreSQL container. If none is running, it starts an
+existing stopped one. If none exists, it starts the scaffold's `postgres`
+service under the fixed Compose project name `scos-local`. Every worktree shares
+that one container and persistent volume. Only the development service starts;
+the disposable test database is excluded.
+
+Discovery recognizes Compose services named `postgres` and ordinary containers
+using the official PostgreSQL image. If several candidates exist, or a custom
+image is used, select the shared development container explicitly:
+
+```sh
+SCOS_POSTGRES_CONTAINER=my-postgres ./dev.sh
+```
+
+The container must publish PostgreSQL port 5432 to localhost. The scaffold uses
+host port 5432 when creating the shared container. The launcher waits for
+PostgreSQL readiness, reads
+its configured PostgreSQL user and password (including `POSTGRES_PASSWORD_FILE`)
+and discovers the published host port. Set `SCOS_POSTGRES_PASSWORD` if the actual
+password differs from the container's initialization configuration. Local `psql`
+inside the container must be able to authenticate as that user and create databases.
+
+Each worktree gets a database named `scos_wt_<hash>`, derived from its absolute
+path. The database is created only if missing, with an advisory lock protecting
+simultaneous initialization. Existing data is preserved. Different worktrees
+use different databases within the same container; repeated launches reuse the
+same database. Moving a worktree changes its database identity.
+
+The launcher exports the generated `DATABASE_URL` to the API, overriding copied
+or inherited database URLs without editing `.env`. It does not log the password.
+Migrations and seeds are not run because the scaffold does not yet provide them.
+Integration-test database setup remains separate.
+
+## API ports and shutdown
+
+Like the reference script, the launcher checks ports in order, starting at 3000,
+and increments until it finds an available one. Set `PORT` in `.env` or the shell
+to change the starting point; the shell wins. `.env` is parsed as data, not
+executed as shell code.
+
+```sh
+PORT=8080 ./dev.sh
+```
+
+The selected URL is printed before Turbo starts the API in watch mode and builds
+its dependencies. Turbo's local development task uses loose environment mode
+so the generated database URL reaches the API. Check `/health` at the printed URL.
+
+Ctrl+C stops the API. The shared PostgreSQL container and all databases remain
+available. The scripts never stop the shared container, reset databases, or
+remove volumes. Worktree
+removal does not delete its database; keep or remove that data separately when
+it is no longer needed.

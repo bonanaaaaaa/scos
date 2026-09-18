@@ -10,6 +10,19 @@ Backend workspace for ordering SCOS Station P1 Pro devices. This foundation cont
 
 The repository pins pnpm 12.4.2 through `packageManager`. Run pnpm through Corepack so the pinned version is used.
 
+## Quick local development
+
+```sh
+./setup.sh
+./dev.sh
+```
+
+Setup installs locked dependencies and preserves existing `.env` configuration.
+Development startup reuses or starts shared PostgreSQL, creates a separate
+worktree database, and finds an available API port starting at 3000. See
+[local development](docs/local-development.md) for container selection and
+configuration. Ctrl+C stops the API while preserving the shared database.
+
 ## Install and verify
 
 ```sh
