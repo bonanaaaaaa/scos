@@ -21,6 +21,7 @@ import {
   createPrismaClient,
 } from "@scos/persistence";
 import type { Hono } from "hono";
+import type { Pool } from "pg";
 
 import type { Logger } from "./http/logger";
 
@@ -53,6 +54,13 @@ export interface DatabaseCompositionOptions {
   readonly logger?: Logger;
   /** Limit for acquiring or opening a connection; {@link DEFAULT_CONNECTION_TIMEOUT_MS}. */
   readonly connectionTimeoutMs?: number;
+  /**
+   * Builds the pg pool in place of `createDatabasePool(databaseUrl, timeouts)`.
+   * It receives the bounded timeouts and must apply them. The Lambda adapter
+   * (`src/lambda/pool.ts`) uses it for one connection per execution
+   * environment and IAM database authentication.
+   */
+  readonly createPool?: (timeouts: DatabasePoolOptions) => Pool;
 }
 
 export interface Database {
@@ -62,10 +70,8 @@ export interface Database {
 
 /** Pool and Prisma client; nothing connects until the first query. */
 export function openDatabase(options: DatabaseCompositionOptions): Database {
-  const pool = createDatabasePool(
-    options.databaseUrl,
-    databasePoolTimeouts(options.connectionTimeoutMs),
-  );
+  const timeouts = databasePoolTimeouts(options.connectionTimeoutMs);
+  const pool = options.createPool?.(timeouts) ?? createDatabasePool(options.databaseUrl, timeouts);
   const prisma = createPrismaClient(pool);
   let closing: Promise<void> | undefined;
   return {

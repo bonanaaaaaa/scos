@@ -7,6 +7,7 @@
     "api:dev": "turbo run dev --filter=@scos/api",
     "api:start": "turbo run start --filter=@scos/api",
     "build": "turbo run build",
+    "package:lambda": "turbo run package:lambda",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint //#lint:root",
     "lint:root": "oxlint --deny-warnings scripts",

@@ -11,7 +11,7 @@ application can have many plugs.
 flowchart LR
     subgraph driving["Driving adapters (call in)"]
         api["Hono HTTP API<br/>apps/api"]
-        lambda["Lambda handler<br/>(planned)"]
+        lambda["Lambda handlers<br/>apps/api/src/lambda"]
     end
 
     subgraph core["packages/core"]
@@ -64,17 +64,18 @@ flowchart LR
      (error envelope, JSON handling, shared schemas) are in `src/http/`, which
      never imports an endpoint, and endpoints never import each other.
      `createApp` (`src/app.ts`) mounts all three for the local server and the
-     API documentation. Lambda handlers (#14) are a second driving adapter
+     API documentation. The Lambda handlers are a second driving adapter
      over the same per-endpoint apps.
-   - **Lambda connections (#14):** each Lambda execution environment has its
-     own in-process pg pool and serves one request at a time. Nothing sets the
-     pool size yet (pg defaults to 10); the recommendation is for #14 to apply
-     and verify `max: 1` per environment. RDS Proxy, the chosen connection
-     approach, pools connections across all per-endpoint functions and bounds
-     those reaching PostgreSQL. #14 must check whether the transaction's
-     `set_config(..., true)` calls pin the client connection, and whether
-     pg/Prisma prepared statements do; verify IAM or Secrets Manager
-     authentication; and compare proxy timeouts with the 5 s connect timeout.
+   - **Lambda handlers (`apps/api/src/lambda`):** one `handler` per endpoint,
+     built with `hono/aws-lambda` over the same per-endpoint compositions. Each
+     execution environment validates its environment once at initialization
+     and serves one request at a time with a pg pool of at most one
+     connection. In `iam` mode, pg mints a fresh RDS IAM token for every new
+     connection and verifies TLS. RDS Proxy pools connections across all
+     functions and bounds those reaching PostgreSQL. Pinning, authentication,
+     timeouts, costs and migrations are designed in
+     [Lambda deployment](deployment/lambda.md); pinning and proxy behaviour
+     still need hosted evidence (#16).
    - **Driven adapters** are called by the application. `packages/persistence`
      implements the ports with Prisma and SQL.
 
