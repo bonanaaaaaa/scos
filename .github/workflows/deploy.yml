@@ -465,7 +465,9 @@ jobs:
           result=$(infra/cloudflare/scripts/ensure-workers-subdomain.sh "$name")
           # A new subdomain can take minutes to resolve; the health check
           # waits longer in that run.
-          [[ $result == registered* ]] && echo "registered=true" >>"$GITHUB_OUTPUT" || true
+          if [[ $result == registered* ]]; then
+            echo "registered=true" >>"$GITHUB_OUTPUT"
+          fi
       - name: Deploy the Worker (wrangler deploy, no rebuild)
         working-directory: apps/api
         env:
