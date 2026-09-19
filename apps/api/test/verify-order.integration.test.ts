@@ -1,11 +1,13 @@
 import { createVerifyOrder, type OrderEstimate, orderRequestSchema } from "@scos/core";
+import { createPrismaInventoryReader, seedWarehouses } from "@scos/persistence";
+import {
+  createMigratedDatabase,
+  type MigratedDatabase,
+  readPersistedState,
+} from "@scos/persistence/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { createPrismaInventoryReader } from "../src/inventory-reader";
-import { seedWarehouses, warehouseSeeds } from "../src/seed";
-import { createMigratedDatabase, type MigratedDatabase } from "./support/database";
-
-// Seeded warehouse IDs, in ID order (see src/seed.ts).
+// Seeded warehouse IDs (see packages/persistence/src/seed.ts).
 const PARIS = "01996000-0000-7000-8000-000000000004";
 const WARSAW = "01996000-0000-7000-8000-000000000005";
 const HONG_KONG = "01996000-0000-7000-8000-000000000006";
@@ -38,49 +40,20 @@ const summarise = (estimate: OrderEstimate) => ({
   allocations: estimate.allocations.map(({ warehouseId, quantity }) => [warehouseId, quantity]),
 });
 
-interface WarehouseStateRow {
-  id: string;
-  name: string;
-  latitude: number;
-  longitude: number;
-  stock: number;
-  created_at: Date;
-  updated_at: Date;
-  xmin: string;
-  ctid: string;
-}
-
-/**
- * Everything verification could have touched. `xmin` and `ctid` change whenever
- * a row version is rewritten, so they expose even an UPDATE that sets the same
- * values (which the update trigger would otherwise also show in `updated_at`).
- */
-async function readPersistedState() {
-  const warehouses = await db.pool.query<WarehouseStateRow>(
-    `SELECT id, name, latitude, longitude, stock, created_at, updated_at,
-            xmin::text AS xmin, ctid::text AS ctid
-     FROM warehouses ORDER BY id`,
-  );
-  const counts = await db.pool.query<{ orders: number; order_allocations: number }>(
-    `SELECT (SELECT count(*)::int FROM orders) AS orders,
-            (SELECT count(*)::int FROM order_allocations) AS order_allocations`,
-  );
-  return { warehouses: warehouses.rows, counts: counts.rows[0] };
-}
-
+// The composition this app performs: the core use case over the PostgreSQL adapter.
 function verifyOrder(request: typeof validRequest): Promise<OrderEstimate> {
   return createVerifyOrder({ inventoryReader: createPrismaInventoryReader(db.prisma) })(request);
 }
 
 /** Verifies and asserts that no persisted state changed, whatever the outcome. */
 async function verifyLeavingStateUnchanged(request: typeof validRequest): Promise<OrderEstimate> {
-  const before = await readPersistedState();
+  const before = await readPersistedState(db.pool);
   expect(before.warehouses).toHaveLength(6);
   expect(before.counts).toStrictEqual({ orders: 0, order_allocations: 0 });
 
   const estimate = await verifyOrder(request);
 
-  expect(await readPersistedState()).toStrictEqual(before);
+  expect(await readPersistedState(db.pool)).toStrictEqual(before);
   return estimate;
 }
 
@@ -92,6 +65,10 @@ async function setStock(warehouseId: string, stock: number): Promise<void> {
   expect(result.rowCount).toBe(1);
 }
 
+// VerifyOrder composed with the real PostgreSQL inventory adapter. The
+// adapter's own contract (snapshot shape, no lock, no write) is tested in
+// packages/persistence; `readPersistedState` is proven there to detect even a
+// same-value rewrite.
 describe("advisory verification against PostgreSQL inventory", { timeout: 30_000 }, () => {
   beforeAll(async () => {
     db = await createMigratedDatabase();
@@ -104,49 +81,6 @@ describe("advisory verification against PostgreSQL inventory", { timeout: 30_000
   beforeEach(async () => {
     await db.pool.query("DELETE FROM warehouses");
     expect(await seedWarehouses(db.pool)).toStrictEqual({ inserted: 6, existing: 0 });
-  });
-
-  test("the inventory snapshot is every warehouse's current stock in ID order", async () => {
-    await setStock(WARSAW, 0);
-    const rows = await db.pool.query<{
-      id: string;
-      latitude: number;
-      longitude: number;
-      stock: number;
-    }>("SELECT id::text AS id, latitude, longitude, stock FROM warehouses ORDER BY id");
-
-    const snapshot = await createPrismaInventoryReader(db.prisma).readInventorySnapshot();
-
-    expect(snapshot).toHaveLength(6);
-    expect(snapshot).toStrictEqual(
-      rows.rows.map(({ id, latitude, longitude, stock }) => ({
-        warehouseId: id,
-        latitude,
-        longitude,
-        available: stock,
-      })),
-    );
-    expect(snapshot.map((warehouse) => warehouse.warehouseId)).toStrictEqual(
-      warehouseSeeds.map((seed) => seed.id),
-    );
-    expect(snapshot.map((warehouse) => warehouse.available)).toStrictEqual([
-      355, 578, 265, 694, 0, 419,
-    ]);
-    expect(Object.isFrozen(snapshot)).toBe(true);
-  });
-
-  test("the state comparison exposes a rewrite that leaves every stock value the same", async () => {
-    const before = await readPersistedState();
-
-    await db.pool.query("UPDATE warehouses SET stock = stock WHERE id = $1::uuid", [PARIS]);
-
-    const after = await readPersistedState();
-    const stockOf = (state: typeof before) => state.warehouses.map((row) => row.stock);
-    expect(stockOf(after)).toStrictEqual(stockOf(before));
-    expect(after).not.toStrictEqual(before);
-    const paris = (state: typeof before) => state.warehouses.find((row) => row.id === PARIS);
-    expect(paris(after)?.xmin).not.toBe(paris(before)?.xmin);
-    expect(paris(after)?.created_at).toStrictEqual(paris(before)?.created_at);
   });
 
   test("a valid estimate has exact amounts and changes nothing", async () => {
@@ -286,8 +220,8 @@ describe("advisory verification against PostgreSQL inventory", { timeout: 30_000
     });
   });
 
-  test("verification takes no row lock and sees only committed stock", async () => {
-    const before = await readPersistedState();
+  test("verification does not wait for a transaction that has locked the stock", async () => {
+    const before = await readPersistedState(db.pool);
     const submission = await db.pool.connect();
     let blockedTimer: NodeJS.Timeout | undefined;
     try {
@@ -297,10 +231,7 @@ describe("advisory verification against PostgreSQL inventory", { timeout: 30_000
       await submission.query("SELECT id FROM warehouses ORDER BY id FOR UPDATE");
       await submission.query("UPDATE warehouses SET stock = 0");
 
-      // A locking read would wait behind that transaction indefinitely (the
-      // pool sets no statement timeout), so the wait is bounded here: a
-      // regression fails fast and the rollback below still runs. The plain
-      // snapshot read returns at once with the committed stock.
+      // Bounded so a locking regression fails fast and the rollback still runs.
       const estimate = await Promise.race([
         verifyOrder(validRequest),
         new Promise<never>((_, reject) => {
@@ -310,6 +241,7 @@ describe("advisory verification against PostgreSQL inventory", { timeout: 30_000
           );
         }),
       ]);
+      // The estimate is from committed stock, not the uncommitted zeroes.
       expect(summarise(estimate)).toMatchObject({
         valid: true,
         shippingCost: "5002.43",
@@ -323,6 +255,6 @@ describe("advisory verification against PostgreSQL inventory", { timeout: 30_000
       await submission.query("ROLLBACK");
       submission.release();
     }
-    expect(await readPersistedState()).toStrictEqual(before);
+    expect(await readPersistedState(db.pool)).toStrictEqual(before);
   });
 });

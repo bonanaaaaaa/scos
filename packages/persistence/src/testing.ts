@@ -1,0 +1,186 @@
+/**
+ * Integration-test support, exported as `@scos/persistence/testing`.
+ *
+ * Tests that need a real PostgreSQL, in this package or in one that composes
+ * it with `@scos/core` (such as `apps/api`), share this harness so the
+ * isolation guards exist once. It has no test-runner dependency. Never import
+ * it from runtime code.
+ *
+ * @module
+ */
+
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+import { Client, type Pool } from "pg";
+
+import { createDatabasePool } from "./database";
+import { createPrismaClient, type PrismaClient } from "./prisma";
+
+const execFileAsync = promisify(execFile);
+
+// Both src/ and the built dist/ sit directly inside the package directory.
+export const packageDirectory = fileURLToPath(new URL("..", import.meta.url));
+const prismaCli = fileURLToPath(new URL("../node_modules/.bin/prisma", import.meta.url));
+
+/**
+ * Returns DATABASE_TEST_URL after the same isolation guard as the connectivity
+ * harness: it must name the dedicated scos_test database and differ from
+ * DATABASE_URL. These are safety guards rather than test expectations, so they
+ * throw plainly before any database is created or dropped.
+ */
+export function requireTestDatabaseUrl(): string {
+  const databaseTestUrl = process.env.DATABASE_TEST_URL;
+  if (!databaseTestUrl) {
+    throw new Error("DATABASE_TEST_URL must point to the isolated test database");
+  }
+  if (databaseTestUrl === process.env.DATABASE_URL) {
+    throw new Error("DATABASE_TEST_URL must differ from DATABASE_URL");
+  }
+  if (new URL(databaseTestUrl).pathname !== "/scos_test") {
+    throw new Error("DATABASE_TEST_URL must name the dedicated scos_test database");
+  }
+  return databaseTestUrl;
+}
+
+function adminClient(url: string): Client {
+  return new Client({
+    connectionString: url,
+    connectionTimeoutMillis: 5_000,
+    query_timeout: 15_000,
+    statement_timeout: 15_000,
+  });
+}
+
+export interface MigratedDatabase {
+  readonly name: string;
+  readonly url: string;
+  readonly pool: Pool;
+  readonly prisma: PrismaClient;
+  drop(): Promise<void>;
+}
+
+export async function runPrisma(
+  args: readonly string[],
+  databaseUrl: string,
+): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync(prismaCli, [...args], {
+    cwd: packageDirectory,
+    env: { ...process.env, DATABASE_URL: databaseUrl },
+    timeout: 60_000,
+  });
+}
+
+/**
+ * Creates a uniquely named database beside scos_test in the disposable test
+ * server, applies the real migrations with `prisma migrate deploy`, and
+ * returns a pg pool plus a Prisma client built on that pool. Each test file
+ * gets its own database, so parallel files and concurrent worktrees never
+ * share schema state. drop() removes the database.
+ */
+export async function createMigratedDatabase(): Promise<MigratedDatabase> {
+  const testUrl = requireTestDatabaseUrl();
+  const name = `scos_test_${randomUUID().replaceAll("-", "")}`;
+  const url = new URL(testUrl);
+  url.pathname = `/${name}`;
+  const databaseUrl = url.toString();
+  if (databaseUrl === process.env.DATABASE_URL) {
+    throw new Error("The per-file test database URL must differ from DATABASE_URL");
+  }
+
+  const admin = adminClient(testUrl);
+  await admin.connect();
+  try {
+    const current = await admin.query<{ name: string }>("SELECT current_database() AS name");
+    const connectedDatabase = current.rows[0]?.name;
+    if (connectedDatabase !== "scos_test") {
+      throw new Error(
+        `Expected to be connected to scos_test, but current_database() is ${String(connectedDatabase)}`,
+      );
+    }
+    await admin.query(`CREATE DATABASE "${name}"`);
+  } finally {
+    await admin.end();
+  }
+
+  const drop = async () => {
+    const cleanup = adminClient(testUrl);
+    await cleanup.connect();
+    try {
+      await cleanup.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+    } finally {
+      await cleanup.end();
+    }
+  };
+
+  try {
+    await runPrisma(["migrate", "deploy"], databaseUrl);
+  } catch (error) {
+    await drop();
+    throw error;
+  }
+
+  const pool = createDatabasePool(databaseUrl);
+  const prisma = createPrismaClient(pool);
+  return {
+    name,
+    url: databaseUrl,
+    pool,
+    prisma,
+    drop: async () => {
+      const failures: unknown[] = [];
+      for (const step of [() => prisma.$disconnect(), () => pool.end(), drop]) {
+        try {
+          await step();
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(failures, "Test database cleanup failed");
+      }
+    },
+  };
+}
+
+export interface PersistedWarehouseState {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  stock: number;
+  created_at: Date;
+  updated_at: Date;
+  xmin: string;
+  ctid: string;
+}
+
+export interface PersistedState {
+  warehouses: PersistedWarehouseState[];
+  counts: { orders: number; order_allocations: number };
+}
+
+/**
+ * Everything a read-only operation must leave alone: every warehouse row and
+ * the Order tables' row counts. `xmin` and `ctid` change whenever a row version
+ * is rewritten, so comparing two results exposes even an UPDATE that sets the
+ * same values (which the update trigger would also show in `updated_at`).
+ */
+export async function readPersistedState(pool: Pool): Promise<PersistedState> {
+  const warehouses = await pool.query<PersistedWarehouseState>(
+    `SELECT id, name, latitude, longitude, stock, created_at, updated_at,
+            xmin::text AS xmin, ctid::text AS ctid
+     FROM warehouses ORDER BY id`,
+  );
+  const counts = await pool.query<PersistedState["counts"]>(
+    `SELECT (SELECT count(*)::int FROM orders) AS orders,
+            (SELECT count(*)::int FROM order_allocations) AS order_allocations`,
+  );
+  const [count] = counts.rows;
+  if (count === undefined) {
+    throw new Error("Row counts query returned no row");
+  }
+  return { warehouses: warehouses.rows, counts: count };
+}

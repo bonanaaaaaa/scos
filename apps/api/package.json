@@ -7,9 +7,10 @@
     "build": "node build.mjs",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "oxlint --deny-warnings src build.mjs",
-    "test": "vitest run --coverage"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "lint": "oxlint --deny-warnings src test build.mjs",
+    "test": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
     "@hono/node-server": "2.1.1",
