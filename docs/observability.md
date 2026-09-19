@@ -758,8 +758,10 @@ three endpoints and the documentation routes) over the same use cases,
 persistence adapters, middleware and decorators. It emits the same log
 records, spans, metrics, attributes and resource, with the same redaction
 and bounded dimensions. Only the composition differs. This section covers
-what #17 owns: the runtime, telemetry and local verification. Provisioning,
-Hyperdrive and PlanetScale, deployment and hosted checks belong to #28.
+what #17 owns: the runtime, telemetry and local verification. The
+Hyperdrive and PlanetScale design is #28's
+([Cloudflare deployment design](cloudflare-deployment-design.md));
+provisioning and deployment belong to #15, and hosted checks to #33.
 
 | Module                                   | Contents                                                                                                                        |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -837,7 +839,7 @@ No Pino, no OTel Logs SDK, no log export from the application.
 - **Logpush** (Workers Trace Events, Paid plan) ships the same events, with
   each record in `Logs[].Message`, to R2, S3 or a log vendor; a Collector or
   pipeline there maps them with the table below. Cloudflare's OTLP log export
-  or a Tail Worker are alternatives for #28.
+  or a Tail Worker are alternatives for #15 to choose.
 - **Mapping.** Exactly the [LogRecord mapping](#mapping-to-the-otel-logrecord-model):
   `time` to Timestamp, `level`/`severity_number` to SeverityText/Number,
   `msg` to Body, `trace_id`/`span_id`/`trace_flags` to the trace fields,
@@ -956,8 +958,11 @@ fails), whichever concurrent request's flush carries it.
   never does. The adapters' `Prisma.PrismaClientKnownRequestError`,
   `Prisma.Decimal` and isolation levels then come from the same runtime as
   the client, so error classification and retries behave as on Node.
-- Transaction pooling, isolation, lock timeouts and connection budgets under
-  Hyperdrive are verified in #28. Locally, `wrangler dev` connects straight
+- #28 settled transaction pooling, isolation, lock timeouts and the
+  connection budget under Hyperdrive
+  ([Cloudflare deployment design](cloudflare-deployment-design.md)), with a
+  simulated pooler against local PostgreSQL; #33 measures them through a real
+  Hyperdrive. Locally, `wrangler dev` connects straight
   to PostgreSQL (`localConnectionString`); the integration test runs eight
   concurrent submissions and eight concurrent verifications through one
   isolate.
@@ -985,7 +990,7 @@ building the composition is logged by error class only.
 | `OTEL_METRIC_EXPORT_INTERVAL`, `OTEL_METRIC_EXPORT_TIMEOUT`                                        |                         | Not used on Workers (no periodic reader) and ignored                                    |
 
 - Non-secret values go in `wrangler.jsonc` `vars` (traces and metrics are
-  `none` there until #28 sets an endpoint per environment). Collector
+  `none` there until #15 sets an endpoint per environment; #33 verifies it). Collector
   credentials are only ever a secret: `wrangler secret put
 OTEL_EXPORTER_OTLP_HEADERS` when deployed, `apps/api/.dev.vars` locally
   (ignored by Git; see `apps/api/.dev.vars.example`). They never appear in
@@ -999,8 +1004,8 @@ OTEL_EXPORTER_OTLP_HEADERS` when deployed, `apps/api/.dev.vars` locally
 - `compatibility_date` `2026-08-15` (pinned, not later than the workerd
   release of the pinned Wrangler and pool), `compatibility_flags`
   `["nodejs_compat"]`, `send_metrics: false`.
-- `hyperdrive`: binding `HYPERDRIVE` with a placeholder ID (#28 injects the
-  real one) and a local-only `localConnectionString` (the docker compose
+- `hyperdrive`: binding `HYPERDRIVE` with a placeholder ID (#15's pipeline
+  injects the real one from its Terraform output) and a local-only `localConnectionString` (the docker compose
   database, the same local credentials as `.env.example`). Override it with
   `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE`.
 - `observability`: Workers Logs on with invocation logs; automatic traces off.
@@ -1070,7 +1075,7 @@ OTEL_EXPORTER_OTLP_HEADERS` when deployed, `apps/api/.dev.vars` locally
     `unhandledrejection` event fires while exports fail against
     `127.0.0.1:9`, and Vitest would fail either run on any unhandled error.
   - `wrangler dev` did not print the line in the collector-down sample.
-    #28/#33 should check the deployed Worker's logs with the collector down
+    #33 should check the deployed Worker's logs with the collector down
     for the same line or any `waitUntil`/uncaught-exception warning.
 
 ### Running locally
@@ -1218,8 +1223,10 @@ and 31 ms), and each request logged one failure per signal:
 - **Verified locally only**, in `wrangler dev` and workerd tests, with
   `wrangler dev` connecting straight to PostgreSQL instead of through a real
   Hyperdrive. Hyperdrive's transaction pooling, Workers Logs and Logpush
-  ingestion, CPU time on the Free plan and the placeholder Hyperdrive ID are
-  #28's to verify and replace. Hosted checks for #28/#33 should also confirm
+  ingestion and CPU time on the Free plan are #33's to verify, and the
+  placeholder Hyperdrive ID is #15's to replace (see the
+  [Cloudflare deployment design](cloudflare-deployment-design.md)). Hosted
+  checks in #33 should also confirm
   that, with the collector down, the deployed Worker's logs show only the
   `OpenTelemetry export failed` warnings (no `Network connection lost`
   uncaught exception, no cancelled-`waitUntil` warning).
@@ -1229,7 +1236,7 @@ and 31 ms), and each request logged one failure per signal:
   metric deltas, by design.
 - **A Prisma client per request** costs some CPU on each database request;
   it was not measured on Cloudflare. If the Free plan's 10 ms CPU limit is a
-  problem, #28 should measure it.
+  problem, #33 measures it.
 - **The `workerd` persistence build** is a second generated Prisma client;
   both are generated from the same schema by `prisma generate`.
 - **Local observability store:** `wrangler dev` records Cloudflare's own
