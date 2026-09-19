@@ -224,13 +224,12 @@ expect_output_contains "returned no password"
 expect_no_secret_export
 expect_no_secrets
 
-new_case "reset without database_name falls back"
+new_case "reset uses the configured database name"
 touch "$state/db"
 mkdir -p "$state/roles"
 touch "$state/roles/scos_runtime" "$state/roles/scos_migrator"
-run_deploy ROTATE_ROLES=migration STUB_RESET_OMIT=database_name ORIGIN_DATABASE_FALLBACK=appdb
+run_deploy ROTATE_ROLES=migration ORIGIN_DATABASE_FALLBACK=appdb
 expect_status 0
-expect_output_contains "did not report database_name; using 'appdb'"
 encoded="$(jq -rn --arg p "$(last_password)" '$p | @uri')"
 expect_genv "BOOTSTRAP_MIGRATION_DATABASE_URL=postgresql://scos_migrator.stubbranch:${encoded}@ap-southeast.pg.psdb.cloud:5432/appdb?sslmode=require"
 if grep -q null "$genv"; then fail "GITHUB_ENV contains null"; else pass; fi
@@ -371,12 +370,36 @@ expect_output_contains "returned no password"
 expect_no_secret_export
 expect_no_secrets
 
-new_case "role create without database_name"
-run_deploy CREATE_DATABASE=true STUB_ROLE_OMIT=database_name
-expect_nonzero
-expect_output_contains "lacks username, password, access_host_url or database_name"
-if grep -q '^BOOTSTRAP_MIGRATION_DATABASE_URL=' "$genv"; then fail "a migration URL was exported"; else pass; fi
+new_case "role create uses the configured database name (pscale reports none)"
+run_deploy CREATE_DATABASE=true ORIGIN_DATABASE_FALLBACK=appdb
+expect_status 0
+encoded="$(jq -rn --arg p "$(last_password)" '$p | @uri')"
+expect_genv "BOOTSTRAP_MIGRATION_DATABASE_URL=postgresql://scos_migrator.stubbranch:${encoded}@ap-southeast.pg.psdb.cloud:5432/appdb?sslmode=require"
 if grep -q null "$genv"; then fail "GITHUB_ENV contains null"; else pass; fi
+expect_no_secrets
+
+new_case "role create with host:port 5432"
+run_deploy CREATE_DATABASE=true STUB_HOST_PORT=5432
+expect_status 0
+expect_genv "BOOTSTRAP_PLANETSCALE_HOST=ap-southeast.pg.psdb.cloud"
+encoded="$(jq -rn --arg p "$(last_password)" '$p | @uri')"
+expect_genv "BOOTSTRAP_MIGRATION_DATABASE_URL=postgresql://scos_migrator.stubbranch:${encoded}@ap-southeast.pg.psdb.cloud:5432/postgres?sslmode=require"
+expect_no_secrets
+
+new_case "existing roles listed with host:5432"
+touch "$state/db"
+mkdir -p "$state/roles"
+touch "$state/roles/scos_runtime" "$state/roles/scos_migrator"
+run_deploy STUB_HOST_PORT=5432
+expect_status 0
+expect_genv "BOOTSTRAP_PLANETSCALE_HOST=ap-southeast.pg.psdb.cloud"
+expect_no_secret_export
+
+new_case "role create with another port"
+run_deploy CREATE_DATABASE=true STUB_HOST_PORT=6432
+expect_nonzero
+expect_output_contains "reports port 6432"
+if grep -q '^BOOTSTRAP_PLANETSCALE_RUNTIME_PASSWORD=' "$genv"; then fail "a credential was exported"; else pass; fi
 expect_no_secrets
 
 new_case "role create without access_host_url"

@@ -385,9 +385,10 @@ fails any call, and checks that:
 - outside the deploy, a missing role or a rotation stops the run before any
   create or reset, and `MANAGE_ROLES=false` creates only the database;
 - an existing database gets only its missing role;
-- `role create` output missing `password`, `database_name` or
-  `access_host_url` fails the run and exports nothing, rather than the string
-  `null`;
+- `role create` output missing `password` or `access_host_url` fails the
+  run and exports nothing, rather than the string `null`;
+- the migration URL uses the configured database name (`postgres` unless
+  overridden), because `pscale`'s role output has no `database_name`;
 - the signature, passwords and tokens never appear in stdout or stderr,
   except in `::add-mask::` lines under Actions, and the signature and tokens
   never reach `$GITHUB_ENV`;
@@ -411,11 +412,13 @@ docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable \
 - The `PS-5` SKU name and PostgreSQL 18 availability in `ap-southeast`.
 - The exact JSON `pscale` prints for `database show`, `branch show`,
   `role list`, `role create` and `role reset` against the real API (whether
-  `role reset` reports `username`, `access_host_url` and `database_name`;
-  the script falls back to `role list` for the first two). The script relies on
-  fields read from the `pscale` 0.337.0 source (`kind`, `ready`, `name`,
-  `status`, `username`, `password`, `access_host_url`, `database_name`) and on
-  the `NOT_FOUND` error code.
+  `role reset` reports `username` and `access_host_url`; the script falls
+  back to `role list` for them). The script relies on fields read from the
+  `pscale` 0.337.0 source (`kind`, `ready`, `name`, `status`, `username`,
+  `password`, `access_host_url`) and on the `NOT_FOUND` error code. Role
+  output has no `database_name` (the first real deploy, 2026-09-20, failed on
+  that assumption): `pscale`'s own `database_url` always uses `postgres`, and
+  the script uses the configured name, `postgres` by default.
 - The service-token accesses needed after the token creates the database.
 - That a role inheriting `postgres` can run the initial migration.
 
