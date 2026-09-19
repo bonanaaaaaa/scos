@@ -5,17 +5,34 @@ use cases (`VerifyOrder`, `SubmitOrder`), and maps their typed outcomes to HTTP
 responses. Business rules live in `packages/core`; SQL lives in
 `packages/persistence`.
 
-| File                    | Role                                                                                |
-| ----------------------- | ----------------------------------------------------------------------------------- |
-| `src/http/contracts.ts` | Zod request/response schemas, error codes, and the route/status table (`servedBy`)  |
-| `src/app.ts`            | One Hono app per endpoint, plus `createApp`, which mounts all three                 |
-| `src/composition.ts`    | Composition roots per endpoint and combined: pool, Prisma, adapters, use cases, app |
-| `src/config.ts`         | Environment schemas per runtime (health, database endpoints, local server)          |
-| `src/server.ts`         | Node.js entrypoint: validate config, listen, graceful shutdown                      |
+```text
+src/
+  endpoints/
+    health/        contract, app, composition, config (+ tests)
+    verify-order/  contract, app, composition (+ tests)
+    submit-order/  contract, app, composition, messages, serializers (+ tests)
+  http/            shared only: error envelope and codes, messages, JSON guard and
+                   validator hook, createEndpointApp, shared schemas, estimate shape
+  app.ts           createApp: mounts the three endpoint apps
+  composition.ts   composeApplication: all routes over one pool
+  database.ts      bounded pool + Prisma shared by the database compositions
+  config.ts        shared env parsing, DATABASE_URL config, local-server config
+  routes.ts        the route/status table assembled from the endpoint contracts
+  server.ts        Node.js entrypoint: validate config, listen, graceful shutdown
+  index.ts         public exports
+  testing/         unit-test support (fixtures, request cases, spies, black hole)
+```
 
-The app factories and `src/http/contracts.ts` read no environment and open no
-connection, so tests and an offline OpenAPI export (#12) can import them
-without deployment configuration. The schemas convert with
+Each endpoint folder owns its request and response schemas, route contract,
+app factory, composition and tests. Dependencies point one way: an endpoint
+may import `src/http/` and the shared `config.ts` and `database.ts`; `http/`
+never imports an endpoint, and endpoints never import each other. The Order
+Estimate shape and serializer are in `http/estimate.ts` because both
+verification (200) and a rejected submission (422) return it.
+
+The app factories and contracts (`endpoints/*/contract.ts`, `routes.ts`) read
+no environment and open no connection, so tests and an offline OpenAPI export
+(#12) can import them without deployment configuration. The schemas convert with
 `z.toJSONSchema(schema, { target: "draft-07" })`; the submissionId refinements
 (no surrounding whitespace, no NUL, well-formed Unicode) are not expressible in
 JSON Schema and must be documented in prose.
@@ -25,18 +42,18 @@ JSON Schema and must be documented in prose.
 Each endpoint is a separately constructible Hono app, so each can be deployed
 as its own Lambda function (#14):
 
-| Route                 | App factory                                      | Composition                              | Builds                         | Configuration  |
-| --------------------- | ------------------------------------------------ | ---------------------------------------- | ------------------------------ | -------------- |
-| `GET /health`         | `createHealthApp({ logger? })`                   | `composeHealthApplication()`             | nothing                        | none           |
-| `POST /orders/verify` | `createVerifyOrderApp({ verifyOrder, logger? })` | `composeVerifyOrderApplication(options)` | pool, Prisma, inventory reader | `DATABASE_URL` |
-| `POST /orders`        | `createSubmitOrderApp({ submitOrder, logger? })` | `composeSubmitOrderApplication(options)` | pool, Prisma, submission store | `DATABASE_URL` |
+| Route                        | App factory                                      | Composition                              | Builds                         | Configuration  |
+| ---------------------------- | ------------------------------------------------ | ---------------------------------------- | ------------------------------ | -------------- |
+| `GET /health`                | `createHealthApp({ logger? })`                   | `composeHealthApplication()`             | nothing                        | none           |
+| `POST /api/v1/orders/verify` | `createVerifyOrderApp({ verifyOrder, logger? })` | `composeVerifyOrderApplication(options)` | pool, Prisma, inventory reader | `DATABASE_URL` |
+| `POST /api/v1/orders`        | `createSubmitOrderApp({ submitOrder, logger? })` | `composeSubmitOrderApplication(options)` | pool, Prisma, submission store | `DATABASE_URL` |
 
 - Every standalone app is complete: the same Content-Type and JSON handling,
   error envelope and 500 mapping (with its route's message), and the same
   `404 NOT_FOUND` envelope for every other method or path. They share this
-  through one helper in `src/app.ts`, and tests check that each standalone app
-  returns the same status, `Content-Type`, `Retry-After` and body as the
-  combined app.
+  through one helper, `createEndpointApp` in `src/http/endpoint-app.ts`, and
+  tests check that each standalone app returns the same status,
+  `Content-Type`, `Retry-After` and body as the combined app.
 - Each composition returns `{ app, close }`. The submit composition also takes
   the submission store options, `maxSubmissionAttempts`, and
   `decorateSubmissionStore`, which the tests use for failure injection.
@@ -47,10 +64,13 @@ as its own Lambda function (#14):
   `composeApplication` builds it over one pool for the local server
   (`src/server.ts`) and for the documentation routes (#12).
 - Configuration is validated per runtime: `parseHealthConfig` requires
-  nothing, `parseDatabaseConfig` requires `DATABASE_URL`, and the local server
-  (`parseConfig`) requires `DATABASE_URL` and accepts `PORT`.
-- Everything above is exported from `src/index.ts`, and `routes[*].servedBy`
-  in the contract names the app that serves each route.
+  nothing, `parseDatabaseConfig` (for the verify and submit runtimes) requires
+  `DATABASE_URL`, and the local server (`parseConfig`) requires `DATABASE_URL`
+  and accepts `PORT`.
+- `src/index.ts` exports the app factories, the compositions, these
+  configuration parsers, the route contract (`routes`, `API_PREFIX`) and the
+  request/response schemas. `routes[*].servedBy` names the app that serves
+  each route.
 
 ### Notes for Lambda deployment (#14)
 
@@ -72,6 +92,13 @@ as its own Lambda function (#14):
 
 ## Endpoints
 
+The order endpoints are versioned under `/api/v1` (`API_PREFIX`, exported with
+the route contract). `GET /health` stays at the root: it is a liveness probe
+outside the API surface. Each standalone endpoint app serves its full prefixed
+path itself. The unprefixed paths (`/orders`, `/orders/verify`) and `/api/...`
+without the version are neither aliases nor redirects: they return the standard
+`404 NOT_FOUND` envelope.
+
 All request and response bodies are JSON. Money is a decimal string with two
 fractional digits (`"150.00"`); `discountRate` is a two-decimal string
 (`"0.05"`). `distanceKm` is an unrounded number.
@@ -81,7 +108,7 @@ fractional digits (`"150.00"`); `discountRate` is a two-decimal string
 `200 {"status":"ok"}`. It never touches the database, so it answers while
 PostgreSQL is unavailable.
 
-### `POST /orders/verify`
+### `POST /api/v1/orders/verify`
 
 An advisory Order Estimate against current stock. It reserves and stores
 nothing, and does not promise that a later submission is accepted.
@@ -120,7 +147,7 @@ nothing, and does not promise that a later submission is accepted.
   discount amounts, with `shippingCost: null`, `orderTotal: null` and
   `allocations: []`.
 
-### `POST /orders`
+### `POST /api/v1/orders`
 
 Submits an Order against current stock. `submissionId` is a client-generated
 key that makes retries safe ([ADR 0004](../../docs/adr/0004-deduplicate-accepted-orders.md));
@@ -182,7 +209,7 @@ Requests are validated with Zod through `sValidator` from
   (parameters such as `charset` and `+json` media types are accepted). A missing
   or different content type is `400`, as is malformed JSON or an empty body.
 - **Unknown fields** are rejected (`400`), including `submissionId` on
-  `/orders/verify`.
+  `/api/v1/orders/verify`.
 - **No coercion:** `"10"` is not a quantity; strings are never converted to
   numbers.
 - The limits come from `@scos/core` (`quantitySchema`, `submissionKeySchema`,
@@ -207,15 +234,15 @@ Every non-2xx response uses one envelope:
 `issues` is present only for schema failures; `path: []` refers to the body
 itself (for example an unknown field).
 
-| Status | Code                     | When                                                                                                       |
-| ------ | ------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| 400    | `INVALID_REQUEST`        | Malformed JSON, wrong or missing content type, unknown field, value outside the limits                     |
-| 404    | `NOT_FOUND`              | Unknown path or method                                                                                     |
-| 409    | `SUBMISSION_ID_CONFLICT` | `submissionId` belongs to an Order with different inputs; nothing about it is revealed                     |
-| 422    | `INSUFFICIENT_STOCK`     | Not enough total stock (body includes `estimate`); nothing stored                                          |
-| 422    | `SHIPPING_EXCEEDS_LIMIT` | Shipping above 15% of the discounted merchandise total (body includes `estimate`)                          |
-| 500    | `INTERNAL_ERROR`         | Unexpected server error; logged server-side, no internals in the response                                  |
-| 503    | `SERVICE_UNAVAILABLE`    | `POST /orders` only: contention through every attempt, or no database connection in time; `Retry-After: 1` |
+| Status | Code                     | When                                                                                                              |
+| ------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| 400    | `INVALID_REQUEST`        | Malformed JSON, wrong or missing content type, unknown field, value outside the limits                            |
+| 404    | `NOT_FOUND`              | Unknown path or method                                                                                            |
+| 409    | `SUBMISSION_ID_CONFLICT` | `submissionId` belongs to an Order with different inputs; nothing about it is revealed                            |
+| 422    | `INSUFFICIENT_STOCK`     | Not enough total stock (body includes `estimate`); nothing stored                                                 |
+| 422    | `SHIPPING_EXCEEDS_LIMIT` | Shipping above 15% of the discounted merchandise total (body includes `estimate`)                                 |
+| 500    | `INTERNAL_ERROR`         | Unexpected server error; logged server-side, no internals in the response                                         |
+| 503    | `SERVICE_UNAVAILABLE`    | `POST /api/v1/orders` only: contention through every attempt, or no database connection in time; `Retry-After: 1` |
 
 ### Transient failures and retries
 
@@ -233,7 +260,7 @@ Order; retrying returns it, or `409` if the body differs). See
 A `500` never means the order was accepted, but it does not guarantee that
 nothing was stored either (for example a failed or lost `COMMIT`). After a
 `500`, a `503`, a client timeout or a dropped connection, **retry
-`POST /orders` with the same `submissionId` and the same body**: if an earlier
+`POST /api/v1/orders` with the same `submissionId` and the same body**: if an earlier
 attempt was committed, the original Order is returned (`201`) and stock is not
 deducted again; otherwise the request is evaluated afresh. Use a new
 `submissionId` only for a new order.
@@ -263,7 +290,7 @@ Prisma, and ends the pool.
 | PostgreSQL `lock_timeout` / `statement_timeout` | 10 s / 15 s | statements inside a submission transaction  |
 
 The connection timeout fires before any statement is sent on that
-connection, so it is always safe to retry: on `POST /orders` it becomes `503`.
+connection, so it is always safe to retry: on `POST /api/v1/orders` it becomes `503`.
 There is deliberately **no client-side query timeout** (pg `query_timeout`).
 When it fires, pg stops waiting but neither cancels the statement nor closes
 the connection. A queued `ROLLBACK` can then be dropped unsent, and the
@@ -273,19 +300,19 @@ on the server instead.
 
 What the client sees when the database fails:
 
-- `POST /orders`: no connection in time (every pooled connection busy, or the
+- `POST /api/v1/orders`: no connection in time (every pooled connection busy, or the
   server unreachable or silent while connecting) is `503 SERVICE_UNAVAILABLE`
   with `Retry-After`. A refused connection or any other unexpected error is
   `500 INTERNAL_ERROR`. Either way, retry with the same `submissionId`.
-- `POST /orders/verify`: any database failure, including a connection timeout,
+- `POST /api/v1/orders/verify`: any database failure, including a connection timeout,
   is `500 INTERNAL_ERROR`. Verification stores nothing, so it is always safe to
   retry.
 - `GET /health`: unaffected.
 
-Worst-case latency with a live but overloaded server: `POST /orders` waits up
+Worst-case latency with a live but overloaded server: `POST /api/v1/orders` waits up
 to 5 s for the unlocked lookup's connection, then up to 3 transaction attempts
 of 5 s (connection) + 15 s (transaction) each, about 65 s before `503`.
-`POST /orders/verify` waits up to 5 s for a connection. The verification read
+`POST /api/v1/orders/verify` waits up to 5 s for a connection. The verification read
 and the unlocked lookup run outside the submission transaction, so only the
 database's default `statement_timeout` (none by default) bounds them; both are
 single indexed or six-row reads.

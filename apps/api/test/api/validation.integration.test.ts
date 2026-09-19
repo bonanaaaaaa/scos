@@ -198,7 +198,7 @@ async function expectRejectedWithoutEffect(
   return response;
 }
 
-describe("POST /orders: 400 without consuming the submissionId or changing inventory", () => {
+describe("POST /api/v1/orders: 400 without consuming the submissionId or changing inventory", () => {
   const cases = [...transportCases(), ...schemaCases("submit")];
 
   test.each(cases.map((entry, index) => [entry[0], index] as const))("%s", async (_name, index) => {
@@ -206,12 +206,12 @@ describe("POST /orders: 400 without consuming the submissionId or changing inven
     if (make === undefined || issues === undefined) throw new Error("missing case");
     const id = `qa-invalid-${index}`;
 
-    await expectRejectedWithoutEffect("/orders", make(id), issues);
+    await expectRejectedWithoutEffect("/api/v1/orders", make(id), issues);
 
     // The same submissionId is still free: a valid submission is accepted.
     const accepted = await request(
       api,
-      "/orders",
+      "/api/v1/orders",
       json({ submissionId: id, quantity: 5, ...AT_PARIS }),
     );
     expect(expectJson(accepted, 201)).toStrictEqual(expectedOrder(id, 5, AT_PARIS));
@@ -220,18 +220,18 @@ describe("POST /orders: 400 without consuming the submissionId or changing inven
   test("an invalid request after acceptance neither conflicts nor changes the Order", async () => {
     const accepted = await request(
       api,
-      "/orders",
+      "/api/v1/orders",
       json({ submissionId: "qa-after", quantity: 5, ...AT_PARIS }),
     );
     expectJson(accepted, 201);
     await expectRejectedWithoutEffect(
-      "/orders",
+      "/api/v1/orders",
       json({ submissionId: "qa-after", quantity: 0, ...AT_PARIS }),
       "present",
     );
     const repeat = await request(
       api,
-      "/orders",
+      "/api/v1/orders",
       json({ submissionId: "qa-after", quantity: 5, ...AT_PARIS }),
     );
     expect(repeat.status).toBe(201);
@@ -239,19 +239,23 @@ describe("POST /orders: 400 without consuming the submissionId or changing inven
   });
 });
 
-describe("POST /orders/verify: 400", () => {
+describe("POST /api/v1/orders/verify: 400", () => {
   const cases = [...transportCases(), ...schemaCases("verify")];
 
   test.each(cases.map((entry, index) => [entry[0], index] as const))("%s", async (_name, index) => {
     const [, make, issues] = cases[index] ?? [];
     if (make === undefined || issues === undefined) throw new Error("missing case");
-    await expectRejectedWithoutEffect("/orders/verify", make(`qa-verify-${index}`), issues);
+    await expectRejectedWithoutEffect("/api/v1/orders/verify", make(`qa-verify-${index}`), issues);
   });
 });
 
 describe("issue paths and content types", () => {
   test("a string quantity reports path [quantity]", async () => {
-    const response = await request(api, "/orders/verify", json({ quantity: "5", ...AT_PARIS }));
+    const response = await request(
+      api,
+      "/api/v1/orders/verify",
+      json({ quantity: "5", ...AT_PARIS }),
+    );
     const error = expectErrorEnvelope(response, 400, "INVALID_REQUEST", { issues: "present" });
     expect(error.issues?.map((issue) => issue.path)).toStrictEqual([["quantity"]]);
   });
@@ -259,7 +263,7 @@ describe("issue paths and content types", () => {
   test("an unknown field reports path [] (the body itself)", async () => {
     const response = await request(
       api,
-      "/orders",
+      "/api/v1/orders",
       json({ submissionId: "qa-path", quantity: 5, ...AT_PARIS, extra: 1 }),
     );
     const error = expectErrorEnvelope(response, 400, "INVALID_REQUEST", { issues: "present" });
@@ -269,7 +273,7 @@ describe("issue paths and content types", () => {
   test("a whitespace submissionId reports path [submissionId]", async () => {
     const response = await request(
       api,
-      "/orders",
+      "/api/v1/orders",
       json({ submissionId: "\t", quantity: 5, ...AT_PARIS }),
     );
     const error = expectErrorEnvelope(response, 400, "INVALID_REQUEST", { issues: "present" });
@@ -279,7 +283,7 @@ describe("issue paths and content types", () => {
   test.each(["application/json; charset=utf-8", "APPLICATION/JSON", "application/vnd.api+json"])(
     "Content-Type %s is accepted",
     async (contentType) => {
-      const response = await request(api, "/orders/verify", {
+      const response = await request(api, "/api/v1/orders/verify", {
         body: JSON.stringify({ quantity: 5, ...AT_PARIS }),
         contentType,
       });

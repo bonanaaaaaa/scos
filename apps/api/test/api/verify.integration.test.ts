@@ -1,5 +1,5 @@
 /**
- * QA API acceptance: GET /health and POST /orders/verify over real HTTP.
+ * QA API acceptance: GET /health and POST /api/v1/orders/verify over real HTTP.
  *
  * Literal amounts below are hand-computed from the PRD rules and seed data;
  * `expectedEstimate` is the independent oracle in ./support.ts.
@@ -37,7 +37,7 @@ afterAll(async () => {
   await db?.drop();
 });
 
-const verify = (body: unknown) => postJson(api, "/orders/verify", body);
+const verify = (body: unknown) => postJson(api, "/api/v1/orders/verify", body);
 
 describe("GET /health", () => {
   test('200 {"status":"ok"} as JSON', async () => {
@@ -47,7 +47,7 @@ describe("GET /health", () => {
   });
 });
 
-describe("POST /orders/verify: valid estimates", () => {
+describe("POST /api/v1/orders/verify: valid estimates", () => {
   test("30 units to Manhattan: New York stock, 5% discount, shipping rounded once half-up", async () => {
     // 30 x $150 = 4500.00; 5% = 225.00; 4275.00.
     // New York to (40.7128, -74.006) ~ 20.80497 km; 30 x 0.365 x 0.01 x 20.80497 = 2.2781 -> 2.28.
@@ -131,7 +131,7 @@ describe("POST /orders/verify: valid estimates", () => {
   });
 });
 
-describe("POST /orders/verify: discount tier boundaries (at Paris, zero shipping)", () => {
+describe("POST /api/v1/orders/verify: discount tier boundaries (at Paris, zero shipping)", () => {
   const cases = [
     // quantity, subtotal, rate, discount, discounted
     [24, "3600.00", "0.00", "0.00", "3600.00"],
@@ -163,7 +163,7 @@ describe("POST /orders/verify: discount tier boundaries (at Paris, zero shipping
   });
 });
 
-describe("POST /orders/verify: invalid estimates are 200", () => {
+describe("POST /api/v1/orders/verify: invalid estimates are 200", () => {
   test("SHIPPING_EXCEEDS_LIMIT keeps every amount and allocation", async () => {
     // 1 unit from Hong Kong, ~9391.25073 km: 0.00365 x 9391.25073 = 34.2781 -> 34.28 > 22.50.
     const body = expectJson(await verify({ quantity: 1, ...FAR_AWAY }), 200);
@@ -237,7 +237,7 @@ describe("POST /orders/verify: invalid estimates are 200", () => {
   });
 });
 
-describe("POST /orders/verify: coordinate endpoints are accepted", () => {
+describe("POST /api/v1/orders/verify: coordinate endpoints are accepted", () => {
   const endpoints = [
     { latitude: 90, longitude: 180 },
     { latitude: -90, longitude: -180 },

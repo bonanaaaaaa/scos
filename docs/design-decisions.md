@@ -31,7 +31,8 @@
 - Require positive integer quantities and finite destination coordinates within geographic bounds. Malformed inputs return HTTP 400; verification returns HTTP 200 with validity and reasons; submission returns HTTP 201 when accepted, HTTP 422 for business rejection, and HTTP 409 for reuse of a submissionId with different inputs.
 - Return monetary amounts as decimal strings, such as "150.00".
 - Preserve each accepted order's quantity, destination, applied pricing and discount, and warehouse allocations in addition to its order number and totals.
-- Provide POST /orders/verify, POST /orders (with submissionId in its JSON body), and GET /health, with OpenAPI documentation and examples. Listing, cancellation, and inventory administration are outside submission scope.
+- Provide POST /api/v1/orders/verify, POST /api/v1/orders (with submissionId in its JSON body), and GET /health, with OpenAPI documentation and examples. Listing, cancellation, and inventory administration are outside submission scope.
+- The order endpoints are versioned under the `/api/v1` prefix, defined once as `API_PREFIX` in the API adapter's route contract. `GET /health` stays at the root as a liveness probe outside the API surface. The unprefixed paths are not aliases or redirects; they return the standard 404 envelope.
 
 ## Agreed architecture
 
@@ -41,7 +42,7 @@
 - Use third normal form (3NF) as the relational database design baseline. Separate entity facts and relationships, enforce keys and foreign keys, and evaluate functional dependencies beyond the UUID primary key. Accepted order prices, discounts, shipping charges, and totals are immutable historical facts; preserve them rather than deriving them from current commercial rules. Store the independent facts (quantity, unit price, discount rate and amount, shipping cost) and derive subtotals and the Order Total from those stored values with exact decimal arithmetic, so the amounts returned always equal what was charged. Any deliberate denormalization requires a documented reason.
 - Inventory is persisted separately. The SubmitOrder application use case coordinates inventory changes and order creation atomically.
 - Hono is an inbound adapter calling VerifyOrder and SubmitOrder application use cases. Lambda starts the application.
-- Each endpoint is a separately constructible Hono app with its own composition root (`GET /health`, `POST /orders/verify`, `POST /orders`), building only the adapters it needs, so each can be deployed as its own Lambda function. A combined app mounts all three for local serving and the API documentation routes, with identical responses.
+- Each endpoint is a separately constructible Hono app with its own composition root (`GET /health`, `POST /api/v1/orders/verify`, `POST /api/v1/orders`), building only the adapters it needs, so each can be deployed as its own Lambda function. A combined app mounts all three for local serving and the API documentation routes, with identical responses.
 - Lambda functions reach PostgreSQL through RDS Proxy, which pools connections across all per-endpoint functions and bounds the connections reaching the database. Nothing sets the in-process pool size yet (pg defaults to 10); the recommendation for deployment (#14) is to apply and verify a pool of at most one connection per execution environment, which serves one request at a time. Deployment must also check whether session settings or prepared statements pin connections, and verify IAM or Secrets Manager authentication and proxy timeouts.
 - Application use cases depend on the domain model and application-owned persistence interfaces. The Prisma outbound adapter implements persistence and transaction locking.
 - Prisma types and HTTP objects stay outside the domain and application use cases.
@@ -78,7 +79,7 @@
 
 ## OpenAPI deliverable
 
-- Deliver a machine-readable OpenAPI specification for POST /orders/verify, POST /orders, and GET /health, generated from the API adapter's route and validation schemas.
+- Deliver a machine-readable OpenAPI specification for POST /api/v1/orders/verify, POST /api/v1/orders, and GET /health, generated from the API adapter's route and validation schemas.
 - Serve the specification at GET /openapi.json and interactive API documentation at GET /docs. Provide a deterministic export command producing docs/openapi.json for review without starting the application or connecting to PostgreSQL.
 - Document request and response schemas, quantity and coordinate constraints, submissionId, decimal-string monetary amounts, nullable totals for insufficient stock, and business rejection codes.
 - Include examples of valid verification, insufficient stock, excessive shipping, accepted submission, rejected submission, a repeated submissionId returning the original Order, and conflicting submissionId reuse. State that rejections are not stored.

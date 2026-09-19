@@ -1,7 +1,10 @@
 /**
- * Runtime configuration, validated once at the server entrypoint before any
- * client is built or the listener opens. Pure modules (the app, the contract)
- * never read the environment.
+ * Runtime configuration: the shared environment parsing helper, the database
+ * configuration used by the verify and submit endpoints, and the local
+ * server's configuration. Each runtime validates once at its entrypoint,
+ * before any client is built or a listener opens. Pure modules (the apps, the
+ * contracts) never read the environment. The health parser lives in
+ * `endpoints/health/config.ts`.
  *
  * Validation messages name the variable and a safe reason only; they never
  * echo the submitted value, which may contain credentials.
@@ -38,17 +41,12 @@ const portSchema = z
   .optional()
   .transform((port) => port ?? DEFAULT_PORT);
 
-/**
- * Per-runtime environment schemas. Health needs nothing; verification and
- * submission need a database; the local server also takes a port.
- */
-export const healthEnvironmentSchema = z.object({});
-
+/** The database endpoints (verify, submit) need DATABASE_URL only. */
 export const databaseEnvironmentSchema = z.object({ DATABASE_URL: databaseUrlSchema });
 
 export const serverEnvironmentSchema = databaseEnvironmentSchema.extend({ PORT: portSchema });
 
-type Environment = Readonly<Record<string, string | undefined>>;
+export type Environment = Readonly<Record<string, string | undefined>>;
 
 export type ParseResult<Config> =
   | { readonly success: true; readonly config: Config }
@@ -58,7 +56,7 @@ export type ParseResult<Config> =
  * Validates only the variables `schema` declares. Returns sanitized
  * `NAME: reason` lines on failure; values are never included.
  */
-function parseEnvironment<Schema extends z.ZodObject, Config>(
+export function parseEnvironment<Schema extends z.ZodObject, Config>(
   schema: Schema,
   environment: Environment,
   toConfig: (data: z.output<Schema>) => Config,
@@ -74,13 +72,6 @@ function parseEnvironment<Schema extends z.ZodObject, Config>(
     };
   }
   return { success: true, config: toConfig(parsed.data) };
-}
-
-/** Health has no configuration; this always succeeds. */
-export type HealthConfig = Readonly<Record<string, never>>;
-
-export function parseHealthConfig(environment: Environment): ParseResult<HealthConfig> {
-  return parseEnvironment(healthEnvironmentSchema, environment, () => ({}));
 }
 
 /** What the verify and submit compositions need. */

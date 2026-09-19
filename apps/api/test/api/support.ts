@@ -341,7 +341,7 @@ export function allocate(
 }
 
 /**
- * The expected `/orders/verify` body for a request against the given stock.
+ * The expected `/api/v1/orders/verify` body for a request against the given stock.
  * Distances are matched to 1e-6 km; amounts are exact strings.
  */
 export function expectedEstimate(

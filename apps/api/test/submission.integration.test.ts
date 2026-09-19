@@ -4,7 +4,7 @@ import {
   errorResponseSchema,
   orderResponseSchema,
   rejectedSubmissionResponseSchema,
-} from "../src/http/contracts";
+} from "../src/index";
 import {
   AT_PARIS,
   Applications,
@@ -42,7 +42,7 @@ afterEach(async () => {
 });
 
 function submit(body: unknown, composed = applications.compose(db.url)) {
-  return snapshot(postJson(composed, "/orders", body));
+  return snapshot(postJson(composed, "/api/v1/orders", body));
 }
 
 describe("acceptance", () => {

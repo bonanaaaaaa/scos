@@ -5,8 +5,8 @@ import {
   composeHealthApplication,
   composeSubmitOrderApplication,
   composeVerifyOrderApplication,
-} from "../src/composition";
-import { orderResponseSchema, verifyOrderResponseSchema } from "../src/http/contracts";
+} from "../src/index";
+import { orderResponseSchema, verifyOrderResponseSchema } from "../src/index";
 import { AT_PARIS, PARIS, postJson, silentLogger, snapshot } from "./support/app";
 import { type TestDatabase, createTestDatabase, readState, stockById } from "./support/database";
 
@@ -55,16 +55,18 @@ describe("per-endpoint compositions against PostgreSQL", () => {
 
     // Each app serves only its own route.
     expect((await health.app.request("/health")).status).toBe(200);
-    expect((await postJson(verify, "/orders", { submissionId: "x" })).status).toBe(404);
-    expect((await postJson(submit, "/orders/verify", {})).status).toBe(404);
+    expect((await postJson(verify, "/api/v1/orders", { submissionId: "x" })).status).toBe(404);
+    expect((await postJson(submit, "/api/v1/orders/verify", {})).status).toBe(404);
 
     const before = verifyOrderResponseSchema.parse(
-      (await snapshot(postJson(verify, "/orders/verify", { quantity: 700, ...AT_PARIS }))).json(),
+      (
+        await snapshot(postJson(verify, "/api/v1/orders/verify", { quantity: 700, ...AT_PARIS }))
+      ).json(),
     );
     expect(before.allocations[0]).toMatchObject({ warehouseId: PARIS, quantity: 694 });
 
     const body = { submissionId: "endpoint-1", quantity: 100, ...AT_PARIS };
-    const first = await snapshot(postJson(submit, "/orders", body));
+    const first = await snapshot(postJson(submit, "/api/v1/orders", body));
     expect(first.status, first.text).toBe(201);
     expect(orderResponseSchema.parse(first.json()).allocations).toStrictEqual([
       { warehouseId: PARIS, quantity: 100 },
@@ -72,7 +74,9 @@ describe("per-endpoint compositions against PostgreSQL", () => {
 
     // Verification, on its own pool, sees the deducted stock.
     const after = verifyOrderResponseSchema.parse(
-      (await snapshot(postJson(verify, "/orders/verify", { quantity: 700, ...AT_PARIS }))).json(),
+      (
+        await snapshot(postJson(verify, "/api/v1/orders/verify", { quantity: 700, ...AT_PARIS }))
+      ).json(),
     );
     expect(after.allocations[0]).toMatchObject({ warehouseId: PARIS, quantity: 594 });
     expect(await stockById(db.pool)).toStrictEqual({
@@ -85,14 +89,14 @@ describe("per-endpoint compositions against PostgreSQL", () => {
     // A repeat returns the original Order without another deduction, and the
     // verify app keeps working after the submit app is closed.
     const state = await readState(db.pool);
-    const repeat = await snapshot(postJson(submit, "/orders", body));
+    const repeat = await snapshot(postJson(submit, "/api/v1/orders", body));
     expect(repeat.status).toBe(201);
     expect(repeat.text).toBe(first.text);
     expect(await readState(db.pool)).toStrictEqual(state);
 
     await submit.close();
     const stillServing = await snapshot(
-      postJson(verify, "/orders/verify", { quantity: 1, ...AT_PARIS }),
+      postJson(verify, "/api/v1/orders/verify", { quantity: 1, ...AT_PARIS }),
     );
     expect(stillServing.status).toBe(200);
   });
@@ -100,13 +104,21 @@ describe("per-endpoint compositions against PostgreSQL", () => {
   test("a repeat through a fresh submit composition returns the original Order", async () => {
     const body = { submissionId: "endpoint-2", quantity: 30, ...AT_PARIS };
     const first = await snapshot(
-      postJson(track(composeSubmitOrderApplication({ databaseUrl: db.url })), "/orders", body),
+      postJson(
+        track(composeSubmitOrderApplication({ databaseUrl: db.url })),
+        "/api/v1/orders",
+        body,
+      ),
     );
     expect(first.status, first.text).toBe(201);
     const state = await readState(db.pool);
 
     const repeat = await snapshot(
-      postJson(track(composeSubmitOrderApplication({ databaseUrl: db.url })), "/orders", body),
+      postJson(
+        track(composeSubmitOrderApplication({ databaseUrl: db.url })),
+        "/api/v1/orders",
+        body,
+      ),
     );
 
     expect(repeat.status).toBe(201);

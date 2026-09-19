@@ -56,7 +56,7 @@ Each package's `turbo.json` declares its build configuration (`tsdown.config.ts`
 
 ## Local API
 
-The API serves `POST /orders/verify`, `POST /orders`, and `GET /health`; see [apps/api/README.md](apps/api/README.md) for request and response shapes, status codes, and retry guidance. `./dev.sh` is the easiest way to run it. To start it directly, export `DATABASE_URL` (required; the server validates it at startup and exits nonzero without listening if it is missing or malformed). Turbo builds the workspace dependencies first:
+The API serves `POST /api/v1/orders/verify`, `POST /api/v1/orders`, and `GET /health`; see [apps/api/README.md](apps/api/README.md) for request and response shapes, status codes, and retry guidance. `./dev.sh` is the easiest way to run it. To start it directly, export `DATABASE_URL` (required; the server validates it at startup and exits nonzero without listening if it is missing or malformed). Turbo builds the workspace dependencies first:
 
 ```sh
 export DATABASE_URL=postgresql://scos:scos@localhost:5432/scos

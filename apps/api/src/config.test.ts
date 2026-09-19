@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { DEFAULT_PORT, parseConfig } from "./config";
+import { DEFAULT_PORT, parseConfig, parseDatabaseConfig } from "./config";
 
 const databaseUrl = "postgresql://scos:secret-password@localhost:5432/scos";
 
@@ -65,5 +65,22 @@ describe("parseConfig", () => {
     expect(text).toContain("PORT");
     expect(text).not.toContain("secret-password");
     expect(text).not.toContain("70000");
+  });
+});
+
+describe("parseDatabaseConfig", () => {
+  test("verify and submit require DATABASE_URL only", () => {
+    const databaseUrl = "postgresql://scos:secret@127.0.0.1:1/scos";
+    expect(parseDatabaseConfig({ DATABASE_URL: databaseUrl, PORT: "not-a-port" })).toStrictEqual({
+      success: true,
+      config: { databaseUrl },
+    });
+    expect(parseDatabaseConfig({})).toStrictEqual({
+      success: false,
+      errors: ["DATABASE_URL: is required"],
+    });
+    const invalid = parseDatabaseConfig({ DATABASE_URL: "mysql://u:secret@h/d" });
+    expect(invalid.success).toBe(false);
+    expect(JSON.stringify(invalid)).not.toContain("secret");
   });
 });

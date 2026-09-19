@@ -1,8 +1,8 @@
 import { MAX_SUBMISSION_ATTEMPTS } from "@scos/core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { MESSAGES } from "../src/app";
-import { errorResponseSchema, orderResponseSchema } from "../src/http/contracts";
+import { SUBMIT_ORDER_MESSAGES } from "../src/endpoints/submit-order/messages";
+import { errorResponseSchema, orderResponseSchema } from "../src/index";
 import {
   AT_PARIS,
   Applications,
@@ -58,11 +58,11 @@ describe("failure injected before commit", () => {
     const body = { submissionId: `fail-${stage}`, quantity: 25, ...AT_PARIS };
     const before = await readState(db.pool);
 
-    const failed = await snapshot(postJson(composed, "/orders", body));
+    const failed = await snapshot(postJson(composed, "/api/v1/orders", body));
 
     expect(failed.status).toBe(500);
     expect(errorResponseSchema.strict().parse(failed.json())).toStrictEqual({
-      error: { code: "INTERNAL_ERROR", message: MESSAGES.submitInternal },
+      error: { code: "INTERNAL_ERROR", message: SUBMIT_ORDER_MESSAGES.internal },
     });
     expect(failed.text).not.toContain("Injected");
     // A thrown (non-transient) failure is not retried by the use case.
@@ -70,7 +70,7 @@ describe("failure injected before commit", () => {
     // Rolled back: no Order or allocation, no stock change, no row rewritten.
     expect(await readState(db.pool)).toStrictEqual(before);
 
-    const retried = await snapshot(postJson(composed, "/orders", body));
+    const retried = await snapshot(postJson(composed, "/api/v1/orders", body));
     expect(retried.status, retried.text).toBe(201);
     const stock = await stockById(db.pool);
     expect(stock[PARIS]).toBe((before.warehouses.find((row) => row.id === PARIS)?.stock ?? 0) - 25);
@@ -83,7 +83,7 @@ describe("submission_key unique violation", () => {
     const switches: FailureSwitches = { attempts: 0 };
     const composed = composeWith(switches);
     const body = { submissionId: "unique-1", quantity: 30, ...AT_PARIS };
-    const first = await snapshot(postJson(composed, "/orders", body));
+    const first = await snapshot(postJson(composed, "/api/v1/orders", body));
     expect(first.status, first.text).toBe(201);
     // From now on both lookups miss the stored Order, so the next attempt
     // reaches INSERT and hits orders_submission_key_key; only the lookup made
@@ -96,7 +96,7 @@ describe("submission_key unique violation", () => {
   test("with the same input resolves as a 201 repeat of the original Order", async () => {
     const { composed, switches, body, first, before } = await acceptOriginal();
 
-    const repeat = await snapshot(postJson(composed, "/orders", body));
+    const repeat = await snapshot(postJson(composed, "/api/v1/orders", body));
 
     expect(repeat.status, repeat.text).toBe(201);
     expect(repeat.text).toBe(first.text);
@@ -108,7 +108,9 @@ describe("submission_key unique violation", () => {
   test("with changed input resolves as a 409 conflict", async () => {
     const { composed, body, before } = await acceptOriginal();
 
-    const conflict = await snapshot(postJson(composed, "/orders", { ...body, quantity: 31 }));
+    const conflict = await snapshot(
+      postJson(composed, "/api/v1/orders", { ...body, quantity: 31 }),
+    );
 
     expect(conflict.status, conflict.text).toBe(409);
     expect(errorResponseSchema.parse(conflict.json()).error.code).toBe("SUBMISSION_ID_CONFLICT");
@@ -128,7 +130,7 @@ describe("transient failures", () => {
     const locks = await holdWarehouseLocks(db.url);
     let unavailable;
     try {
-      unavailable = await snapshot(postJson(composed, "/orders", body));
+      unavailable = await snapshot(postJson(composed, "/api/v1/orders", body));
     } finally {
       await locks.release();
     }
@@ -136,12 +138,12 @@ describe("transient failures", () => {
     expect(unavailable.status, unavailable.text).toBe(503);
     expect(unavailable.headers.get("retry-after")).toBe("1");
     expect(errorResponseSchema.strict().parse(unavailable.json())).toStrictEqual({
-      error: { code: "SERVICE_UNAVAILABLE", message: MESSAGES.unavailable },
+      error: { code: "SERVICE_UNAVAILABLE", message: SUBMIT_ORDER_MESSAGES.unavailable },
     });
     expect(switches.attempts).toBe(MAX_SUBMISSION_ATTEMPTS);
     expect(await readState(db.pool)).toStrictEqual(before);
 
-    const retried = await snapshot(postJson(composed, "/orders", body));
+    const retried = await snapshot(postJson(composed, "/api/v1/orders", body));
     expect(retried.status, retried.text).toBe(201);
     expect(switches.attempts).toBe(MAX_SUBMISSION_ATTEMPTS + 1);
   });
@@ -154,7 +156,7 @@ describe("lost response after commit", () => {
     const body = { submissionId: "lost-1", quantity: 40, ...AT_PARIS };
     const stockBefore = await stockById(db.pool);
 
-    const lost = await snapshot(postJson(composed, "/orders", body));
+    const lost = await snapshot(postJson(composed, "/api/v1/orders", body));
 
     // The client never learns the outcome, and the response does not claim one.
     expect(lost.status).toBe(500);
@@ -162,7 +164,7 @@ describe("lost response after commit", () => {
     const committed = await readState(db.pool);
     expect(committed.orders).toHaveLength(1);
 
-    const retried = await snapshot(postJson(composed, "/orders", body));
+    const retried = await snapshot(postJson(composed, "/api/v1/orders", body));
 
     expect(retried.status, retried.text).toBe(201);
     const order = orderResponseSchema.parse(retried.json());

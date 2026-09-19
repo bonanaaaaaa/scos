@@ -36,13 +36,13 @@ describe("unknown routes and methods", () => {
   test.each([
     ["GET", "/"],
     ["GET", "/nope"],
-    ["GET", "/orders"],
-    ["GET", "/orders/verify"],
+    ["GET", "/api/v1/orders"],
+    ["GET", "/api/v1/orders/verify"],
     ["POST", "/health"],
-    ["PUT", "/orders"],
-    ["DELETE", "/orders"],
-    ["PATCH", "/orders/verify"],
-    ["POST", "/orders/verify/extra"],
+    ["PUT", "/api/v1/orders"],
+    ["DELETE", "/api/v1/orders"],
+    ["PATCH", "/api/v1/orders/verify"],
+    ["POST", "/api/v1/orders/verify/extra"],
     ["POST", "/order"],
   ])("%s %s is 404 NOT_FOUND in the envelope", async (method, path) => {
     const response = await request(api, path, {
@@ -74,8 +74,8 @@ describe("database unreachable", () => {
   });
 
   test.each([
-    ["/orders/verify", { quantity: 5, ...AT_PARIS }],
-    ["/orders", { submissionId: "qa-down", quantity: 5, ...AT_PARIS }],
+    ["/api/v1/orders/verify", { quantity: 5, ...AT_PARIS }],
+    ["/api/v1/orders", { submissionId: "qa-down", quantity: 5, ...AT_PARIS }],
   ])(
     "POST %s is a 500 or 503 envelope that exposes no internals and never implies acceptance",
     async (path, body) => {

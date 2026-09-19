@@ -1,15 +1,47 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { MESSAGES } from "./app";
-import {
-  DEFAULT_CONNECTION_TIMEOUT_MS,
-  composeApplication,
-  databasePoolTimeouts,
-} from "./composition";
+import { SUBMIT_ORDER_MESSAGES } from "./endpoints/submit-order/messages";
+import { MESSAGES } from "./http/messages";
 import { startBlackHole } from "./testing/black-hole.test-support";
+import {
+  factorySpies,
+  flush,
+  unreachableDatabaseUrl as unreachable,
+} from "./testing/persistence-spies.test-support";
 
-// Nothing listens on port 1, and building the composition must not connect.
-const unreachable = "postgresql://scos:secret@127.0.0.1:1/scos";
+// Spy on the adapter factories while keeping their real behaviour.
+vi.mock("@scos/persistence", async (importOriginal) =>
+  (await import("./testing/persistence-spies.test-support")).spyOnFactories(await importOriginal()),
+);
+
+const persistence = await import("@scos/persistence");
+const { composeApplication } = await import("./composition");
+const { DEFAULT_CONNECTION_TIMEOUT_MS, databasePoolTimeouts } = await import("./database");
+const { calls, watchNextPool } = factorySpies(persistence);
+const databaseUrl = unreachable;
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("the combined composition", () => {
+  test("combined: one pool shared by both adapters", async () => {
+    const composed = composeApplication({ databaseUrl });
+    try {
+      expect(calls()).toStrictEqual({ pool: 1, prisma: 1, inventoryReader: 1, submissionStore: 1 });
+      expect((await composed.app.request("/health")).status).toBe(200);
+    } finally {
+      await composed.close();
+    }
+  });
+
+  test("a construction failure ends the pool it opened and rethrows", async () => {
+    const endOf = watchNextPool();
+    expect(() => composeApplication({ databaseUrl, maxSubmissionAttempts: 0 })).toThrow();
+    await flush();
+    expect(endOf()).toHaveBeenCalledOnce();
+  });
+});
 
 describe("composeApplication", () => {
   test("builds without connecting; /health answers while the database is unreachable", async () => {
@@ -35,7 +67,7 @@ describe("composeApplication", () => {
     const logger = { error: vi.fn() };
     const composed = composeApplication({ databaseUrl: unreachable, logger });
     try {
-      const response = await composed.app.request("/orders/verify", {
+      const response = await composed.app.request("/api/v1/orders/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ quantity: 1, latitude: 0, longitude: 0 }),
@@ -92,8 +124,8 @@ describe("database timeouts", () => {
     try {
       const started = Date.now();
       const [verify, submit] = await Promise.all([
-        post("/orders/verify", { quantity: 1, latitude: 0, longitude: 0 }),
-        post("/orders", { submissionId: "hole-1", quantity: 1, latitude: 0, longitude: 0 }),
+        post("/api/v1/orders/verify", { quantity: 1, latitude: 0, longitude: 0 }),
+        post("/api/v1/orders", { submissionId: "hole-1", quantity: 1, latitude: 0, longitude: 0 }),
       ]);
       expect(Date.now() - started).toBeLessThan(5_000);
 
@@ -104,7 +136,7 @@ describe("database timeouts", () => {
       expect(submit.status).toBe(503);
       expect(submit.headers.get("retry-after")).toBe("1");
       expect(await submit.json()).toStrictEqual({
-        error: { code: "SERVICE_UNAVAILABLE", message: MESSAGES.unavailable },
+        error: { code: "SERVICE_UNAVAILABLE", message: SUBMIT_ORDER_MESSAGES.unavailable },
       });
       // Only the verification failure is unexpected; `unavailable` is an outcome.
       expect(logger.error).toHaveBeenCalledOnce();

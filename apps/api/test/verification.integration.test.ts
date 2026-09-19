@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { verifyOrderResponseSchema } from "../src/http/contracts";
+import { verifyOrderResponseSchema } from "../src/index";
 import { AT_PARIS, Applications, FAR_AWAY, PARIS, WARSAW, postJson, snapshot } from "./support/app";
 import {
   type TestDatabase,
@@ -31,12 +31,12 @@ afterEach(async () => {
 
 async function verify(body: unknown) {
   const composed = applications.compose(db.url);
-  const response = await snapshot(postJson(composed, "/orders/verify", body));
+  const response = await snapshot(postJson(composed, "/api/v1/orders/verify", body));
   expect(response.status, response.text).toBe(200);
   return verifyOrderResponseSchema.parse(response.json());
 }
 
-describe("POST /orders/verify against PostgreSQL", () => {
+describe("POST /api/v1/orders/verify against PostgreSQL", () => {
   test.each([
     ["a valid estimate", { quantity: 10, ...AT_PARIS }, true, null],
     ["excessive shipping", { quantity: 1, ...FAR_AWAY }, false, "SHIPPING_EXCEEDS_LIMIT"],

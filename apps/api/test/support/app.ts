@@ -48,7 +48,7 @@ export class Applications {
 
 export function postJson(
   composed: ComposedApplication,
-  path: "/orders" | "/orders/verify",
+  path: "/api/v1/orders" | "/api/v1/orders/verify",
   body: unknown,
 ): Promise<Response> {
   return Promise.resolve(

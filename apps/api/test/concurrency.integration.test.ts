@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { orderResponseSchema, rejectedSubmissionResponseSchema } from "../src/http/contracts";
+import { orderResponseSchema, rejectedSubmissionResponseSchema } from "../src/index";
 import { AT_PARIS, Applications, PARIS, postJson, snapshot } from "./support/app";
 import {
   type TestDatabase,
@@ -40,7 +40,7 @@ async function overlapping(bodies: readonly unknown[]) {
   const composed = applications.compose(db.url);
   const locks = await holdWarehouseLocks(db.url);
   try {
-    const pending = bodies.map((body) => snapshot(postJson(composed, "/orders", body)));
+    const pending = bodies.map((body) => snapshot(postJson(composed, "/api/v1/orders", body)));
     await waitForLockWaiters(db.pool, bodies.length);
     await locks.release();
     return await Promise.all(pending);

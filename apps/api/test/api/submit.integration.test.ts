@@ -1,5 +1,5 @@
 /**
- * QA API acceptance: POST /orders over real HTTP — acceptance, repeats,
+ * QA API acceptance: POST /api/v1/orders over real HTTP — acceptance, repeats,
  * conflicts, business rejections and submissionId reuse.
  */
 
@@ -42,7 +42,7 @@ beforeEach(async () => {
   await db.reset();
 });
 
-const submit = (body: unknown) => postJson(api, "/orders", body);
+const submit = (body: unknown) => postJson(api, "/api/v1/orders", body);
 
 function seededStock(): Record<string, number> {
   return Object.fromEntries(WAREHOUSES.map(({ id, stock }) => [id, stock]));
@@ -90,7 +90,7 @@ describe("201 accepted", () => {
 
     const remaining = afterDeducting(WAREHOUSES, body.allocations);
     const next = expectJson(
-      await postJson(api, "/orders/verify", { quantity: 5, ...AT_PARIS }),
+      await postJson(api, "/api/v1/orders/verify", { quantity: 5, ...AT_PARIS }),
       200,
     );
     expect(next).toStrictEqual(expectedEstimate(5, AT_PARIS, remaining));
@@ -235,12 +235,12 @@ describe("422 business rejections", () => {
     expect(await readState(db.pool)).toStrictEqual(before);
   });
 
-  test("the 422 estimate equals what /orders/verify returns for the same input", async () => {
+  test("the 422 estimate equals what /api/v1/orders/verify returns for the same input", async () => {
     for (const input of [
       { quantity: TOTAL_STOCK, ...AT_PARIS },
       { quantity: 1, latitude: -90, longitude: -180 },
     ]) {
-      const verified = expectJson(await postJson(api, "/orders/verify", input), 200);
+      const verified = expectJson(await postJson(api, "/api/v1/orders/verify", input), 200);
       const rejected = expectJson(
         await submit({ submissionId: "qa-same-estimate", ...input }),
         422,

@@ -15,41 +15,99 @@
 import { corePackage } from "@scos/core";
 import { persistencePackage } from "@scos/persistence";
 
+// Apps
+export { type AppDependencies, createApp } from "./app";
+export { type HealthAppOptions, createHealthApp } from "./endpoints/health/app";
 export {
-  type AppDependencies,
-  type HealthAppOptions,
-  type Logger,
   type SubmitOrderAppDependencies,
-  type VerifyOrderAppDependencies,
-  consoleLogger,
-  createApp,
-  createHealthApp,
   createSubmitOrderApp,
+} from "./endpoints/submit-order/app";
+export {
+  type VerifyOrderAppDependencies,
   createVerifyOrderApp,
-} from "./app";
+} from "./endpoints/verify-order/app";
+export { type Logger, consoleLogger } from "./http/logger";
+
+// Compositions
+export { type CompositionOptions, composeApplication } from "./composition";
 export {
   type ComposedApplication,
-  type CompositionOptions,
   type DatabaseCompositionOptions,
-  type SubmitOrderCompositionOptions,
-  type VerifyOrderCompositionOptions,
   DEFAULT_CONNECTION_TIMEOUT_MS,
-  composeApplication,
-  composeHealthApplication,
-  composeSubmitOrderApplication,
-  composeVerifyOrderApplication,
   databasePoolTimeouts,
-} from "./composition";
+} from "./database";
+export { composeHealthApplication } from "./endpoints/health/composition";
+export {
+  type SubmitOrderCompositionOptions,
+  composeSubmitOrderApplication,
+} from "./endpoints/submit-order/composition";
+export {
+  type VerifyOrderCompositionOptions,
+  composeVerifyOrderApplication,
+} from "./endpoints/verify-order/composition";
+
+// Configuration
 export {
   type DatabaseConfig,
-  type HealthConfig,
   type ParseResult,
   type ServerConfig,
   parseConfig,
   parseDatabaseConfig,
-  parseHealthConfig,
 } from "./config";
-export * from "./http/contracts";
+export { type HealthConfig, parseHealthConfig } from "./endpoints/health/config";
+
+// Contracts
+export { routes } from "./routes";
+export {
+  type ErrorCode,
+  type ErrorIssue,
+  type ErrorResponse,
+  ERROR_CODES,
+  errorBodySchema,
+  errorCodeSchema,
+  errorIssueSchema,
+  errorResponseSchema,
+} from "./http/errors";
+export { healthResponseSchema } from "./endpoints/health/contract";
+export {
+  type VerifyOrderRequest,
+  type VerifyOrderResponse,
+  verifyOrderRequestSchema,
+  verifyOrderResponseSchema,
+} from "./endpoints/verify-order/contract";
+export {
+  type OrderResponse,
+  type RejectedSubmissionResponse,
+  type SubmitOrderRequest,
+  RETRY_AFTER_SECONDS,
+  orderAllocationSchema,
+  orderResponseSchema,
+  rejectedSubmissionResponseSchema,
+  submissionIdFieldSchema,
+  submitOrderRequestSchema,
+} from "./endpoints/submit-order/contract";
+export {
+  type RejectedEstimate,
+  estimateAllocationSchema,
+  insufficientStockEstimateSchema,
+  shippingExceedsLimitEstimateSchema,
+  validEstimateSchema,
+} from "./http/estimate";
+export {
+  API_PREFIX,
+  type EndpointApp,
+  type ResponseContract,
+  type RouteContract,
+  notFoundResponse,
+} from "./http/route-contract";
+export {
+  destinationResponseSchema,
+  discountRateSchema,
+  latitudeFieldSchema,
+  longitudeFieldSchema,
+  moneySchema,
+  quantityFieldSchema,
+} from "./http/schemas";
 
 export function workspaceComposition(): readonly string[] {
   return [corePackage.name, persistencePackage.name];
