@@ -1,0 +1,111 @@
+name: Seed demo data
+
+# One-time, manual seed of the six PRD warehouses into the prod database.
+# Deploys and Worker startup never seed. The seed only inserts missing
+# warehouses (ON CONFLICT DO NOTHING), so a rerun never resets or replenishes
+# stock. See docs/planetscale-bootstrap.md#seeding-demonstration-data.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type the PlanetScale database name (PLANETSCALE_DATABASE, default scos) to confirm.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Check ref and running deploys
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      actions: read
+    steps:
+      - name: Require the main branch
+        # A run dispatched from another branch would execute that branch's
+        # seed code with prod secrets.
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "${REF}" != "refs/heads/main" ]; then
+            echo "::error::Seed runs only from main, not ${REF}."
+            exit 1
+          fi
+      - name: Refuse while a deploy is active
+        # GitHub keeps one pending job per concurrency group, and the deploy
+        # workflow's migration job shares seed-demo-data-prod. A seed entering
+        # the group would cancel a pending, approved deploy job. This job holds
+        # no group, so it checks before the seed job claims it.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          for status in requested queued pending waiting in_progress; do
+            if ! count="$(gh api "repos/${REPOSITORY}/actions/workflows/deploy.yml/runs?status=${status}&per_page=1" --jq '.total_count')"; then
+              echo "::error::Could not read Deploy workflow runs (deploy.yml)."
+              exit 1
+            fi
+            if [ "${count}" -gt 0 ]; then
+              echo "::error::A Deploy run is ${status}. Wait for it to finish, then dispatch the seed again."
+              exit 1
+            fi
+          done
+
+  seed:
+    name: Seed demo data
+    needs: preflight
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: prod
+    permissions:
+      contents: read
+    concurrency:
+      group: seed-demo-data-prod
+      cancel-in-progress: false
+    steps:
+      - name: Check confirmation and connection secret
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          EXPECTED: ${{ vars.PLANETSCALE_DATABASE || 'scos' }}
+          HAS_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL != '' }}
+        run: |
+          if [ "${CONFIRM}" != "${EXPECTED}" ]; then
+            echo "::error::Confirmation '${CONFIRM}' does not match the database name '${EXPECTED}'."
+            exit 1
+          fi
+          if [ "${HAS_DATABASE_URL}" != "true" ]; then
+            echo "::error::The prod MIGRATION_DATABASE_URL secret is not set. Run the PlanetScale bootstrap first."
+            exit 1
+          fi
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build persistence package
+        run: pnpm exec turbo run build --filter=@scos/persistence
+      - name: Require applied migrations
+        # Exits non-zero when migrations are pending or failed. Migrations are
+        # applied by the deploy pipeline, not by this job.
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: pnpm --filter @scos/persistence exec prisma migrate status
+      - name: Seed warehouses
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: pnpm --filter @scos/persistence db:seed

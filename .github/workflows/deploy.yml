@@ -1,0 +1,391 @@
+name: Deploy
+
+# Deploys main to the prod environment after CI passed for the same commit
+# (#15). Order: state-lock proof, state backup, Terraform plan and apply of
+# that saved plan, migrations directly to PlanetScale, Wrangler deploy of the
+# bundle built and fingerprinted once, health check. Any failing step fails
+# the deployment; nothing is ever destroyed. The bundle is built in this job
+# from the commit CI tested; CI's own build is not reused.
+# docs/deployment-pipeline.md.
+#
+# Hosted execution is off until an operator sets the repository variable
+# DEPLOY_ENABLED to `true` (after the reviewer, variables and secrets in
+# docs/deployment-pipeline.md). It is a repository variable, not a prod
+# environment one, so the gate job can read it: while it is not `true`, no job
+# starts in the prod environment, nothing asks for approval and nothing is
+# touched.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+# One deployment at a time; an apply in progress is never cancelled.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  TERRAFORM_VERSION: 1.16.3
+
+jobs:
+  gate:
+    name: Same-commit CI gate
+    # Only a push to main in this repository: a pull request whose head
+    # branch is also called main (for example from a fork) never deploys.
+    if: >-
+      vars.DEPLOY_ENABLED == 'true' && (
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      deploy: ${{ steps.resolve.outputs.deploy }}
+    steps:
+      - name: Resolve the commit and check its CI run
+        id: resolve
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ $EVENT_NAME == workflow_dispatch ]]; then
+            if [[ $REF != refs/heads/main ]]; then
+              echo "::error::Deploy only from main (got $REF)."
+              exit 1
+            fi
+            sha=$DISPATCH_SHA
+            # The same check workflow_run implies: a successful CI run on a
+            # push to main for exactly this commit.
+            green=$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&branch=main&event=push&status=success&per_page=1" \
+              --jq '.total_count')
+            if [[ $green -lt 1 ]]; then
+              echo "::error::No successful CI run on main for $sha; deploy only a commit CI passed."
+              exit 1
+            fi
+          else
+            sha=$RUN_SHA
+          fi
+          if [[ ! $sha =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Unexpected commit SHA."
+            exit 1
+          fi
+          # Never deploy an older commit over a newer one: if main has moved
+          # on, the newer commit's own CI run deploys it.
+          head=$(gh api "repos/$REPOSITORY/commits/main" --jq '.sha')
+          if [[ $head != "$sha" ]]; then
+            echo "::notice title=Deploy skipped::main is at $head, not $sha. The newer commit's CI run deploys it."
+            echo "deploy=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >>"$GITHUB_OUTPUT"
+          fi
+          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+          echo "Commit $sha passed CI on main."
+
+  deploy:
+    name: Deploy to prod
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: prod
+    # The seed workflow (seed-demo-data.yml) uses this group too, so a seed
+    # never runs while migrations or a deployment are in progress.
+    concurrency:
+      group: seed-demo-data-prod
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      SHA: ${{ needs.gate.outputs.sha }}
+      # Terraform state (R2). Non-secret settings from the prod environment.
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_STATE_ENDPOINT: ${{ vars.TF_STATE_ENDPOINT }}
+      TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
+      TF_STATE_KEY: ${{ vars.TF_STATE_KEY }}
+      TF_STATE_WORKSPACE_PREFIX: ${{ vars.TF_STATE_WORKSPACE_PREFIX }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+    steps:
+      # Repeated here, before terraform apply and before wrangler deploy: a
+      # "Re-run failed jobs" reuses the gate's old commit, and an approval can
+      # wait while main moves on. An older commit never overwrites a newer one.
+      - name: Check that main is still at this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq '.sha')
+          if [[ $head != "$SHA" ]]; then
+            echo "::error title=Stale deploy stopped::main is at $head, not $SHA. Nothing was changed; the newer commit's CI run deploys it."
+            exit 1
+          fi
+      - name: Prepare scratch space
+        # For the saved plan and generated files; removed at the end.
+        run: echo "WORK=$RUNNER_TEMP/deploy" >>"$GITHUB_ENV"
+
+      - name: Check required settings
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          PLANETSCALE_HOST: ${{ vars.PLANETSCALE_HOST }}
+          HYPERDRIVE_ORIGIN_USER: ${{ vars.HYPERDRIVE_ORIGIN_USER }}
+          HAS_R2_KEYS: ${{ secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' }}
+          HAS_TERRAFORM_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_API_TOKEN != '' }}
+          HAS_WORKERS_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN != '' }}
+          HAS_ORIGIN_PASSWORD: ${{ secrets.HYPERDRIVE_ORIGIN_PASSWORD != '' }}
+          HAS_MIGRATION_URL: ${{ secrets.MIGRATION_DATABASE_URL != '' }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in TF_STATE_BUCKET TF_STATE_ENDPOINT TF_STATE_REGION TF_STATE_KEY \
+            TF_STATE_WORKSPACE_PREFIX CLOUDFLARE_ACCOUNT_ID PLANETSCALE_HOST HYPERDRIVE_ORIGIN_USER; do
+            [[ -n ${!name} ]] || missing+=("variable $name")
+          done
+          [[ $HAS_R2_KEYS == true ]] || missing+=("secrets R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY")
+          [[ $HAS_TERRAFORM_TOKEN == true ]] || missing+=("secret CLOUDFLARE_TERRAFORM_API_TOKEN")
+          [[ $HAS_WORKERS_TOKEN == true ]] || missing+=("secret CLOUDFLARE_WORKERS_API_TOKEN")
+          [[ $HAS_ORIGIN_PASSWORD == true ]] || missing+=("secret HYPERDRIVE_ORIGIN_PASSWORD")
+          [[ $HAS_MIGRATION_URL == true ]] || missing+=("secret MIGRATION_DATABASE_URL")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            printf '::error::Missing prod setting: %s\n' "${missing[@]}"
+            exit 1
+          fi
+
+      - name: Check out the commit CI tested
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          # The wrapper copies stdout into step outputs; never for state or plans.
+          terraform_wrapper: false
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      # No Turbo remote cache here: the deployed bundle is built from source.
+      - name: Build the packages the Worker imports
+        run: pnpm exec turbo run build --filter=@scos/api^...
+
+      - name: Build the Worker bundle once and record its checksums
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK"
+          infra/cloudflare/scripts/worker-bundle.sh build "$WORK/bundle"
+          {
+            echo "### Worker bundle for \`$SHA\`"
+            echo "Built once with \`wrangler deploy --dry-run\`; this exact output is uploaded."
+            echo '```'
+            cat "$WORK/bundle/SHA256SUMS"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      # 1. Terraform: lock proof, backup, plan, apply of exactly that plan.
+      - name: Prove the R2 state lock rejects a concurrent run
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: infra/cloudflare/scripts/prove-state-lock.sh
+      - name: Initialize Terraform against the R2 state
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: infra/cloudflare/scripts/backend-init.sh infra/cloudflare
+      - name: Back up the current state
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: infra/cloudflare/scripts/state-backup.sh backup "${SHA:0:12}-run${GITHUB_RUN_ID}"
+      - name: Terraform plan (saved, never printed)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_environment: prod
+          TF_VAR_planetscale_host: ${{ vars.PLANETSCALE_HOST }}
+          TF_VAR_hyperdrive_origin_database: ${{ vars.HYPERDRIVE_ORIGIN_DATABASE || 'postgres' }}
+          TF_VAR_hyperdrive_origin_user: ${{ vars.HYPERDRIVE_ORIGIN_USER }}
+          TF_VAR_hyperdrive_origin_password: ${{ secrets.HYPERDRIVE_ORIGIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # The saved plan holds the origin password in clear text. It stays
+          # on this runner, inside this job, and is deleted at the end; it is
+          # never uploaded or printed. Only the change summary is shown.
+          umask 077
+          if ! terraform -chdir=infra/cloudflare plan -input=false -lock-timeout=5m -no-color \
+            -out="$WORK/tfplan" >"$WORK/plan.log" 2>&1; then
+            # Diagnostics only: plan errors do not echo sensitive values.
+            grep -E '^(Error|│|  on |Warning)' "$WORK/plan.log" || tail -n 20 "$WORK/plan.log"
+            exit 1
+          fi
+          {
+            echo "### Terraform plan"
+            echo '```'
+            terraform -chdir=infra/cloudflare show -json "$WORK/tfplan" |
+              jq -r '.resource_changes[]? | "\(.change.actions | join(",")) \(.address)"'
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Terraform apply of the saved plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_API_TOKEN }}
+        # A saved plan is stale if the state changed after it was made;
+        # Terraform then refuses it and this step fails. Rerun the job to
+        # replan (and reapprove when the environment requires it).
+        run: |
+          set -euo pipefail
+          infra/cloudflare/scripts/require-main-head.sh "$SHA" "before terraform apply"
+          terraform -chdir=infra/cloudflare apply -input=false -lock-timeout=5m -no-color "$WORK/tfplan"
+      - name: Read the Hyperdrive ID
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          id=$(terraform -chdir=infra/cloudflare output -raw hyperdrive_id)
+          echo "::add-mask::$id"
+          if [[ ! $id =~ ^[0-9a-f]{32}$ ]]; then
+            echo "::error::The hyperdrive_id output is not a 32-character hex ID."
+            exit 1
+          fi
+          echo "HYPERDRIVE_ID=$id" >>"$GITHUB_ENV"
+
+      # 2. Migrations: the migration role, straight to the PlanetScale branch.
+      - name: Apply database migrations (prisma migrate deploy)
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          PLANETSCALE_HOST: ${{ vars.PLANETSCALE_HOST }}
+        run: |
+          set -euo pipefail
+          # Checked without printing the URL: direct to the branch host on
+          # 5432 (never Hyperdrive or the PgBouncer port), TLS required.
+          # shellcheck disable=SC2016 # JavaScript, not shell, expansions.
+          node --input-type=module -e '
+            const url = new URL(process.env.DATABASE_URL);
+            const problems = [];
+            if (!["postgres:", "postgresql:"].includes(url.protocol)) problems.push("scheme must be postgresql://");
+            if (url.hostname !== process.env.PLANETSCALE_HOST) problems.push("host must be PLANETSCALE_HOST (direct, not Hyperdrive)");
+            if (!["", "5432"].includes(url.port)) problems.push("port must be 5432");
+            if (!["require", "verify-ca", "verify-full"].includes(url.searchParams.get("sslmode") ?? "")) problems.push("sslmode must be require or stricter");
+            if (problems.length) { for (const p of problems) console.error(`::error::MIGRATION_DATABASE_URL: ${p}`); process.exit(1); }
+          '
+          pnpm --filter @scos/persistence run db:migrate
+
+      # 3. The Worker: exactly the bundle built above from the commit CI tested.
+      - name: Generate the deploy configuration
+        working-directory: apps/api
+        env:
+          DEPLOYMENT_ENVIRONMENT: prod
+          SERVICE_VERSION: ${{ needs.gate.outputs.sha }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+          OTEL_SDK_DISABLED: ${{ vars.OTEL_SDK_DISABLED }}
+          OTEL_TRACES_EXPORTER: ${{ vars.OTEL_TRACES_EXPORTER }}
+          OTEL_METRICS_EXPORTER: ${{ vars.OTEL_METRICS_EXPORTER }}
+          OTEL_TRACES_SAMPLER_ARG: ${{ vars.OTEL_TRACES_SAMPLER_ARG }}
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_TIMEOUT: ${{ vars.OTEL_EXPORTER_OTLP_TIMEOUT }}
+          # Validated here with the Worker's own schema; never written to the file.
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          WORKER_PLACEMENT_REGION: ${{ vars.WORKER_PLACEMENT_REGION }}
+        run: |
+          ./node_modules/.bin/tsx ../../infra/cloudflare/scripts/worker-deploy-config.mjs \
+            --bundle "$WORK/bundle" --hyperdrive-id "$HYPERDRIVE_ID" \
+            --out "$WORK/wrangler.deploy.json"
+      - name: Deploy the Worker (wrangler deploy, no rebuild)
+        working-directory: apps/api
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          set -euo pipefail
+          ../../infra/cloudflare/scripts/require-main-head.sh "$SHA" "before wrangler deploy"
+          ../../infra/cloudflare/scripts/worker-bundle.sh verify "$WORK/bundle"
+          secrets_args=()
+          if [[ -n $OTEL_EXPORTER_OTLP_HEADERS ]]; then
+            # Uploaded with this version as a Worker secret; the file is private
+            # to this runner and removed at the end of the job.
+            umask 077
+            jq -n '{OTEL_EXPORTER_OTLP_HEADERS: env.OTEL_EXPORTER_OTLP_HEADERS}' >"$WORK/worker-secrets.json"
+            secrets_args=(--secrets-file "$WORK/worker-secrets.json")
+          fi
+          ./node_modules/.bin/wrangler deploy -c "$WORK/wrangler.deploy.json" \
+            --message "Deploy ${SHA} (run ${GITHUB_RUN_ID})" --tag "${SHA:0:12}" \
+            "${secrets_args[@]}" 2>&1 | tee "$WORK/wrangler-deploy.log"
+          rm -f "$WORK/worker-secrets.json"
+          version=$(grep -oE 'Current Version ID: [0-9a-f-]+' "$WORK/wrangler-deploy.log" | awk '{print $4}' || true)
+          url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' "$WORK/wrangler-deploy.log" | head -n 1 || true)
+          echo "WORKER_URL_FROM_DEPLOY=$url" >>"$GITHUB_ENV"
+          {
+            echo "### Worker deployed"
+            echo "- Commit: \`$SHA\`"
+            echo "- Worker version: \`${version:-unknown}\`"
+            echo "- Uploaded modules match the SHA256SUMS above (verified before upload)."
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      # 4. Health check.
+      - name: Check GET /health on the deployed Worker
+        env:
+          WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
+        run: |
+          set -euo pipefail
+          base=${WORKER_BASE_URL:-$WORKER_URL_FROM_DEPLOY}
+          if [[ -z $base ]]; then
+            echo "::error::No Worker URL: set the prod variable WORKER_BASE_URL."
+            exit 1
+          fi
+          # 200 with {"status":"ok"} means the configuration validated: an
+          # invalid one makes the Worker answer 500 to every request. It does
+          # not prove database connectivity (docs/deployment-pipeline.md).
+          for attempt in $(seq 1 12); do
+            body=$(curl -fsS --max-time 10 "${base%/}/health" || true)
+            if [[ $(jq -r '.status? // empty' <<<"$body" 2>/dev/null) == ok ]]; then
+              echo "Healthy after $attempt attempt(s): ${base%/}/health"
+              echo "- Health: \`GET ${base%/}/health\` returned \`{\"status\":\"ok\"}\`" >>"$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::GET ${base%/}/health did not return {\"status\":\"ok\"}. Roll back with wrangler rollback (docs/deployment-pipeline.md)."
+          exit 1
+
+      - name: Remove the saved plan and generated files
+        if: always()
+        run: rm -rf "$WORK"

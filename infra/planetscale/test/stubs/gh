@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Test stub for the GitHub CLI: records environment secrets written from stdin.
+set -euo pipefail
+
+state="${STUB_STATE:?}"
+mkdir -p "$state/secrets"
+printf 'gh %s\n' "$*" >>"$state/calls.log"
+
+case "${1:-} ${2:-}" in
+"secret list")
+  exit "${STUB_GH_LIST_EXIT:-0}"
+  ;;
+"secret set")
+  cat >"$state/secrets/$3"
+  ;;
+*)
+  printf 'stub: unsupported gh command: %s\n' "$*" >&2
+  exit 2
+  ;;
+esac

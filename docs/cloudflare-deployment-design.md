@@ -15,6 +15,8 @@ records why the first hosted demonstration runs on Cloudflare Workers.
 - **Ownership.** #28 owns the Worker runtime and this design. #15 owns the
   PlanetScale bootstrap, Terraform, credentials and the pipeline. #33 owns the
   hosted deployment and every measurement under load.
+- **Implemented by #15** in [PlanetScale bootstrap](planetscale-bootstrap.md)
+  and [deployment pipeline](deployment-pipeline.md).
 - **Not decided here.** The monthly budget, the account and organization, and
   the provisioning authorization belong to the user (see
   [remaining approvals](#remaining-approvals-and-verification-for-33)).

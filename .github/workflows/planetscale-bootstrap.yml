@@ -1,0 +1,137 @@
+name: PlanetScale bootstrap
+
+# Creates the PlanetScale Postgres database (billed through the Cloudflare
+# account) and its runtime and migration roles. Manual only: nothing on push,
+# pull request or merge creates or deletes the database. The job is bound to
+# the prod environment, so its required reviewers approve every run; that
+# approval is the provisioning authorization. See docs/planetscale-bootstrap.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_database:
+        description: Create the database if it is missing. This starts billing through the Cloudflare account.
+        type: boolean
+        default: false
+      manage_roles:
+        description: Create the runtime and migration roles if they are missing (needs ENVIRONMENT_SECRETS_TOKEN).
+        type: boolean
+        default: true
+      dry_run:
+        description: Only report what would be created.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: planetscale-bootstrap-prod
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Check prod environment protection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      actions: read
+    steps:
+      - name: Require the main branch
+        # A run dispatched from another branch would execute that branch's
+        # bootstrap script with prod secrets.
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "${REF}" != "refs/heads/main" ]; then
+            echo "::error::The bootstrap runs only from main, not ${REF}."
+            exit 1
+          fi
+      - name: Require reviewers on the prod environment
+        # Without required reviewers, triggering this workflow would be the
+        # only gate in front of a billed resource. Fails closed if the
+        # environment cannot be read.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          reviewers="$(gh api "repos/${REPOSITORY}/environments/prod" \
+            --jq '[.protection_rules[]? | select(.type == "required_reviewers") | (.reviewers | length)] | add // 0')"
+          if [ "${reviewers}" -lt 1 ]; then
+            echo "::error::The prod environment has no required reviewers. Add at least one (Settings > Environments > prod) before running the bootstrap."
+            exit 1
+          fi
+          echo "prod environment requires review (${reviewers} reviewer entries)."
+
+  bootstrap:
+    name: Bootstrap PlanetScale
+    needs: preflight
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: prod
+    permissions:
+      contents: read
+    env:
+      PSCALE_VERSION: 0.337.0
+      # sha256 of pscale_0.337.0_linux_amd64.tar.gz, from the release's
+      # pscale_0.337.0_checksums.txt and the GitHub release asset digest.
+      PSCALE_SHA256: 1c6055dc145c7e1a16c2fc00ee66951359f9771681ffdff09ba47cd18d2acb4c
+    steps:
+      - name: Check PlanetScale organization
+        env:
+          PLANETSCALE_ORG: ${{ vars.PLANETSCALE_ORG }}
+        run: |
+          if [ -z "${PLANETSCALE_ORG}" ]; then
+            echo "::error::The PLANETSCALE_ORG repository variable is not set."
+            exit 1
+          fi
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pscale
+        run: |
+          archive="${RUNNER_TEMP}/pscale.tar.gz"
+          curl --fail --silent --show-error --location --output "${archive}" \
+            "https://github.com/planetscale/cli/releases/download/v${PSCALE_VERSION}/pscale_${PSCALE_VERSION}_linux_amd64.tar.gz"
+          echo "${PSCALE_SHA256}  ${archive}" | sha256sum --check --strict
+          mkdir -p "${RUNNER_TEMP}/pscale-bin"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/pscale-bin" pscale
+          echo "${RUNNER_TEMP}/pscale-bin" >> "${GITHUB_PATH}"
+      - name: Install Node.js for Wrangler
+        if: ${{ inputs.create_database && !inputs.dry_run }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+      - name: Install Wrangler
+        # A separate step with no secrets in its environment: npm runs here,
+        # and --ignore-scripts skips package install scripts. The signature
+        # command and `--version` do not need them.
+        if: ${{ inputs.create_database && !inputs.dry_run }}
+        run: npm install --global --prefix "${RUNNER_TEMP}/wrangler" --ignore-scripts --no-audit --no-fund wrangler@4.135.0
+      - name: Run bootstrap
+        env:
+          PLANETSCALE_ORG: ${{ vars.PLANETSCALE_ORG }}
+          PLANETSCALE_SERVICE_TOKEN_ID: ${{ vars.PLANETSCALE_SERVICE_TOKEN_ID }}
+          PLANETSCALE_SERVICE_TOKEN: ${{ secrets.PLANETSCALE_SERVICE_TOKEN }}
+          PLANETSCALE_DATABASE: ${{ vars.PLANETSCALE_DATABASE || 'scos' }}
+          PLANETSCALE_BRANCH: ${{ vars.PLANETSCALE_BRANCH || 'main' }}
+          PLANETSCALE_REGION: ${{ vars.PLANETSCALE_REGION || 'ap-southeast' }}
+          PLANETSCALE_CLUSTER_SIZE: ${{ vars.PLANETSCALE_CLUSTER_SIZE || 'PS-5' }}
+          MIGRATION_ROLE_NAME: ${{ vars.MIGRATION_ROLE_NAME || 'scos_migrator' }}
+          CREATE_DATABASE: ${{ inputs.create_database }}
+          MANAGE_ROLES: ${{ inputs.manage_roles }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_CMD: ${{ inputs.create_database && !inputs.dry_run && format('{0}/wrangler/bin/wrangler', runner.temp) || '' }}
+          # Only the database-creating run sees the Cloudflare token; it is
+          # used for `wrangler hyperdrive planetscale signature` only.
+          CLOUDFLARE_API_TOKEN: ${{ inputs.create_database && !inputs.dry_run && secrets.CLOUDFLARE_API_TOKEN || '' }}
+          # Optional fine-grained token (Environments: read and write on this
+          # repository) that stores new role passwords as prod secrets. Without
+          # it, missing roles are not created; run the script locally instead.
+          GH_TOKEN: ${{ secrets.ENVIRONMENT_SECRETS_TOKEN }}
+          SECRETS_REPO: ${{ secrets.ENVIRONMENT_SECRETS_TOKEN != '' && github.repository || '' }}
+          SECRETS_ENVIRONMENT: prod
+        run: infra/planetscale/bootstrap.sh
