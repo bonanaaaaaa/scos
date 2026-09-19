@@ -1,7 +1,7 @@
 /**
  * What every runtime composition returns: the app to serve and a way to
  * release what it opened. Runtime-neutral, so Node/Lambda compositions
- * (`database.ts` and the endpoint compositions) and a Workers composition
+ * (`composition/database.ts` and the endpoint compositions) and a Workers composition
  * share it.
  *
  * @module

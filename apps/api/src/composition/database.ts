@@ -23,9 +23,9 @@ import {
 import type { Hono } from "hono";
 
 import type { ComposedApplication } from "./composed-application";
-import type { Logger } from "./http/logger";
-import { instrumentApp } from "./telemetry/http";
-import type { Telemetry } from "./telemetry/telemetry";
+import type { Logger } from "../http/logger";
+import { instrumentApp } from "../telemetry/http";
+import type { Telemetry } from "../telemetry/telemetry";
 
 /** Default limit for acquiring or opening a pooled connection. */
 export const DEFAULT_CONNECTION_TIMEOUT_MS = 5_000;

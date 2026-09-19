@@ -17,7 +17,8 @@ import {
   verifyBody,
 } from "../testing/fixtures.test-support";
 import { captureLogs, testTelemetry } from "../testing/telemetry.test-support";
-import { traceSubmitOrder, traceVerifyOrder } from "./decorators";
+import { traceSubmitOrder } from "./decorators/submit-order";
+import { traceVerifyOrder } from "./decorators/verify-order";
 import { instrumentApp } from "./http";
 import { createPinoLogger } from "./node/pino-logger";
 

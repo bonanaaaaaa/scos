@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
+    "dev": "tsx watch src/entrypoints/node.ts",
+    "start": "node dist/node.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "lint": "oxlint --deny-warnings src test scripts build.mjs vitest.config.mjs vitest.integration.config.mjs",
     "test": "vitest run --coverage",

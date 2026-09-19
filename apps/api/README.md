@@ -5,8 +5,34 @@ use cases (`VerifyOrder`, `SubmitOrder`), and maps their typed outcomes to HTTP
 responses. Business rules live in `packages/core`; SQL lives in
 `packages/persistence`.
 
+## Reading order
+
+Start at a runtime's entry point and follow the wiring inward:
+
+1. **Entry point** (`src/entrypoints/node.ts`): validates the environment,
+   starts telemetry, calls the composition, listens, and shuts down on
+   SIGINT/SIGTERM. Future runtimes add `entrypoints/lambda*.ts` (#14).
+2. **Composition root** (`src/composition/node.ts`): opens the database
+   (`composition/database.ts`), builds the persistence adapters and use cases,
+   wraps them in the telemetry decorators, and calls `createApp`. It returns
+   `{ app, close }`.
+3. **App** (`src/app.ts`): `createApp` mounts the endpoint apps. It only takes
+   use cases that already exist; it opens nothing and reads no environment.
+4. **Endpoints** (`src/endpoints/<name>/`): each one's contract (Zod schemas),
+   app (routes and outcome-to-HTTP mapping) and its own composition.
+5. **Core and persistence**: the use cases and ports are in `packages/core`,
+   and the adapters that implement those ports are in `packages/persistence`.
+
 ```text
 src/
+  entrypoints/
+    node.ts        local Node.js server: validate config, start telemetry,
+                   listen, graceful shutdown (one file per runtime)
+  composition/
+    node.ts        composeApplication: all routes over one pool (Node/Lambda)
+    database.ts    bounded pool + Prisma shared by the database compositions
+    composed-application.ts
+                   the { app, close } type every runtime composition returns
   endpoints/
     health/        contract, app, composition, config (+ tests)
     verify-order/  contract, examples, app, composition (+ tests)
@@ -17,17 +43,14 @@ src/
                    describe-route (a contract as hono-openapi route documentation),
                    and the Logger port and its console JSON default
   telemetry/       runtime-neutral telemetry: config schema, Telemetry port, log
-                   record contract, HTTP middleware, use-case/port decorators
+                   record contract, HTTP middleware
+    decorators/    tracing decorators, one file per wrapped use case or port
     node/          Node/Lambda only: OpenTelemetry SDK, exporters, Pino adapter
   openapi/         hono-openapi document options, offline generation and export,
                    /openapi.json and /docs routes (+ tests)
   app.ts           createApp: mounts the three endpoint apps and the docs routes
-  composition.ts   composeApplication: all routes over one pool
-  database.ts      bounded pool + Prisma shared by the database compositions
   config.ts        shared env parsing, DATABASE_URL config, local-server config
   routes.ts        the route/status table assembled from the endpoint contracts
-  server.ts        Node.js entrypoint: validate config, start telemetry, listen,
-                   graceful shutdown
   index.ts         public exports
   testing/         unit-test support (fixtures, request cases, spies, black hole,
                    seeded in-memory use cases, Ajv over the generated document)
@@ -36,7 +59,7 @@ scripts/openapi.ts CLI for `openapi:export`; the build bundles and runs it too
 
 Each endpoint folder owns its request and response schemas, route contract,
 app factory, composition and tests. Dependencies point one way: an endpoint
-may import `src/http/` and the shared `config.ts` and `database.ts`; `http/`
+may import `src/http/` and the shared `config.ts` and `composition/database.ts`; `http/`
 never imports an endpoint, and endpoints never import each other. The Order
 Estimate shape and serializer are in `http/estimate.ts` because both
 verification (200) and a rejected submission (422) return it.
@@ -72,7 +95,7 @@ as its own Lambda function (#14):
   envelope, so its behaviour is identical to the standalone apps.
   `createApp` also serves the documentation routes (`GET /openapi.json`,
   `GET /docs`); the standalone apps do not. `composeApplication` builds it
-  over one pool for the local server (`src/server.ts`).
+  over one pool for the local server (`src/entrypoints/node.ts`).
 - Configuration is validated per runtime: `parseHealthConfig` requires
   nothing, `parseDatabaseConfig` (for the verify and submit runtimes) requires
   `DATABASE_URL`, and the local server (`parseConfig`) requires `DATABASE_URL`
@@ -337,7 +360,7 @@ writes `apps/api/dist/openapi.json` after bundling the server: `build.mjs`
 bundles the exporter CLI (`scripts/openapi.ts`) with the server's esbuild
 settings to a temporary file outside `dist/`, and runs it with Node.js without
 `DATABASE_URL`. It needs no server, environment or database, and none of it is
-added to `dist/server.js`. `dist/` is ignored by Git and is a Turbo output of
+added to `dist/node.js`. `dist/` is ignored by Git and is a Turbo output of
 `build`. To write it on demand:
 
 ```sh
@@ -370,7 +393,7 @@ inventory; and that the document passes `@apidevtools/swagger-parser`.
 
 ## Configuration
 
-`src/server.ts` validates the environment once, before starting telemetry,
+`src/entrypoints/node.ts` validates the environment once, before starting telemetry,
 building any database client or listening. On failure it prints only the
 variable name and a reason to stderr (never the value) and exits with
 status 1.
@@ -468,7 +491,7 @@ pnpm api:start      # built bundle
 ```sh
 # Unit tests (no database): contracts, handlers with fake use cases, config,
 # composition, telemetry with in-memory exporters and captured logs, the
-# entrypoint spawned as a subprocess, the built dist/server.js (log
+# entrypoint spawned as a subprocess, the built dist/node.js (log
 # correlation on the bundled load path; build first, as `pnpm test` does), and
 # the OpenAPI document (validity, examples, schema/runtime agreement, export
 # equals the served bytes).

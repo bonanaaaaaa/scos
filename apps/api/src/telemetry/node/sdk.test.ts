@@ -26,7 +26,7 @@ import { createConsoleJsonLogger } from "../../http/logger";
 import { startBlackHole } from "../../testing/black-hole.test-support";
 import { validEstimate, verifyBody } from "../../testing/fixtures.test-support";
 import { captureLogs, parseTelemetryConfig } from "../../testing/telemetry.test-support";
-import { traceVerifyOrder } from "../decorators";
+import { traceVerifyOrder } from "../decorators/verify-order";
 import { instrumentApp } from "../http";
 import {
   DEFAULT_FLUSH_TIMEOUT_MS,
@@ -211,7 +211,7 @@ describe("PinoInstrumentation correlation (correlation-only mode)", () => {
       diag.warn(
         JSON.stringify({
           stack:
-            "Error: PeriodicExportingMetricReader: metrics export failed (error Error: connect ECONNREFUSED 127.0.0.1:4318)\n    at currentRun (file:///app/dist/server.js:1:2)",
+            "Error: PeriodicExportingMetricReader: metrics export failed (error Error: connect ECONNREFUSED 127.0.0.1:4318)\n    at currentRun (file:///app/dist/node.js:1:2)",
         }),
       );
       span.end();

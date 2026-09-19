@@ -19,16 +19,16 @@ the API compositions.
 Telemetry sits behind ports that do not depend on a runtime. The runtime's
 composition wires them.
 
-| Module                              | Runtime | Contents                                                                                                                  |
-| ----------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `src/http/logger.ts`                | neutral | `Logger` / `StructuredLogger` ports; `createConsoleJsonLogger`, the default when nothing is injected                      |
-| `src/telemetry/log-record.ts`       | neutral | The log record contract: severity mapping, redaction keys, error sanitizing, correlation fields, resource fields          |
-| `src/telemetry/telemetry.ts`        | neutral | The `Telemetry` port (tracer, propagator, histogram, counter), built from any providers                                   |
-| `src/telemetry/http.ts`             | neutral | Hono middleware: SERVER span, HTTP attributes, duration histogram, request log                                            |
-| `src/telemetry/decorators.ts`       | neutral | Spans around `VerifyOrder`, `SubmitOrder`, `InventoryReader`, `SubmissionStore` and the transaction, plus the counter     |
-| `src/telemetry/config.ts`           | neutral | Zod schema for the telemetry variables                                                                                    |
-| `src/telemetry/node/sdk.ts`         | Node    | SDK providers, exporters, AsyncLocalStorage context manager, `PinoInstrumentation`, flush and shutdown (`startTelemetry`) |
-| `src/telemetry/node/pino-logger.ts` | Node    | The Pino adapter, loaded after instrumentation is registered                                                              |
+| Module                              | Runtime | Contents                                                                                                                                                                                                   |
+| ----------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/http/logger.ts`                | neutral | `Logger` / `StructuredLogger` ports; `createConsoleJsonLogger`, the default when nothing is injected                                                                                                       |
+| `src/telemetry/log-record.ts`       | neutral | The log record contract: severity mapping, redaction keys, error sanitizing, correlation fields, resource fields                                                                                           |
+| `src/telemetry/telemetry.ts`        | neutral | The `Telemetry` port (tracer, propagator, histogram, counter), built from any providers                                                                                                                    |
+| `src/telemetry/http.ts`             | neutral | Hono middleware: SERVER span, HTTP attributes, duration histogram, request log                                                                                                                             |
+| `src/telemetry/decorators/`         | neutral | One file per wrapped use case or port: `verify-order.ts`, `submit-order.ts` (plus the counter), `inventory-reader.ts`, `submission-store.ts` (and its transaction); `span.ts` holds the shared span helper |
+| `src/telemetry/config.ts`           | neutral | Zod schema for the telemetry variables                                                                                                                                                                     |
+| `src/telemetry/node/sdk.ts`         | Node    | SDK providers, exporters, AsyncLocalStorage context manager, `PinoInstrumentation`, flush and shutdown (`startTelemetry`)                                                                                  |
+| `src/telemetry/node/pino-logger.ts` | Node    | The Pino adapter, loaded after instrumentation is registered                                                                                                                                               |
 
 The neutral modules import only `@opentelemetry/api`, the
 semantic-convention constants, Zod, Hono and our own ports. They never read
@@ -272,7 +272,7 @@ IDs or order numbers. Enforcement:
   without stack frames, URLs or network addresses.
 - Tests assert, per signal, that a request's submission ID, coordinates and
   order number appear nowhere: in the unit tests (`telemetry/http.test.ts`,
-  `telemetry/decorators.test.ts`) and against the real database
+  `telemetry/decorators/*.test.ts`) and against the real database
   (`test/telemetry.integration.test.ts`).
 - Configuration errors name the variable and a reason, never its value.
   OTLP endpoints with credentials in the URL are rejected; use
@@ -354,7 +354,7 @@ Fixed bounds (in code, `telemetry/node/sdk.ts`):
 
 ## Initialization, graceful shutdown and Lambda lifecycle
 
-### Node server (`src/server.ts`)
+### Node server (`src/entrypoints/node.ts`)
 
 1. Validate the whole environment. On failure, print sanitized errors and
    exit 1, before any telemetry, logger, database client or listener exists.
@@ -382,10 +382,10 @@ bypass that hook and lose correlation. The `"pino"` entry in `build.mjs`'s
 today the output is identical without it.
 
 So **the runtime artifact must contain `node_modules/pino` and its
-dependencies next to `dist/`**. Without it, `node dist/server.js` fails at
+dependencies next to `dist/`**. Without it, `node dist/node.js` fails at
 startup with `Cannot find module 'pino'` (verified).
 
-`src/server.bundle.test.ts` runs the built bundle on every `pnpm test` and
+`src/entrypoints/node.bundle.test.ts` runs the built bundle on every `pnpm test` and
 fails if the request log stops carrying the incoming `traceparent`'s trace
 ID, that is, if Pino in the bundled load path is no longer patched by
 `PinoInstrumentation` (for example because Pino was loaded before
@@ -437,7 +437,7 @@ export DATABASE_URL=postgresql://scos:scos@localhost:5432/scos
 pnpm --filter @scos/api build
 OTEL_TRACES_EXPORTER=console OTEL_METRICS_EXPORTER=console \
   OTEL_METRIC_EXPORT_INTERVAL=10000 OTEL_METRIC_EXPORT_TIMEOUT=5000 \
-  node apps/api/dist/server.js
+  node apps/api/dist/node.js
 ```
 
 Console exporters print Node object dumps to stdout, interleaved with the
@@ -471,14 +471,14 @@ docker run --rm -p 4318:4318 \
 
 OTEL_TRACES_EXPORTER=otlp OTEL_METRICS_EXPORTER=otlp \
   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
-  node apps/api/dist/server.js
+  node apps/api/dist/node.js
 ```
 
 The Collector prints each received span and metric. The Collector setup
 was not run in this change. The OTLP export path
 was verified against a minimal local HTTP sink on port 14318, which
 received `POST /v1/traces` and `POST /v1/metrics` with
-`application/x-protobuf` bodies from `dist/server.js`.
+`application/x-protobuf` bodies from `dist/node.js`.
 
 ### Automated tests
 
@@ -492,10 +492,10 @@ received `POST /v1/traces` and `POST /v1/metrics` with
 | Configuration: valid, invalid, conditional, sanitized messages                                                                                                        | `src/telemetry/config.test.ts`                                      |
 | `startTelemetry` init-once and registration, correlation through the started runtime, resource across signals, sampling, bounded flush, exporter failure, diagnostics | `src/telemetry/node/sdk.test.ts`                                    |
 | Middleware specifics: the request log, compositions without telemetry, a failing logger, tracer or meter never changes a response                                     | `src/telemetry/http.test.ts`                                        |
-| Decorator specifics: invalid estimates, sanitized database and errno failures, retries and `unavailable`, unexpected errors                                           | `src/telemetry/decorators.test.ts`                                  |
+| Decorator specifics: invalid estimates, sanitized database and errno failures, retries and `unavailable`, unexpected errors                                           | `src/telemetry/decorators/*.test.ts`                                |
 | Persistence spans against PostgreSQL, a real lock timeout, a silent collector and locks                                                                               | `test/telemetry.integration.test.ts`                                |
 | No runtime-specific imports in neutral modules                                                                                                                        | `src/runtime-boundary.test.ts`                                      |
-| The built `dist/server.js` still correlates logs (PinoInstrumentation on the bundled load path)                                                                       | `src/server.bundle.test.ts`                                         |
+| The built `dist/node.js` still correlates logs (PinoInstrumentation on the bundled load path)                                                                         | `src/entrypoints/node.bundle.test.ts`                               |
 
 ### Port contract tests
 
@@ -570,7 +570,7 @@ Pino's require hook.
 
 ## Sample output from real API requests
 
-Captured from the built bundle (`node apps/api/dist/server.js`) over a
+Captured from the built bundle (`node apps/api/dist/node.js`) over a
 migrated and seeded database, with console exporters and
 `SERVICE_VERSION=0.0.0-issue17`. Requests: health; a verification with
 `traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01` and

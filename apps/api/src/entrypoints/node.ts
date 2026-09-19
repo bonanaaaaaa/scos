@@ -19,11 +19,11 @@ import {
   type ComposedApplication,
   type CompositionOptions,
   composeApplication,
-} from "./composition";
-import { type ServerConfig, parseConfig } from "./config";
-import type { StructuredLogger } from "./http/logger";
-import type { TelemetryConfig } from "./telemetry/config";
-import { type TelemetryRuntime, startTelemetry } from "./telemetry/node/sdk";
+} from "../composition/node";
+import { type ServerConfig, parseConfig } from "../config";
+import type { StructuredLogger } from "../http/logger";
+import type { TelemetryConfig } from "../telemetry/config";
+import { type TelemetryRuntime, startTelemetry } from "../telemetry/node/sdk";
 
 /** Upper bound for flushing telemetry during shutdown. */
 export const TELEMETRY_SHUTDOWN_TIMEOUT_MS = 5_000;

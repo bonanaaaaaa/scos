@@ -12,7 +12,7 @@ import {
 } from "@opentelemetry/sdk-metrics";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 
-import { composeApplication } from "../../composition";
+import { composeApplication } from "../../composition/node";
 import { composeHealthApplication } from "../../endpoints/health/composition";
 import { fakeLogger } from "../../testing/fixtures.test-support";
 import { unreachableDatabaseUrl } from "../../testing/persistence-spies.test-support";

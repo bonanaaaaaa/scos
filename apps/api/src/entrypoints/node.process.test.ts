@@ -4,13 +4,13 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { startBlackHole } from "./testing/black-hole.test-support";
+import { startBlackHole } from "../testing/black-hole.test-support";
 
 // ---------------------------------------------------------------------------
 // The real entrypoint as a subprocess
 // ---------------------------------------------------------------------------
 
-const apiDirectory = fileURLToPath(new URL("..", import.meta.url));
+const apiDirectory = fileURLToPath(new URL("../..", import.meta.url));
 const children: ChildProcess[] = [];
 
 afterEach(() => {
@@ -29,7 +29,7 @@ interface Launched {
 }
 
 function launch(environment: Record<string, string>): Launched {
-  const child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], {
+  const child = spawn(process.execPath, ["--import", "tsx", "src/entrypoints/node.ts"], {
     cwd: apiDirectory,
     // Only what the process needs: no inherited DATABASE_URL or PORT.
     env: { PATH: process.env.PATH ?? "", ...environment },
