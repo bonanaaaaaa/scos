@@ -17,7 +17,7 @@ flowchart LR
     subgraph core["packages/core"]
         direction TB
         app["application/<br/>VerifyOrder, SubmitOrder<br/>(orchestration)"]
-        ports["application/ports<br/>SubmissionStore, SubmissionTransaction,<br/>inventory read port (with VerifyOrder)<br/>(interfaces)"]
+        ports["application/ports<br/>InventoryReader, SubmissionStore,<br/>SubmissionTransaction<br/>(interfaces)"]
         domain["domain/<br/>Money, Quantity, Destination, pricing,<br/>distance, allocation, estimate, Order<br/>(pure rules)"]
         app --> domain
         app --> ports
@@ -38,11 +38,12 @@ flowchart LR
    discounts, the 15% shipping limit, nearest-warehouse allocation, exact money,
    and the Order aggregate. It consists of pure functions and value objects,
    with no I/O, no ports, and no knowledge of HTTP or databases.
-2. **Application** (`packages/core/src/application`, added with the use cases)
-   has one use case per thing a caller can do: verify an order and submit an
-   order. A use case coordinates: it loads data, calls the domain, and saves the
-   result. It needs outside data but must not know how it is stored, so it
-   declares what it needs as ports.
+2. **Application** (`packages/core/src/application`) has one use case per thing
+   a caller can do: verify an order (`createVerifyOrder`) and submit an order
+   (`createSubmitOrder`). A use case coordinates: it loads
+   data, calls the domain, and saves the result. It needs outside data but must
+   not know how it is stored, so it declares what it needs as ports. See
+   [Application layer](#application-layer).
 3. **Ports** are interfaces owned by core, for example "give me the inventory
    snapshot" or "within one transaction, lock stock, find the Order already
    stored for this submission key, or save the new order". Core defines their shape and never implements
@@ -59,9 +60,11 @@ flowchart LR
 
 Dependencies point inward only:
 
-- Adapters depend on core. Core never imports Hono, Prisma or `pg`.
-- Inside core, `application/` depends on `domain/`, never the reverse. The
-  `no-restricted-imports` rule in `packages/core/.oxlintrc.json` enforces this.
+- Adapters depend on core. Core never imports Hono, Prisma, `pg` or
+  `@scos/persistence`.
+- Inside core, `application/` depends on `domain/`, never the reverse.
+- The `no-restricted-imports` rule in `packages/core/.oxlintrc.json` enforces
+  both for every file under `packages/core/src`.
 - Adapters import only the package root (`@scos/core`), not internal files.
 
 The database is reached through dependency inversion. The use case needs
@@ -100,6 +103,57 @@ allocate and with which data; the domain decides how.
   accepted Orders are stored ([ADR 0004](adr/0004-deduplicate-accepted-orders.md)):
   a repeated submission is matched by the Order's submission key, rejections
   are not stored, and HTTP statuses are never persisted.
+
+## Application layer
+
+```text
+packages/core/src/application/
+  verify-order.ts            createVerifyOrder: the VerifyOrder use case
+  submit-order.ts            createSubmitOrder: the SubmitOrder use case
+  ports/inventory-reader.ts  InventoryReader: driven port for reading stock
+  ports/submission-store.ts  SubmissionStore: driven port for one submission transaction
+```
+
+**VerifyOrder** answers "what would this Order Request cost right now, and
+could it be accepted?". `createVerifyOrder({ inventoryReader })` returns a
+function `(request: OrderRequest) => Promise<OrderEstimate>` that:
+
+1. reads one inventory snapshot through the `InventoryReader` port, exactly once
+   per call and with nothing cached between calls;
+2. passes it to the domain's `estimateOrder`, the same calculation submission
+   will use, and returns that Order Estimate unchanged.
+
+The result is a typed outcome, not an HTTP response: a valid estimate, or
+`valid: false` with reason `SHIPPING_EXCEEDS_LIMIT` (all amounts and Warehouse
+Allocations kept) or `INSUFFICIENT_STOCK` (merchandise and discount amounts
+kept, no allocations, `null` shipping cost and order total). Business rejections
+are returned; only port failures and `DomainError` reject the promise. Mapping
+to status codes belongs to the HTTP adapter.
+
+The estimate is advisory ([ADR 0001](adr/0001-advisory-verification.md)).
+Verification creates no Order, reserves and deducts no stock, and writes
+nothing, so it does not promise later acceptance: a repeated verification sees
+whatever stock is current, and submission recalculates from the stock it locks.
+
+**`InventoryReader`** is the port: `readInventorySnapshot()` resolves to one
+coherent, complete, point-in-time `InventorySnapshot`, read-only and without
+locks. `createPrismaInventoryReader` in `packages/persistence` implements it
+with a single `SELECT` over `warehouses`. One statement sees one MVCC snapshot,
+so the stock values are mutually consistent without a transaction (see
+[Read pattern for verification](database-schema.md#read-pattern-for-verification-9)).
+The composition root wires the two together:
+
+```ts
+const verifyOrder = createVerifyOrder({
+  inventoryReader: createPrismaInventoryReader(prisma),
+});
+```
+
+**SubmitOrder** uses its own port, `SubmissionStore`, not `InventoryReader`.
+Within one transaction it locks every warehouse row, finds any Order already
+stored under the submission key, and saves a new Order while deducting stock
+(ADR 0004). It recalculates with the same `estimateOrder`, so a verified
+estimate can cost more or be rejected at submission.
 
 ## Hexagonal architecture and DDD
 
@@ -308,7 +362,7 @@ Dependencies point one way: `shared` <- `pricing`, `shipping` <- `ordering`.
 `shared` imports no other domain folder, `pricing` and `shipping` do not import
 each other or `ordering`, and `ordering` may import all of them. No domain file
 imports `application/`. `packages/core/.oxlintrc.json` enforces these rules with
-`no-restricted-imports`.
+`no-restricted-imports`, alongside the ban on adapter technology imports.
 
 The folders follow domain concepts rather than DDD building-block types
 (`entities/`, `value-objects/`, `services/`). Code that changes together stays

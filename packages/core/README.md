@@ -1,7 +1,8 @@
 # @scos/core
 
-Pure SCOS domain layer: value objects, pricing, distance, warehouse allocation,
-Order Estimates, and the Order aggregate. No HTTP, Prisma, or persistence types.
+SCOS core: the pure domain layer (value objects, pricing, distance, warehouse
+allocation, Order Estimates, and the Order aggregate) and the application use
+cases with the ports they need. No HTTP, Prisma, or persistence types.
 
 ## Layout
 
@@ -17,16 +18,30 @@ import only the package root (`src/index.ts`).
     limit;
   - `ordering/`: the order request and submission key schemas,
     `estimateOrder`, and the `Order` aggregate.
-- `src/application/`: the SubmitOrder use case (`createSubmitOrder`) and, in
-  `ports/`, the driven `SubmissionStore` port that persistence implements.
+- `src/application/`: use cases and the driven ports that persistence
+  implements (see [Application layer](../../docs/architecture.md#application-layer)).
   `application/` must not import adapters or infrastructure (Prisma, `pg`,
   Hono, `@scos/persistence`, `node:*`).
+  - `verify-order.ts`: `createVerifyOrder({ inventoryReader })` builds the
+    VerifyOrder use case. Each call reads one inventory snapshot and returns the
+    Order Estimate from `estimateOrder` unchanged. The estimate is advisory
+    ([ADR 0001](../../docs/adr/0001-advisory-verification.md)): nothing is
+    reserved or written, and later acceptance is not promised;
+  - `submit-order.ts`: the SubmitOrder use case (`createSubmitOrder`);
+  - `ports/inventory-reader.ts`: `InventoryReader`, one coherent, read-only,
+    lock-free snapshot of every warehouse's available stock.
+    `createPrismaInventoryReader` in `@scos/persistence` implements it;
+  - `ports/submission-store.ts`: the `SubmissionStore` port that persistence
+    implements for SubmitOrder.
 
 Dependencies point inward and one way: `domain/` must not import
 `application/`, and inside `domain/` the order is `shared` <- `pricing`,
 `shipping` <- `ordering` (`shared` imports no other domain folder; `pricing` and
-`shipping` do not import each other or `ordering`). The `.oxlintrc.json` in this
-package enforces both with `no-restricted-imports`.
+`shipping` do not import each other or `ordering`). No file in `src/` may import
+Prisma, `pg`, Hono, or `@scos/persistence`. The `.oxlintrc.json` in this package
+enforces all of this with `no-restricted-imports`. oxlint replaces rule options
+per matching override instead of merging them, so every override repeats the
+adapter-technology ban; keep it in any override you add.
 
 ## Numeric policy
 

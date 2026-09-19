@@ -6,6 +6,7 @@ export const persistencePackage = Object.freeze({
 });
 
 export { createDatabasePool, readDatabaseUrl } from "./database";
+export { createPrismaInventoryReader, type InventoryReaderClient } from "./inventory-reader";
 export { createPrismaClient, Prisma, type PrismaClient } from "./prisma";
 export * from "./records";
 export { seedWarehouses, warehouseSeeds, type SeedQueryable, type WarehouseSeed } from "./seed";

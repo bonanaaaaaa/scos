@@ -22,6 +22,7 @@ describe("@scos/core public entry point", () => {
       "corePackage",
       "createOrder",
       "createSubmitOrder",
+      "createVerifyOrder",
       "destinationSchema",
       "estimateOrder",
       "generateOrderNumber",
