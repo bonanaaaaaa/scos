@@ -22,7 +22,7 @@ done
 command -v node >/dev/null 2>&1 || die 'Install the Node.js version in .node-version first.'
 required_node="$(tr -d '[:space:]' < .node-version)"
 [[ "$(node --version)" == "v${required_node#v}" ]] || die "Use Node.js ${required_node#v}, then rerun ./dev.sh."
-command -v corepack >/dev/null 2>&1 || die 'Install Corepack, then run ./setup.sh.'
+command -v pnpm >/dev/null 2>&1 || die 'Install pnpm, then run ./setup.sh.'
 command -v docker >/dev/null 2>&1 || die 'Install Docker first.'
 docker info >/dev/null 2>&1 || die 'Start Docker, then rerun ./dev.sh.'
 
@@ -118,7 +118,7 @@ server_version_num="$(docker exec "$container" psql -X -At -U "$pg_user" -d post
 (( server_version_num >= 180000 )) \
   || die "PostgreSQL 18 or newer is required (uuidv7() is built in from 18); the shared container reports server_version_num $server_version_num."
 printf 'Applying migrations and seed data to %s...\n' "$database_name"
-corepack pnpm exec turbo run db:seed --filter=@scos/persistence --output-logs=errors-only \
+pnpm exec turbo run db:seed --filter=@scos/persistence --output-logs=errors-only \
   || die 'Database migration or seeding failed; see the output above.'
 # Match the reference launcher: increment from the preferred port until free.
 # Parse .env as data; exported PORT takes precedence over the file.
@@ -135,7 +135,7 @@ for (let port = Number(preferred); port <= 65535; port++) {
     server.once('error', error => error.code === 'EADDRINUSE' ? resolve(false) : reject(error));
     server.listen(port, () => server.close(() => resolve(true)));
   });
-  if (available) { console.log(port); process.exit(0); }
+  if (available) { console.log(String(port)); process.exit(0); }
 }
 console.error('No available API port at or above the preferred port.');
 process.exit(1);
@@ -145,4 +145,4 @@ export PORT
 printf '\nStarting API at http://localhost:%s (health: /health).\n' "$PORT"
 printf 'Ctrl+C stops only this API. The shared container and worktree database remain available.\n\n'
 # Development only: pass the generated database URL to the persistent Turbo task.
-exec corepack pnpm exec turbo run dev --filter=@scos/api --env-mode=loose
+exec pnpm exec turbo run dev --filter=@scos/api --env-mode=loose

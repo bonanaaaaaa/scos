@@ -5,10 +5,10 @@ Backend workspace for ordering SCOS Station P1 Pro devices. This foundation cont
 ## Prerequisites
 
 - Node.js 24.15.0 (also pinned in `.node-version` and `.nvmrc`)
-- Corepack
+- pnpm (any recent version; it switches to the pinned version itself)
 - Docker with Compose
 
-The repository pins pnpm 12.4.2 through `packageManager`. Run pnpm through Corepack so the pinned version is used.
+The repository pins pnpm 12.4.2 through `packageManager`. Run `pnpm` directly: pnpm reads the pin and switches to that version itself. Corepack is not used, because pnpm refuses to switch versions when it runs under Corepack.
 
 ## Quick local development
 
@@ -26,13 +26,13 @@ configuration. Ctrl+C stops the API while preserving the shared database.
 ## Install and verify
 
 ```sh
-corepack pnpm install --frozen-lockfile
-corepack pnpm exec tsc --version
-corepack pnpm build
-corepack pnpm typecheck
-corepack pnpm lint
-corepack pnpm format:check
-corepack pnpm test
+pnpm install --frozen-lockfile
+pnpm exec tsc --version
+pnpm build
+pnpm typecheck
+pnpm lint
+pnpm format:check
+pnpm test
 ```
 
 The compiler command must report `Version 7.0.2`. The separate quality commands build every package, type-check, lint with Oxlint, check formatting with Oxfmt, and run the current Vitest suites through Turbo. Each unit suite enforces at least 80% statement, branch, function, and line coverage. Coverage summaries are written to `coverage/` at the repository root and in each tested package.
@@ -60,19 +60,19 @@ The API serves `POST /api/v1/orders/verify`, `POST /api/v1/orders`, and `GET /he
 
 ```sh
 export DATABASE_URL=postgresql://scos:scos@localhost:5432/scos
-corepack pnpm api:dev
+pnpm api:dev
 ```
 
 The server listens on port 3000 by default. Set `PORT` to use a different port:
 
 ```sh
-PORT=8080 corepack pnpm api:dev
+PORT=8080 pnpm api:dev
 ```
 
 For a production-style local start, Turbo builds the API and its workspace dependencies before running the bundled server:
 
 ```sh
-PORT=8080 corepack pnpm api:start
+PORT=8080 pnpm api:start
 ```
 
 Check application liveness with `curl http://localhost:8080/health`. The endpoint returns HTTP 200 with `{"status":"ok"}` and does not require PostgreSQL to be reachable.
@@ -93,7 +93,7 @@ Run the real-database integration harness:
 
 ```sh
 DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
-  corepack pnpm test:integration
+  pnpm test:integration
 ```
 
 The harness creates a uniquely named schema, proves a transaction rollback leaves no rows, and drops the schema when the test completes. The persistence schema tests create a uniquely named database beside `scos_test` for each test file, apply the real migrations, and drop it afterwards. Database integration tasks are uncached.
@@ -111,8 +111,8 @@ To deliberately remove the persistent development database as well, run `docker 
 The PostgreSQL schema, Prisma client, migrations, and warehouse seed live in `packages/persistence`. With `DATABASE_URL` exported:
 
 ```sh
-corepack pnpm db:migrate   # apply pending migrations
-corepack pnpm db:seed      # apply migrations, then insert missing seed warehouses
+pnpm db:migrate   # apply pending migrations
+pnpm db:seed      # apply migrations, then insert missing seed warehouses
 ```
 
 Seeding never replenishes consumed stock. The destructive `db:reset` requires `SCOS_CONFIRM_DATABASE_RESET` to match the target database name. See [database schema](docs/database-schema.md) for the entity relationships and schema decisions, and [local development](docs/local-development.md) for command details.

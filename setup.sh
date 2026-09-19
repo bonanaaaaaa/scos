@@ -9,7 +9,7 @@ die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 case "${1:-}" in
   -h|--help)
-    printf 'Usage: ./setup.sh\nCheck Node/Corepack/Docker, prepare .env, and install locked dependencies.\n'
+    printf 'Usage: ./setup.sh\nCheck Node/pnpm/Docker, prepare .env, and install locked dependencies.\n'
     exit 0 ;;
   '') ;;
   *) die "Unknown argument: $1. Use --help." ;;
@@ -23,15 +23,15 @@ done
 command -v node >/dev/null 2>&1 || die 'Install the Node.js version in .node-version first.'
 required_node="$(tr -d '[:space:]' < .node-version)"
 [[ "$(node --version)" == "v${required_node#v}" ]] || die "Use Node.js ${required_node#v} (see .node-version), then rerun setup."
-command -v corepack >/dev/null 2>&1 || die 'Install Corepack, then rerun setup.'
+command -v pnpm >/dev/null 2>&1 || die 'Install pnpm (it switches to the version pinned in packageManager), then rerun setup.'
 command -v docker >/dev/null 2>&1 || die 'Install Docker with Docker Compose, then rerun setup.'
 docker compose version >/dev/null 2>&1 || die 'Docker Compose v2 is required.'
 docker info >/dev/null 2>&1 || die 'Start Docker, then rerun setup.'
 
 required_pnpm="$(node -p 'require("./package.json").packageManager')"
 [[ "$required_pnpm" == pnpm@* ]] || die 'package.json must pin pnpm in packageManager.'
-actual_pnpm="$(corepack pnpm --version)"
-[[ "pnpm@$actual_pnpm" == "${required_pnpm%%+*}" ]] || die "Corepack must select $required_pnpm; found pnpm@$actual_pnpm."
+actual_pnpm="$(pnpm --version)"
+[[ "pnpm@$actual_pnpm" == "${required_pnpm%%+*}" ]] || die "pnpm must switch to $required_pnpm from packageManager; found pnpm@$actual_pnpm. Use pnpm 9.7 or newer with manage-package-manager-versions enabled."
 
 if [[ -e .env ]]; then
   printf 'Keeping existing .env.\n'
@@ -41,5 +41,5 @@ else
 fi
 
 printf 'Installing locked workspace dependencies...\n'
-corepack pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile
 printf '\nSetup complete. Run ./dev.sh to start the shared database and this worktree API.\n'

@@ -1,4 +1,4 @@
 # Format and lint the staged files, then type-check the workspace as CI does.
 # Bypass once with `git commit --no-verify`, or disable hooks with HUSKY=0.
-corepack pnpm exec lint-staged
-corepack pnpm exec turbo run typecheck --output-logs=errors-only
+pnpm exec lint-staged
+pnpm exec turbo run typecheck --output-logs=errors-only

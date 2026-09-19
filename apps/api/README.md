@@ -335,9 +335,9 @@ limit), for tests.
 
 ```sh
 export DATABASE_URL=postgresql://scos:scos@localhost:5432/scos
-corepack pnpm db:seed        # migrate and seed warehouses
-corepack pnpm api:dev        # watch mode (or ./dev.sh, which sets DATABASE_URL)
-corepack pnpm api:start      # built bundle
+pnpm db:seed        # migrate and seed warehouses
+pnpm api:dev        # watch mode (or ./dev.sh, which sets DATABASE_URL)
+pnpm api:start      # built bundle
 ```
 
 ## Tests
@@ -345,11 +345,11 @@ corepack pnpm api:start      # built bundle
 ```sh
 # Unit tests (no database): contracts, handlers with fake use cases, config,
 # composition, and the entrypoint spawned as a subprocess.
-corepack pnpm --filter @scos/api test
+pnpm --filter @scos/api test
 
 # Full-stack tests through the composed app against real PostgreSQL.
 DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
-  corepack pnpm exec turbo run test:integration --filter=@scos/api
+  pnpm exec turbo run test:integration --filter=@scos/api
 ```
 
 The integration tests (`test/*.integration.test.ts`) create an isolated,
