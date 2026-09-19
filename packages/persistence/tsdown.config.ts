@@ -7,7 +7,7 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     database: "src/database.ts",
-    // Integration-test harness for this package and its composers (apps/api).
+    // Integration-test harness for this package and the API's full-stack tests.
     testing: "src/testing.ts",
     "bin/seed": "src/bin/seed.ts",
     "bin/confirm-reset": "src/bin/confirm-reset.ts",

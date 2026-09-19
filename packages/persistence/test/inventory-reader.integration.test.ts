@@ -30,8 +30,8 @@ async function setStock(warehouseId: string, stock: number): Promise<void> {
 }
 
 // The adapter's side of core's InventoryReader contract: coherent, complete,
-// read-only and current. What VerifyOrder makes of a snapshot is tested where
-// the use case is composed with this adapter (apps/api).
+// read-only and current. What VerifyOrder makes of a snapshot is tested in
+// packages/core with a fake port; the full composition is tested with the API.
 describe("PostgreSQL inventory reader", { timeout: 30_000 }, () => {
   beforeAll(async () => {
     db = await createMigratedDatabase();

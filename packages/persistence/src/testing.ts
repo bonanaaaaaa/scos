@@ -1,9 +1,8 @@
 /**
  * Integration-test support, exported as `@scos/persistence/testing`.
  *
- * Tests that need a real PostgreSQL, in this package or in one that composes
- * it with `@scos/core` (such as `apps/api`), share this harness so the
- * isolation guards exist once. It has no test-runner dependency. Never import
+ * Tests that need a real PostgreSQL, in this package or in the API's
+ * full-stack tests, share this harness so the isolation guards exist once. It has no test-runner dependency. Never import
  * it from runtime code.
  *
  * @module

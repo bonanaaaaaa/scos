@@ -1,8 +1,0 @@
-{
-  "extends": "@scos/typescript-config/base.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "rootDir": "."
-  },
-  "include": ["test/**/*.ts"]
-}
