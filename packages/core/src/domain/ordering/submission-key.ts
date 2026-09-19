@@ -29,6 +29,10 @@ export const SUBMISSION_KEY_MAX_LENGTH = 255;
  *
  * The length is counted in UTF-16 code units (`string.length`), which is never
  * less than PostgreSQL's `char_length`, so every accepted key fits the column.
+ * PostgreSQL `text` cannot store U+0000 (it fails with `22021`), and a lone
+ * UTF-16 surrogate would be re-encoded as U+FFFD, so two different keys could
+ * be stored as the same one. Both are rejected here, before any lookup.
+ *
  * Callers use `.safeParse` (see "Error handling" in packages/core/README.md).
  */
 export const submissionKeySchema = z
@@ -37,6 +41,12 @@ export const submissionKeySchema = z
   .max(SUBMISSION_KEY_MAX_LENGTH)
   .refine((key) => key.trim() === key, {
     message: "Submission key must not have leading or trailing whitespace.",
+  })
+  .refine((key) => !key.includes("\u0000"), {
+    message: "Submission key must not contain the NUL character (U+0000).",
+  })
+  .refine((key) => key.isWellFormed(), {
+    message: "Submission key must be well-formed Unicode (no lone surrogates).",
   })
   .brand<"SubmissionKey">();
 

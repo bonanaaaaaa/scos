@@ -2,6 +2,35 @@
   "$schema": "../../node_modules/oxlint/configuration_schema.json",
   "overrides": [
     {
+      "files": ["src/application/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@prisma/*",
+                  "prisma",
+                  "pg",
+                  "pg-*",
+                  "hono",
+                  "hono/*",
+                  "@hono/*",
+                  "@scos/persistence",
+                  "@scos/persistence/*",
+                  "@scos/api",
+                  "@scos/api/*",
+                  "node:*"
+                ],
+                "message": "Hexagonal layering: application/ must not import adapters or infrastructure (Prisma, pg, Hono, @scos/persistence, node:*); declare a port in application/ports instead."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["src/domain/**"],
       "rules": {
         "no-restricted-imports": [

@@ -17,8 +17,10 @@ import only the package root (`src/index.ts`).
     limit;
   - `ordering/`: the order request and submission key schemas,
     `estimateOrder`, and the `Order` aggregate.
-- `src/application/` (added with the use cases): VerifyOrder / SubmitOrder and
-  the driven ports that persistence implements.
+- `src/application/`: the SubmitOrder use case (`createSubmitOrder`) and, in
+  `ports/`, the driven `SubmissionStore` port that persistence implements.
+  `application/` must not import adapters or infrastructure (Prisma, `pg`,
+  Hono, `@scos/persistence`, `node:*`).
 
 Dependencies point inward and one way: `domain/` must not import
 `application/`, and inside `domain/` the order is `shared` <- `pricing`,
@@ -87,6 +89,26 @@ Inbound adapters (#9–#11) must follow this mapping:
 - `DomainError` (and any other thrown error) -> HTTP 500, without leaking
   internal details.
 
+### SubmitOrder outcomes
+
+`createSubmitOrder({ store })` returns `submitOrder(input)`, which validates
+`{ submissionId, quantity, latitude, longitude }` before any port call and
+resolves to one application outcome. Outcomes are never HTTP statuses; the API
+adapter maps them as in [design decisions](../../docs/design-decisions.md):
+
+| Outcome                                    | Meaning                                                                                                                                  | Adapter mapping                               |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `invalid` with `issues`                    | Malformed input; every problem has its `path`. Nothing was read or written                                                               | 400                                           |
+| `accepted` with `order`, `replayed: false` | A new Order was stored and its stock deducted                                                                                            | 201                                           |
+| `accepted` with `order`, `replayed: true`  | The key already belongs to an Order with the same quantity and Destination; it is returned unchanged, with no recalculation or deduction | the success status chosen by the API contract |
+| `rejected` with `reason` and `estimate`    | `INSUFFICIENT_STOCK` or `SHIPPING_EXCEEDS_LIMIT` against current stock; nothing stored, key unused                                       | 422                                           |
+| `conflict`                                 | The key belongs to an Order with a different quantity or Destination; that Order is unchanged and none of its details are returned       | 409                                           |
+| `unavailable` with `attempts`              | Every attempt failed transiently; nothing committed, key unused, safe to repeat                                                          | the documented transient-failure response     |
+
+Inputs are compared after parsing, so JSON property order and `-0` versus `0`
+do not matter. Transient failures are retried at most `MAX_SUBMISSION_ATTEMPTS`
+(3) times in total; business rejections are never retried.
+
 ## Supported input bounds
 
 Enforced by the exported Zod schemas:
@@ -106,8 +128,10 @@ Enforced by the exported Zod schemas:
   with the rules above, parsed to a frozen `{ quantity, destination }`.
 - **Submission key (`submissionKeySchema`):** the client's retry key, stored on
   the accepted Order as its unique `submission_key` (ADR 0004). A string of 1 to
-  255 characters with no leading or trailing whitespace; keys are rejected, not
-  trimmed, so the stored key is exactly what the client sent.
+  255 characters with no leading or trailing whitespace, no NUL character
+  (PostgreSQL `text` cannot store U+0000), and no lone UTF-16 surrogates (they
+  would be stored as U+FFFD, so two distinct keys could collide). Keys are
+  rejected, not trimmed, so the stored key is exactly what the client sent.
 
 ### Overflow behaviour of `estimateOrder`
 

@@ -1,6 +1,6 @@
 /**
- * Public API of the Ordering domain. Adapters import only from here, never
- * from `./domain/*` directly.
+ * Public API of the Ordering domain and its application use cases. Adapters
+ * import only from here, never from `./domain/*` or `./application/*` directly.
  *
  * @see docs/architecture.md, "Domain model"
  * @module
@@ -31,8 +31,39 @@ export {
   estimateOrder,
 } from "./domain/ordering/estimate";
 export { MONEY_MAX_STRING, Money } from "./domain/shared/money";
-export { type CreateOrderInput, type Order, createOrder } from "./domain/ordering/order";
+export {
+  type CreateOrderInput,
+  type NewOrder,
+  type Order,
+  type OrderAllocation,
+  type OrderAllocations,
+  type StoredOrder,
+  createOrder,
+  restoreOrder,
+} from "./domain/ordering/order";
+export { ORDER_NUMBER_PATTERN, generateOrderNumber } from "./domain/ordering/order-number";
 export { type OrderRequest, orderRequestSchema } from "./domain/ordering/order-request";
 export { type SubmissionKey, submissionKeySchema } from "./domain/ordering/submission-key";
 export type { DiscountRate } from "./domain/pricing/pricing";
 export { MAX_QUANTITY, type Quantity, quantitySchema } from "./domain/shared/quantity";
+
+export {
+  type SubmissionStore,
+  type SubmissionTransaction,
+  SubmissionKeyTakenError,
+  TransientSubmissionError,
+} from "./application/ports/submission-store";
+export {
+  type AcceptedSubmission,
+  type ConflictingSubmission,
+  type InvalidSubmission,
+  MAX_SUBMISSION_ATTEMPTS,
+  type RejectedSubmission,
+  type SubmitOrder,
+  type SubmitOrderDependencies,
+  type SubmitOrderInput,
+  type SubmitOrderIssue,
+  type SubmitOrderOutcome,
+  type UnavailableSubmission,
+  createSubmitOrder,
+} from "./application/submit-order";
