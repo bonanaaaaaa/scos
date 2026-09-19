@@ -47,6 +47,15 @@ body:
     validations:
       required: true
   - type: textarea
+    id: diagram
+    attributes:
+      label: Diagram
+      description: >-
+        Optional. Prefer an SVG diagram: upload the .svg here, or link one committed under
+        docs/images/ by commit SHA (relative paths do not resolve in issues). Keep it legible on
+        light and dark backgrounds. Use Mermaid only when an SVG is impractical.
+      placeholder: "![Request flow](https://github.com/bonanaaaaaa/scos/blob/<commit-sha>/docs/images/<diagram>.svg?raw=true)"
+  - type: textarea
     id: references
     attributes:
       label: References
