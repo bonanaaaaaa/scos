@@ -76,9 +76,11 @@ flowchart LR
      (the per-request client is described under **Cloudflare Worker** below).
      The submission transaction already sets its timeouts with
      `set_config(..., true)`, which is transaction-local and so survives
-     Hyperdrive resetting pooled connections; #28 must confirm that, and that
-     nothing relies on session state. Hyperdrive query caching stays disabled
-     so inventory reads are never stale.
+     Hyperdrive resetting pooled connections. #28 confirmed that, and that
+     nothing relies on session state, against a simulated transaction pooler;
+     #33 checks it through a real Hyperdrive. Hyperdrive query caching stays
+     disabled so inventory reads are never stale. See the
+     [Cloudflare deployment design](cloudflare-deployment-design.md).
    - **Lambda connections (#14, deferred):** each Lambda execution environment has its
      own in-process pg pool and serves one request at a time. Nothing sets the
      pool size yet (pg defaults to 10); the recommendation is for #14 to apply
@@ -100,7 +102,8 @@ flowchart LR
      through a Hyperdrive binding and opens a pool and Prisma client per
      request (Workers forbid sharing sockets across requests). It uses
      `@scos/persistence`'s `workerd` build, which is the same adapters over a
-     Prisma client generated for workerd. The Hyperdrive design is #28, the
+     Prisma client generated for workerd. The Hyperdrive design is #28
+     ([design record](cloudflare-deployment-design.md)), the
      deployment pipeline is #15, and the hosted demonstration is #33.
    - **Driven adapters** are called by the application. `packages/persistence`
      implements the ports with Prisma and SQL.

@@ -20,4 +20,4 @@ Consequences:
 - The Terraform state holds the runtime role's password (Hyperdrive's origin credential), so the state bucket is treated as a secret.
 - Telemetry needs its own Workers composition, because the Node SDK setup and `PinoInstrumentation` do not run in a bundled Worker. #17 delivered it (`apps/api/src/telemetry/workers/`), exporting per request under `ctx.waitUntil`.
 - #15 now delivers the Cloudflare pipeline. When the AWS track resumes it needs a pipeline issue of its own (`infra/aws/`, GitHub OIDC, Lambda) between #14 and #16.
-- Work is tracked in #28 (Worker runtime and Hyperdrive design), #15 (bootstrap, Terraform, and pipeline), and #33 (hosted demonstration).
+- Work is tracked in #28 (Worker runtime and Hyperdrive design), #15 (bootstrap, Terraform, and pipeline), and #33 (hosted demonstration). #28's design record is [docs/cloudflare-deployment-design.md](../cloudflare-deployment-design.md).

@@ -1,5 +1,6 @@
 // Cloudflare Worker for the SCOS API (issue #17: runtime and telemetry;
-// issue #28: provisioning and deployment). See docs/observability.md,
+// issue #28: Hyperdrive design, docs/cloudflare-deployment-design.md;
+// issue #15: provisioning and deployment). See docs/observability.md,
 // "Cloudflare Workers runtime", and apps/api/README.md.
 //
 // Wrangler bundles src/entrypoints/worker.ts with esbuild. No secret belongs
@@ -24,8 +25,9 @@
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      // Placeholder: #28 injects the Hyperdrive configuration ID Terraform
-      // outputs. Nothing here reaches Cloudflare in this repository.
+      // Placeholder: #15's pipeline injects the Hyperdrive configuration ID
+      // its Terraform outputs. Nothing here reaches Cloudflare in this
+      // repository.
       "id": "00000000000000000000000000000000",
       // `wrangler dev` and the Workers tests connect straight to this local
       // PostgreSQL (the docker compose database; local-only credentials, the
@@ -44,8 +46,8 @@
     "traces": { "enabled": false },
   },
   // Non-secret telemetry settings (docs/observability.md, "Configuration").
-  // Traces and metrics are off until an OTLP endpoint is configured; #28 sets
-  // the endpoint per environment.
+  // Traces and metrics are off until an OTLP endpoint is configured; #15 sets
+  // the endpoint per environment and #33 verifies it.
   "vars": {
     "OTEL_SERVICE_NAME": "scos-api",
     "DEPLOYMENT_ENVIRONMENT": "local",

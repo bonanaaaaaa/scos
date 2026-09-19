@@ -166,7 +166,8 @@ The same API runs as a Cloudflare Worker (`wrangler.jsonc`). It is the first
 hosted target, reaching PlanetScale Postgres through Hyperdrive; the AWS Lambda
 deployment is deferred
 ([ADR 0005](../../docs/adr/0005-cloudflare-first-deployment.md)). The Hyperdrive
-design is #28, the deployment pipeline is #15, and the hosted demonstration is
+design is #28 ([design record](../../docs/cloudflare-deployment-design.md)),
+the deployment pipeline is #15, and the hosted demonstration is
 #33; this package holds the runtime and runs it locally without a Cloudflare
 account.
 
@@ -187,8 +188,11 @@ account.
   [docs/observability.md](../../docs/observability.md#cloudflare-workers-runtime)).
 - Hosted, Hyperdrive pools in transaction mode and resets a connection when
   it returns to the pool. The submission transaction's
-  `set_config(..., true)` timeouts are transaction-local, so they should carry
-  over; #28 verifies that, and that nothing relies on session state.
+  `set_config(..., true)` timeouts are transaction-local, so they carry over.
+  #28 confirmed that, and that nothing relies on session state, against a
+  simulated transaction pooler
+  ([design record](../../docs/cloudflare-deployment-design.md)); #33 checks it
+  through a real Hyperdrive.
   Hyperdrive query caching stays disabled, so inventory reads are never stale.
 
 ```sh
