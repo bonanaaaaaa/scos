@@ -15,7 +15,9 @@
 //     and the local-only `localConnectionString` is dropped;
 //   - non-secret telemetry `vars` come from the environment (allow-list below);
 //   - the placement hint (WORKER_PLACEMENT_REGION, default aws:ap-southeast-1,
-//     `none` to omit).
+//     `none` to omit);
+//   - Cloudflare's automatic tracing, on unless the application exports its
+//     own traces over OTLP, so exactly one tracer records each request.
 // Nothing secret is written: OTEL_EXPORTER_OTLP_HEADERS is only validated
 // here, then uploaded as a Worker secret by the workflow.
 
@@ -136,6 +138,26 @@ if (placementRegion !== "none" && !/^(aws|gcp|azure):[a-z0-9-]+$/.test(placement
   fail("WORKER_PLACEMENT_REGION must look like aws:ap-southeast-1, or be none.");
 }
 
+// One tracer per request: the application's OTLP spans when trace export is
+// on, otherwise Cloudflare's automatic traces.
+const sdkEnabled = vars.OTEL_SDK_DISABLED !== "true";
+const appExportsTraces = vars.OTEL_TRACES_EXPORTER === "otlp" && sdkEnabled;
+// OTLP with no endpoint would fall back to localhost, unreachable from a
+// deployed Worker: every span or metric silently dropped (and, for traces,
+// Cloudflare's tracing switched off). A configuration error, so fail.
+for (const [signal, exporter, specific] of [
+  ["traces", vars.OTEL_TRACES_EXPORTER, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"],
+  ["metrics", vars.OTEL_METRICS_EXPORTER, "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"],
+]) {
+  if (sdkEnabled && exporter === "otlp" && !vars[specific] && !vars.OTEL_EXPORTER_OTLP_ENDPOINT) {
+    fail(`OTLP ${signal} export needs ${specific} or OTEL_EXPORTER_OTLP_ENDPOINT.`);
+  }
+}
+const observability = {
+  ...config.observability,
+  traces: { ...config.observability?.traces, enabled: !appExportsTraces },
+};
+
 const outDir = dirname(out);
 const rel = (path) => relative(outDir, path) || ".";
 const { alias: _alias, main: _main, $schema: _schema, ...rest } = config;
@@ -150,6 +172,7 @@ const deployConfig = {
   rules: [{ type: "CompiledWasm", globs: ["**/*.wasm"], fallthrough: false }],
   hyperdrive: [{ binding: "HYPERDRIVE", id: hyperdriveId }],
   vars,
+  observability,
   ...(placementRegion === "none" ? {} : { placement: { region: placementRegion } }),
 };
 
@@ -175,3 +198,6 @@ writeFileSync(out, `${JSON.stringify(deployConfig, null, 2)}\n`);
 console.log(`Wrote ${out}`);
 console.log(`Worker vars: ${Object.keys(vars).sort().join(", ")}`);
 console.log(`Placement: ${placementRegion}`);
+console.log(
+  `Cloudflare traces: ${appExportsTraces ? "off (the application exports traces over OTLP)" : "on"}`,
+);

@@ -170,6 +170,9 @@ separate deploy configuration on the runner. It:
   files as built;
 - sets the non-secret `vars` from the environment (allow-list) and the
   placement hint;
+- keeps Cloudflare's automatic tracing on unless `OTEL_TRACES_EXPORTER` is
+  `otlp` (and the SDK is not disabled), so one tracer records each request
+  ([observability](observability.md));
 - validates the result with the Worker's own `parseWorkerConfig`, including
   `OTEL_EXPORTER_OTLP_HEADERS` from the secret, and fails with
   `NAME: reason` lines and no values.
