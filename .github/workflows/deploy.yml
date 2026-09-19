@@ -448,6 +448,26 @@ jobs:
           ./node_modules/.bin/tsx ../../infra/cloudflare/scripts/worker-deploy-config.mjs \
             --bundle "$WORK/bundle" --hyperdrive-id "$HYPERDRIVE_ID" \
             --out "$WORK/wrangler.deploy.json"
+      - name: Ensure a workers.dev subdomain
+        id: subdomain
+        # Wrangler registers one only interactively and fails in CI when the
+        # account has none. This makes the same API call once; an existing
+        # subdomain is kept. WORKERS_DEV_SUBDOMAIN (environment variable) picks
+        # the name for a new one, default scos-<repository owner>.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          WORKERS_DEV_SUBDOMAIN: ${{ vars.WORKERS_DEV_SUBDOMAIN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          name=${WORKERS_DEV_SUBDOMAIN:-scos-${OWNER,,}}
+          result=$(infra/cloudflare/scripts/ensure-workers-subdomain.sh "$name")
+          # A new subdomain can take minutes to resolve; the health check
+          # waits longer in that run.
+          if [[ $result == registered* ]]; then
+            echo "registered=true" >>"$GITHUB_OUTPUT"
+          fi
       - name: Deploy the Worker (wrangler deploy, no rebuild)
         working-directory: apps/api
         env:
@@ -486,6 +506,8 @@ jobs:
       - name: Check GET /health on the deployed Worker
         env:
           WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
+          # 2 minutes normally; 10 when this run registered the subdomain.
+          HEALTH_TRIES: ${{ steps.subdomain.outputs.registered == 'true' && '60' || '12' }}
         run: |
           set -euo pipefail
           base=${WORKER_BASE_URL:-$WORKER_URL_FROM_DEPLOY}
@@ -496,7 +518,7 @@ jobs:
           # 200 with {"status":"ok"} means the configuration validated: an
           # invalid one makes the Worker answer 500 to every request. It does
           # not prove database connectivity (docs/deployment-pipeline.md).
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 "$HEALTH_TRIES"); do
             body=$(curl -fsS --max-time 10 "${base%/}/health" || true)
             if [[ $(jq -r '.status? // empty' <<<"$body" 2>/dev/null) == ok ]]; then
               echo "Healthy after $attempt attempt(s): ${base%/}/health"
