@@ -329,10 +329,22 @@ issue_credential() {
     # password, which only the reset returns).
     out="$(jq -c --argjson listed "$listed" '($listed | del(.password)) + with_entries(select(.value != null))' <<<"$out" 2>/dev/null)" ||
       die "pscale role reset $name returned unparseable output. Rotate it again."
-    if [[ "$kind" == migration && -z "$(jq -r '.database_name // empty | strings' <<<"$out")" ]]; then
-      log "pscale role reset did not report database_name; using '$ORIGIN_DATABASE_FALLBACK' for the migration URL."
-      out="$(jq -c --arg db "$ORIGIN_DATABASE_FALLBACK" '.database_name = $db' <<<"$out")"
-    fi
+  fi
+  # pscale's role JSON (create and reset) has no database_name: its own
+  # database_url always uses "postgres" (pscale 0.337.0,
+  # internal/cmd/role/reset_default.go). Use the configured name instead.
+  if [[ -z "$(jq -r '.database_name // empty | strings' <<<"$out")" ]]; then
+    out="$(jq -c --arg db "$ORIGIN_DATABASE_FALLBACK" '.database_name = $db' <<<"$out")"
+  fi
+  # access_host_url may carry a port (pscale itself splits host:port, else
+  # uses 5432). Keep the bare host; Hyperdrive and the migration check assume
+  # 5432, so any other port stops the run before a credential is exported.
+  local port
+  port="$(jq -r '.access_host_url // "" | strings | capture(":(?<p>[0-9]+)$").p // empty' <<<"$out" 2>/dev/null || true)"
+  if [[ -n "$port" ]]; then
+    [[ "$port" == 5432 ]] ||
+      die "pscale role $action $name reports port $port; this pipeline assumes 5432. Nothing was exported; rotate the role once that is supported: docs/deployment-pipeline.md#role-credentials-in-the-state."
+    out="$(jq -c '.access_host_url |= sub(":[0-9]+$"; "")' <<<"$out")"
   fi
   local password url
   # A missing field fails here; jq's error names the field, never a value.
@@ -343,7 +355,7 @@ issue_credential() {
     export_env BOOTSTRAP_PLANETSCALE_RUNTIME_PASSWORD "$password"
   else
     url="$(jq -r "$JQ_REQUIRE$JQ_MIGRATION_URL" <<<"$out" 2>/dev/null)" ||
-      die "pscale role $action $name lacks username, password, access_host_url or database_name. Nothing was exported; rotate the role: docs/deployment-pipeline.md#role-credentials-in-the-state."
+      die "pscale role $action $name lacks username, password or access_host_url. Nothing was exported; rotate the role: docs/deployment-pipeline.md#role-credentials-in-the-state."
     mask "$url"
     export_env BOOTSTRAP_MIGRATION_DATABASE_URL "$url"
     url=""
@@ -359,7 +371,9 @@ issue_credential() {
 publish_connection_values() {
   local runtime="$1" migration="$2"
   local host user dbname migration_user
-  host="$(non_secret_field "$runtime" access_host_url '^[A-Za-z0-9.-]+$')"
+  # A listed (existing) role may report host:5432 too; keep the bare host.
+  host="$(non_secret_field "$runtime" access_host_url '^[A-Za-z0-9.-]+(:5432)?$')"
+  host="${host%:5432}"
   user="$(non_secret_field "$runtime" username '^[A-Za-z0-9._-]+$')"
   dbname="$(non_secret_field "$runtime" database_name '^[A-Za-z0-9_-]+$')"
   migration_user="$(non_secret_field "$migration" username '^[A-Za-z0-9._-]+$')"

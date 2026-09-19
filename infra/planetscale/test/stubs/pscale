@@ -2,6 +2,7 @@
 # Test stub for the PlanetScale CLI. State lives in $STUB_STATE; every call is
 # appended to $STUB_STATE/calls.log (arguments only, never stdin).
 # STUB_ROLE_OMIT=<field> drops that field from `role create` output.
+# STUB_HOST_PORT=<port> appends :<port> to access_host_url, as the API may.
 set -euo pipefail
 
 state="${STUB_STATE:?}"
@@ -49,7 +50,7 @@ case "${1:-} ${2:-}" in
     [[ -f "$file" ]] || continue
     name="$(basename "$file")"
     [[ -z "$filter" || "$name" == *"$filter"* ]] || continue
-    printf '%s{"id":"id-%s","name":"%s","username":"%s.stubbranch","status":"active","access_host_url":"ap-southeast.pg.psdb.cloud"}' "$sep" "$name" "$name" "$name"
+    printf '%s{"id":"id-%s","name":"%s","username":"%s.stubbranch","status":"active","access_host_url":"ap-southeast.pg.psdb.cloud%s"}' "$sep" "$name" "$name" "$name" "${STUB_HOST_PORT:+:$STUB_HOST_PORT}"
     sep=","
   done
   printf ']\n'
@@ -61,7 +62,8 @@ case "${1:-} ${2:-}" in
   printf '%s\n' "$password" >>"$state/passwords"
   jq -nc --arg name "$name" --arg password "$password" \
     --arg omit "${STUB_ROLE_OMIT:-}" \
-    '{id: ("id-" + $name), name: $name, username: ($name + ".stubbranch"), password: $password, access_host_url: "ap-southeast.pg.psdb.cloud", database_name: "postgres", database_url: ("postgresql://" + $name + ":" + $password + "@ap-southeast.pg.psdb.cloud:5432/postgres")} | if $omit == "" then . else del(.[$omit]) end'
+    --arg hp "${STUB_HOST_PORT:+:$STUB_HOST_PORT}" \
+    '{id: ("id-" + $name), name: $name, username: ($name + ".stubbranch"), password: $password, access_host_url: ("ap-southeast.pg.psdb.cloud" + $hp), database_url: ("postgresql://" + $name + ":" + $password + "@ap-southeast.pg.psdb.cloud:5432/postgres?sslmode=verify-full")} | if $omit == "" then . else del(.[$omit]) end'
   ;;
 "role reset")
   # pscale role reset <db> <branch> <role-id> --force: a new password for an
@@ -73,7 +75,8 @@ case "${1:-} ${2:-}" in
   printf '%s\n' "$password" >>"$state/passwords"
   jq -nc --arg name "$name" --arg password "$password" \
     --arg omit "${STUB_RESET_OMIT:-}" \
-    '{id: ("id-" + $name), name: $name, username: ($name + ".stubbranch"), password: $password, access_host_url: "ap-southeast.pg.psdb.cloud", database_name: "postgres"} | if $omit == "" then . else del(.[$omit]) end'
+    --arg hp "${STUB_HOST_PORT:+:$STUB_HOST_PORT}" \
+    '{id: ("id-" + $name), name: $name, username: ($name + ".stubbranch"), password: $password, access_host_url: ("ap-southeast.pg.psdb.cloud" + $hp), database_url: ("postgresql://" + $name + ":" + $password + "@ap-southeast.pg.psdb.cloud:5432/postgres?sslmode=verify-full")} | if $omit == "" then . else del(.[$omit]) end'
   ;;
 "role reset-default" | "role delete" | "database delete")
   printf '{"status":"ok"}\n'
