@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
     "api:dev": "turbo run dev --filter=@scos/api",
     "api:start": "turbo run start --filter=@scos/api",
     "build": "turbo run build",

@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Run the same typecheck, lint, and format checks as CI before each commit.
+# Enabled by `git config core.hooksPath .githooks` (the package.json prepare
+# script sets it on install). Bypass once with `git commit --no-verify`.
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+if ! corepack pnpm exec turbo run typecheck lint //#lint:root //#format:check:root --output-logs=errors-only; then
+  printf '\npre-commit: checks failed. Fix the errors above; run `corepack pnpm format` for formatting.\n' >&2
+  exit 1
+fi
