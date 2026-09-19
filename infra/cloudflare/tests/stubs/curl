@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Test stub for curl, as ensure-workers-subdomain.sh calls it. Records each
+# call (method only, never headers) and answers from $STUB_STATE.
+set -euo pipefail
+state="${STUB_STATE:?}"
+method=GET
+for arg in "$@"; do [[ "$arg" == PUT ]] && method=PUT; done
+# The Authorization header arrives on stdin; record whether it did.
+header="$(cat)"
+[[ "$header" == "Authorization: Bearer "* ]] && auth=yes || auth=no
+printf '%s auth=%s argv=%s\n' "$method" "$auth" "$*" >>"$state/calls.log"
+if [[ "$method" == GET ]]; then
+  if [[ -f "$state/subdomain" ]]; then
+    printf '{"success":true,"errors":[],"result":{"subdomain":"%s"}}\n' "$(cat "$state/subdomain")"
+  else
+    printf '{"success":false,"errors":[{"code":10007,"message":"workers.api.error.subdomain_not_found"}],"result":null}\n'
+  fi
+else
+  if [[ -n "${STUB_PUT_ERROR:-}" ]]; then
+    printf '{"success":false,"errors":[{"code":10031,"message":"%s"}],"result":null}\n' "$STUB_PUT_ERROR"
+  else
+    name="$(sed -n 's/.*"subdomain":"\([^"]*\)".*/\1/p' <<<"$*")"
+    printf '%s' "$name" >"$state/subdomain"
+    printf '{"success":true,"errors":[],"result":{"subdomain":"%s"}}\n' "$name"
+  fi
+fi

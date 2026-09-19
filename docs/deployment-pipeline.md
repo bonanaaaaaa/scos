@@ -398,7 +398,7 @@ Its permissions are the union of what the three uses need:
 
 - Account: **Hyperdrive Edit** (Terraform's Hyperdrive configuration);
 - Zone: **DNS Edit** on one zone, only if a custom hostname is added;
-- Account: **Workers Scripts Edit** (`wrangler deploy`, rollback, delete);
+- Account: **Workers Scripts Edit** (`wrangler deploy`, rollback, delete, and registering the `workers.dev` subdomain once);
 - whatever `wrangler hyperdrive planetscale signature` needs, which is
   unverified until the first real run (Hyperdrive Edit is the likely one).
 
@@ -542,13 +542,19 @@ actions, never taken by a push:
       never through Hyperdrive. With `seed_demo_data` (manual runs only), the
       seed follows with the same URL.
    7. **Worker:** generate the deploy configuration (with
-      `DEPLOYMENT_ENVIRONMENT` set to the environment name), check `main`
-      again, re-verify the checksums, and `wrangler deploy` the built files
+      `DEPLOYMENT_ENVIRONMENT` set to the environment name); make sure the
+      account has a `workers.dev` subdomain
+      (`infra/cloudflare/scripts/ensure-workers-subdomain.sh`: registers
+      `WORKERS_DEV_SUBDOMAIN`, default `scos-<repository owner>`, only when
+      the account has none, because Wrangler asks for one only
+      interactively and fails in CI; first seen in run 35462498113); check
+      `main` again, re-verify the checksums, and `wrangler deploy` the built files
       (`no_bundle`), with `OTEL_EXPORTER_OTLP_HEADERS` uploaded as a Worker
       secret (`--secrets-file`, a private file removed at once). The dry run
       of this configuration uploads byte-identical modules (checked in CI).
    8. **Health check:** `GET /health` must return `{"status":"ok"}` within 12
-      tries, 10 s apart.
+      tries, 10 s apart (60 tries in the run that registers the `workers.dev`
+      subdomain, which can take minutes to resolve).
    9. Delete the plan and generated files, always.
 
 Any failing step fails the run, and later steps do not run: a failed
@@ -629,7 +635,7 @@ sets:
 Other `prod` variables the pipeline reads: `CLOUDFLARE_ACCOUNT_ID`,
 `TF_STATE_*`, the PlanetScale inputs (`PLANETSCALE_DATABASE`, `_BRANCH`,
 `_REGION`, `_CLUSTER_SIZE`, `MIGRATION_ROLE_NAME`, all with defaults), and the
-optional `WORKER_BASE_URL` and `WORKER_PLACEMENT_REGION`. `PLANETSCALE_HOST`,
+optional `WORKER_BASE_URL`, `WORKER_PLACEMENT_REGION` and `WORKERS_DEV_SUBDOMAIN` (the name for a new `workers.dev` subdomain; ignored once the account has one). `PLANETSCALE_HOST`,
 `HYPERDRIVE_ORIGIN_USER` and `HYPERDRIVE_ORIGIN_DATABASE` are optional
 overrides: the deploy reads the branch host and runtime username from
 PlanetScale on every run and the database name from the stored migration URL

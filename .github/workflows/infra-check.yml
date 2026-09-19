@@ -121,15 +121,17 @@ jobs:
       - name: ShellCheck (pinned)
         run: |
           set -euo pipefail
-          # Every *.sh under infra/, plus the extensionless PlanetScale test stubs.
+          # Every *.sh under infra/, plus the extensionless test stubs.
           mapfile -t scripts < <(
-            { find infra -type f -name '*.sh'; find infra/planetscale/test/stubs -type f 2>/dev/null; } | sort -u
+            { find infra -type f -name '*.sh'; find infra/planetscale/test/stubs infra/cloudflare/tests/stubs -type f 2>/dev/null; } | sort -u
           )
           printf 'Checking %s\n' "${scripts[@]}"
           docker run --rm -v "$PWD:/mnt" -w /mnt "$SHELLCHECK_IMAGE" --version
           docker run --rm -v "$PWD:/mnt" -w /mnt "$SHELLCHECK_IMAGE" "${scripts[@]}"
       - name: Test the PlanetScale bootstrap (stubbed CLIs)
         run: bash infra/planetscale/test/bootstrap.test.sh
+      - name: Test the workers.dev subdomain step (stubbed curl)
+        run: bash infra/cloudflare/tests/ensure-workers-subdomain.test.sh
       - name: Allow-list the secrets the shared deploy workflow reads
         # deploy-prod.yml passes `secrets: inherit`, so deploy.yml could read
         # any repository secret; a new one must be a deliberate change there.
