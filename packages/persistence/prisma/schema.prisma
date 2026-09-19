@@ -20,6 +20,20 @@ generator client {
   generatedFileExtension = "ts"
 }
 
+// The same client for Cloudflare Workers (workerd). The Node.js client above
+// compiles Prisma's query compiler from base64 at run time, which workerd
+// forbids, and reads import.meta.url. This one imports the compiler as a
+// .wasm module and uses Prisma's edge runtime. Only the "workerd" build of
+// this package uses it (tsdown.config.ts, package.json "exports").
+generator workerd {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma-workerd"
+  runtime                = "workerd"
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+  generatedFileExtension = "ts"
+}
+
 datasource db {
   provider = "postgresql"
 }

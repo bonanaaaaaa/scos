@@ -14,3 +14,9 @@ node_modules
 
 # Generated Prisma client (rebuilt by the turbo generate task)
 packages/persistence/src/generated/
+
+# Wrangler (apps/api Worker): local state and local secrets
+.wrangler
+.dev.vars
+.dev.vars.*
+!.dev.vars.example

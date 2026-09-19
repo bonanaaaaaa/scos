@@ -11,11 +11,16 @@ Start at a runtime's entry point and follow the wiring inward:
 
 1. **Entry point** (`src/entrypoints/node.ts`): validates the environment,
    starts telemetry, calls the composition, listens, and shuts down on
-   SIGINT/SIGTERM. Future runtimes add `entrypoints/lambda*.ts` (#14).
+   SIGINT/SIGTERM. The Cloudflare Worker's entry point is
+   `src/entrypoints/worker.ts`: its `fetch` handler validates `env` once per
+   isolate, builds telemetry and the composition, and hands the telemetry
+   flush to `ctx.waitUntil`. Future runtimes add `entrypoints/lambda*.ts` (#14).
 2. **Composition root** (`src/composition/node.ts`): opens the database
    (`composition/database.ts`), builds the persistence adapters and use cases,
    wraps them in the telemetry decorators, and calls `createApp`. It returns
-   `{ app, close }`.
+   `{ app, close }`. The Worker's (`src/composition/worker.ts`) builds the
+   same app once per isolate and opens a pool and Prisma client over the
+   Hyperdrive binding per request (see [Cloudflare Worker](#cloudflare-worker)).
 3. **App** (`src/app.ts`): `createApp` mounts the endpoint apps. It only takes
    use cases that already exist; it opens nothing and reads no environment.
 4. **Endpoints** (`src/endpoints/<name>/`): each one's contract (Zod schemas),
@@ -28,8 +33,14 @@ src/
   entrypoints/
     node.ts        local Node.js server: validate config, start telemetry,
                    listen, graceful shutdown (one file per runtime)
+    worker.ts      Cloudflare Worker fetch handler: validate env once per
+                   isolate, compose, flush telemetry under ctx.waitUntil
+    worker.unused-module.ts
+                   stub the Worker bundle aliases unused optional modules to
   composition/
     node.ts        composeApplication: all routes over one pool (Node/Lambda)
+    worker.ts      composeWorkerApplication: all routes, a pool and Prisma
+                   client per request over Hyperdrive (Workers)
     database.ts    bounded pool + Prisma shared by the database compositions
     composed-application.ts
                    the { app, close } type every runtime composition returns
@@ -46,6 +57,8 @@ src/
                    record contract, HTTP middleware
     decorators/    tracing decorators, one file per wrapped use case or port
     node/          Node/Lambda only: OpenTelemetry SDK, exporters, Pino adapter
+    workers/       Workers only: OpenTelemetry SDK with per-request fetch export,
+                   AsyncLocalStorage context manager, console.log sink
   openapi/         hono-openapi document options, offline generation and export,
                    /openapi.json and /docs routes (+ tests)
   app.ts           createApp: mounts the three endpoint apps and the docs routes
@@ -55,6 +68,9 @@ src/
   testing/         unit-test support (fixtures, request cases, spies, black hole,
                    seeded in-memory use cases, Ajv over the generated document)
 scripts/openapi.ts CLI for `openapi:export`; the build bundles and runs it too
+test/workers/      the Worker in workerd against PostgreSQL (integration)
+wrangler.jsonc     the Worker: nodejs_compat, compatibility date, Hyperdrive,
+                   observability, non-secret vars
 ```
 
 Each endpoint folder owns its request and response schemas, route contract,
@@ -137,6 +153,39 @@ as its own Lambda function (#14):
   - IAM or Secrets Manager authentication for RDS Proxy.
   - RDS Proxy timeouts (connection borrow and idle client timeouts) versus
     our 5 s connect timeout (`connectionTimeoutMillis`).
+
+## Cloudflare Worker
+
+The same API runs as a Cloudflare Worker (`wrangler.jsonc`), an alternative
+target to Node/Lambda. Provisioning and deployment are #28; this package holds
+the runtime and runs it locally without a Cloudflare account.
+
+- `src/entrypoints/worker.ts` validates the Worker's `env` once per isolate
+  with `parseWorkerConfig`: the telemetry variables, and `DATABASE_URL` taken
+  from the `HYPERDRIVE` binding's connection string. Invalid configuration
+  serves nothing (every request gets `500 INTERNAL_ERROR`) and logs sanitized
+  `NAME: reason` lines once.
+- `src/composition/worker.ts` serves `createApp` (the three endpoints and the
+  docs). Each request that reaches a use case gets its own pg pool (at most
+  two connections) and Prisma client over the Hyperdrive connection string,
+  closed under `ctx.waitUntil` after the response, as #28 and Cloudflare's
+  Hyperdrive connection-lifecycle guidance require; nothing is shared across
+  requests.
+- `@scos/persistence` resolves to its `workerd` build there: the same adapters
+  over a Prisma client generated with `runtime = "workerd"`.
+- Telemetry: `src/telemetry/workers/` (see
+  [docs/observability.md](../../docs/observability.md#cloudflare-workers-runtime)).
+
+```sh
+./dev.sh             # once: database, migrations, seed (then Ctrl+C)
+export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgresql://scos:scos@127.0.0.1:5432/<database>
+pnpm --filter @scos/persistence build
+pnpm --filter @scos/api dev:worker        # wrangler dev, http://localhost:8787
+```
+
+Without the variable, `wrangler dev` uses `localConnectionString` in
+`wrangler.jsonc` (`postgresql://scos:scos@localhost:5432/scos`). Local
+variables and secrets go in `apps/api/.dev.vars` (see `.dev.vars.example`).
 
 ## Endpoints
 
@@ -497,7 +546,13 @@ pnpm api:start      # built bundle
 # equals the served bytes).
 pnpm --filter @scos/api test
 
-# Full-stack tests through the composed app against real PostgreSQL.
+# The Worker inside workerd (@cloudflare/vitest-pool-workers), no database:
+# both telemetry contract suites, OTLP export over fetch, the fetch handler
+# and the composition. Part of the root `pnpm test`.
+pnpm --filter @scos/api test:workers
+
+# Full-stack tests through the composed app against real PostgreSQL, then the
+# Worker in workerd against PostgreSQL through its Hyperdrive binding.
 DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
   pnpm exec turbo run test:integration --filter=@scos/api
 ```

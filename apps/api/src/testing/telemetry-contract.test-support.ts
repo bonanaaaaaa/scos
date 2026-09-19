@@ -9,16 +9,15 @@
  * ```
  *
  * Node/Lambda runs it over `telemetry/node/sdk.ts` with in-memory exporters
- * (telemetry/node/telemetry-contract.test.ts); the Workers composition
- * (follow-up PR under #17) must run it too.
+ * (telemetry/node/telemetry-contract.test.ts); the Cloudflare Workers
+ * composition runs it inside workerd over `telemetry/workers/sdk.ts`
+ * (telemetry/workers/telemetry-contract.workers.test.ts).
  *
  * Harness constraint: `spans()` and `metrics()` return the OpenTelemetry JS
  * SDK shapes (`ReadableSpan` from `@opentelemetry/sdk-trace`, `MetricData`
- * from `@opentelemetry/sdk-metrics`). A runtime that records through the JS
- * SDK can hand over in-memory exporter output directly. One that does not
- * (for example Cloudflare's platform tracing) needs an adapter to these
- * shapes, or this harness must be narrowed to what the suite reads; the
- * Workers PR decides which.
+ * from `@opentelemetry/sdk-metrics`). Both runtimes record through the JS SDK
+ * and hand over in-memory exporter output; the Workers harness adds up its
+ * DELTA per-request exports into the cumulative view `metrics()` returns.
  */
 
 import {

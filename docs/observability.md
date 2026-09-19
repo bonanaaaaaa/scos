@@ -8,6 +8,12 @@ SCOS emits three OpenTelemetry-aligned signals from `apps/api` (issue #17):
 | Traces  | Manual spans: one SERVER span per request, plus use-case and persistence-port spans        | OTLP/HTTP (protobuf) or the console, through a bounded batch exporter |
 | Metrics | `http.server.request.duration` histogram and `scos.order.submissions` counter              | OTLP/HTTP (protobuf) or the console, through a periodic reader        |
 
+That table is the Node/Lambda runtime. The Cloudflare Worker produces the
+same records, spans and metrics with its own composition: logs through
+`console.log` into Workers Logs, and traces and metrics exported over OTLP
+with `fetch` once per request. See
+[Cloudflare Workers runtime](#cloudflare-workers-runtime).
+
 The domain and persistence packages (`packages/core`, `packages/persistence`)
 have no OpenTelemetry dependency. Their ports are wrapped by decorators in
 the API compositions.
@@ -19,16 +25,19 @@ the API compositions.
 Telemetry sits behind ports that do not depend on a runtime. The runtime's
 composition wires them.
 
-| Module                              | Runtime | Contents                                                                                                                                                                                                   |
-| ----------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/http/logger.ts`                | neutral | `Logger` / `StructuredLogger` ports; `createConsoleJsonLogger`, the default when nothing is injected                                                                                                       |
-| `src/telemetry/log-record.ts`       | neutral | The log record contract: severity mapping, redaction keys, error sanitizing, correlation fields, resource fields                                                                                           |
-| `src/telemetry/telemetry.ts`        | neutral | The `Telemetry` port (tracer, propagator, histogram, counter), built from any providers                                                                                                                    |
-| `src/telemetry/http.ts`             | neutral | Hono middleware: SERVER span, HTTP attributes, duration histogram, request log                                                                                                                             |
-| `src/telemetry/decorators/`         | neutral | One file per wrapped use case or port: `verify-order.ts`, `submit-order.ts` (plus the counter), `inventory-reader.ts`, `submission-store.ts` (and its transaction); `span.ts` holds the shared span helper |
-| `src/telemetry/config.ts`           | neutral | Zod schema for the telemetry variables                                                                                                                                                                     |
-| `src/telemetry/node/sdk.ts`         | Node    | SDK providers, exporters, AsyncLocalStorage context manager, `PinoInstrumentation`, flush and shutdown (`startTelemetry`)                                                                                  |
-| `src/telemetry/node/pino-logger.ts` | Node    | The Pino adapter, loaded after instrumentation is registered                                                                                                                                               |
+| Module                                   | Runtime | Contents                                                                                                                                                                                                   |
+| ---------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/http/logger.ts`                     | neutral | `Logger` / `StructuredLogger` ports; `createConsoleJsonLogger`, the default when nothing is injected                                                                                                       |
+| `src/telemetry/log-record.ts`            | neutral | The log record contract: severity mapping, redaction keys, error sanitizing, correlation fields, resource fields                                                                                           |
+| `src/telemetry/telemetry.ts`             | neutral | The `Telemetry` port (tracer, propagator, histogram, counter), built from any providers                                                                                                                    |
+| `src/telemetry/http.ts`                  | neutral | Hono middleware: SERVER span, HTTP attributes, duration histogram, request log                                                                                                                             |
+| `src/telemetry/decorators/`              | neutral | One file per wrapped use case or port: `verify-order.ts`, `submit-order.ts` (plus the counter), `inventory-reader.ts`, `submission-store.ts` (and its transaction); `span.ts` holds the shared span helper |
+| `src/telemetry/config.ts`                | neutral | Zod schema for the telemetry variables                                                                                                                                                                     |
+| `src/telemetry/node/sdk.ts`              | Node    | SDK providers, exporters, AsyncLocalStorage context manager, `PinoInstrumentation`, flush and shutdown (`startTelemetry`)                                                                                  |
+| `src/telemetry/node/pino-logger.ts`      | Node    | The Pino adapter, loaded after instrumentation is registered                                                                                                                                               |
+| `src/telemetry/workers/sdk.ts`           | Workers | SDK providers, the per-request span buffer and DELTA metric reader, the `console.log` sink, `flush()` for `ctx.waitUntil` (`createWorkersTelemetry`)                                                       |
+| `src/telemetry/workers/otlp-exporter.ts` | Workers | OTLP/HTTP protobuf export over `fetch`: one bounded request per signal per flush, no retries                                                                                                               |
+| `src/telemetry/workers/context.ts`       | Workers | The `AsyncLocalStorage` context manager (`nodejs_compat`)                                                                                                                                                  |
 
 The neutral modules import only `@opentelemetry/api`, the
 semantic-convention constants, Zod, Hono and our own ports. They never read
@@ -37,26 +46,20 @@ middleware and the decorators receive the `Telemetry` object and the logger
 through their app and composition options. When no telemetry is passed,
 nothing is instrumented, so pure app construction and tests need no SDK.
 
-### Workers runtime (follow-up PR under #17)
-
-A Cloudflare Workers composition is **not part of this change**. It will
-arrive in a follow-up PR under #17 and plug into the same ports:
-
-- a Workers `Telemetry` object for `createTelemetry` (a tracer provider, a
-  meter provider and the W3C propagator), passed to the unchanged
-  middleware and decorators;
-- a `StructuredLogger` that writes the log record contract below to
-  `console.log`. `createConsoleJsonLogger` already produces the same fields,
-  including trace correlation from the active span;
-- the same Zod telemetry schema, extended for Workers bindings.
-
-Nothing Node-specific (`telemetry/node/`, Pino, `PinoInstrumentation`,
-`AsyncLocalStorageContextManager` wiring, periodic readers) is used there.
+The Cloudflare Workers composition (`telemetry/workers/`,
+`composition/worker.ts`, `entrypoints/worker.ts`) plugs into the same ports.
+`runtime-boundary.test.ts` also checks, transitively from each entry point,
+that nothing the Worker reaches is Node-only (`telemetry/node/`, Pino,
+`@opentelemetry/context-async-hooks`, `sdk-node`, instrumentation or the
+`exporter-*` packages, `@hono/node-server`) and that nothing the Node entry
+point reaches is Workers-only. See
+[Cloudflare Workers runtime](#cloudflare-workers-runtime).
 
 ## Log record contract
 
-Every logger adapter (Pino on Node/Lambda, and the console JSON logger)
-writes one JSON object per call, as a single line:
+Every logger adapter (Pino on Node/Lambda, and the console JSON logger,
+which the Worker uses) writes one JSON object per call, as a single line
+(the Worker logs the same object to `console.log`):
 
 ```json
 {
@@ -154,6 +157,9 @@ Stable.
   `service.*`/`deployment.*` keys to resource attributes.
 - Each call is exactly one line, so line-based collectors never split or
   merge records.
+- **Cloudflare Workers:** the same record, logged as an object with one
+  `console.log` call, into Workers Logs and optionally Logpush. See
+  [Logs and the collection path](#logs-and-the-collection-path).
 
 `PinoInstrumentation` (with `disableLogSending: true` and
 `disableLogCorrelation: false`) only adds `trace_id`, `span_id` and
@@ -482,20 +488,24 @@ received `POST /v1/traces` and `POST /v1/metrics` with
 
 ### Automated tests
 
-| What                                                                                                                                                                  | Where                                                               |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Logger port contract (see [Port contract tests](#port-contract-tests)) for Pino and the console JSON logger                                                           | `src/telemetry/node/pino-logger.test.ts`, `src/http/logger.test.ts` |
-| Telemetry port contract over the Node SDK with in-memory exporters, including the Node compositions                                                                   | `src/telemetry/node/telemetry-contract.test.ts`                     |
-| Pino specifics: newline-terminated writes, defaults, identical records from Pino and the console logger for the same calls                                            | `src/telemetry/node/pino-logger.test.ts`                            |
-| Console logger specifics: no trailing newline, defaults, `defaultLogger` through `console.log`                                                                        | `src/http/logger.test.ts`                                           |
-| Log contract helpers: severity constants, redaction, sanitized errors and SQLSTATEs, correlation fields, resource fields                                              | `src/telemetry/log-record.test.ts`                                  |
-| Configuration: valid, invalid, conditional, sanitized messages                                                                                                        | `src/telemetry/config.test.ts`                                      |
-| `startTelemetry` init-once and registration, correlation through the started runtime, resource across signals, sampling, bounded flush, exporter failure, diagnostics | `src/telemetry/node/sdk.test.ts`                                    |
-| Middleware specifics: the request log, compositions without telemetry, a failing logger, tracer or meter never changes a response                                     | `src/telemetry/http.test.ts`                                        |
-| Decorator specifics: invalid estimates, sanitized database and errno failures, retries and `unavailable`, unexpected errors                                           | `src/telemetry/decorators/*.test.ts`                                |
-| Persistence spans against PostgreSQL, a real lock timeout, a silent collector and locks                                                                               | `test/telemetry.integration.test.ts`                                |
-| No runtime-specific imports in neutral modules                                                                                                                        | `src/runtime-boundary.test.ts`                                      |
-| The built `dist/node.js` still correlates logs (PinoInstrumentation on the bundled load path)                                                                         | `src/entrypoints/node.bundle.test.ts`                               |
+| What                                                                                                                                                                  | Where                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Logger port contract (see [Port contract tests](#port-contract-tests)) for Pino and the console JSON logger                                                           | `src/telemetry/node/pino-logger.test.ts`, `src/http/logger.test.ts`                |
+| Telemetry port contract over the Node SDK with in-memory exporters, including the Node compositions                                                                   | `src/telemetry/node/telemetry-contract.test.ts`                                    |
+| Pino specifics: newline-terminated writes, defaults, identical records from Pino and the console logger for the same calls                                            | `src/telemetry/node/pino-logger.test.ts`                                           |
+| Console logger specifics: no trailing newline, defaults, `defaultLogger` through `console.log`                                                                        | `src/http/logger.test.ts`                                                          |
+| Log contract helpers: severity constants, redaction, sanitized errors and SQLSTATEs, correlation fields, resource fields                                              | `src/telemetry/log-record.test.ts`                                                 |
+| Configuration: valid, invalid, conditional, sanitized messages                                                                                                        | `src/telemetry/config.test.ts`                                                     |
+| `startTelemetry` init-once and registration, correlation through the started runtime, resource across signals, sampling, bounded flush, exporter failure, diagnostics | `src/telemetry/node/sdk.test.ts`                                                   |
+| Middleware specifics: the request log, compositions without telemetry, a failing logger, tracer or meter never changes a response                                     | `src/telemetry/http.test.ts`                                                       |
+| Decorator specifics: invalid estimates, sanitized database and errno failures, retries and `unavailable`, unexpected errors                                           | `src/telemetry/decorators/*.test.ts`                                               |
+| Persistence spans against PostgreSQL, a real lock timeout, a silent collector and locks                                                                               | `test/telemetry.integration.test.ts`                                               |
+| No runtime-specific imports in neutral modules                                                                                                                        | `src/runtime-boundary.test.ts`                                                     |
+| The built `dist/node.js` still correlates logs (PinoInstrumentation on the bundled load path)                                                                         | `src/entrypoints/node.bundle.test.ts`                                              |
+| Workers: both port contract suites inside workerd, the OTLP `fetch` export, DELTA metric values, exporter failure, the span buffer, sampling, the `console.log` sink  | `src/telemetry/workers/*.workers.test.ts` (`pnpm test:workers`)                    |
+| Workers: the `fetch` handler (config once per isolate, `waitUntil` flush, concurrent context) and the composition                                                     | `src/entrypoints/worker.workers.test.ts`, `src/composition/worker.workers.test.ts` |
+| Workers: the Wrangler bundle (no Node-only telemetry, Prisma edge runtime, size)                                                                                      | `src/entrypoints/worker.bundle.test.ts`                                            |
+| Workers against PostgreSQL through Hyperdrive: every endpoint, spans, metrics, logs, concurrent submissions, a collector that is down                                 | `test/workers/worker.workers.integration.test.ts` (`pnpm test:integration`)        |
 
 ### Port contract tests
 
@@ -560,11 +570,15 @@ using fake use cases or real use cases over in-memory ports. It checks:
 Node/Lambda runs the logger suite for `createPinoLogger` and
 `createConsoleJsonLogger`, and the telemetry suite over
 `createTelemetryRuntime` (`telemetry/node/sdk.ts`) with in-memory exporters
-and the Node compositions. The Workers composition (follow-up PR under #17)
-plugs in the same way: one `describeLoggerContract` call for its
-`console.log` logger, with its context manager registered in the factory,
-and one `describeTelemetryContract` call over its `Telemetry` with test
-exporters and its own compositions. Implementation details stay in each
+and the Node compositions. The Workers runtime runs both suites inside
+workerd (`@cloudflare/vitest-pool-workers`): the logger suite for the console
+JSON logger with the Workers `console.log` sink and the Workers context
+manager, and the telemetry suite over `createWorkersTelemetry` with in-memory
+exporters in place of the `fetch` exporters and the Worker composition
+(`composeWorkerApplication`) plus the health composition. Both runtimes record
+through the JS SDK, so the harness hands over `ReadableSpan` and `MetricData`
+directly; the Workers harness adds up its DELTA per-request exports into the
+cumulative view `metrics()` returns. Implementation details stay in each
 runtime's own tests, for example SDK init-once, the exporters, shutdown and
 Pino's require hook.
 
@@ -734,6 +748,492 @@ without `http.route`):
 }
 ```
 
+## Cloudflare Workers runtime
+
+`apps/api` also runs as a Cloudflare Worker (`wrangler.jsonc`,
+`src/entrypoints/worker.ts`). The Worker serves the same `createApp` (all
+three endpoints and the documentation routes) over the same use cases,
+persistence adapters, middleware and decorators. It emits the same log
+records, spans, metrics, attributes and resource, with the same redaction
+and bounded dimensions. Only the composition differs. This section covers
+what #17 owns: the runtime, telemetry and local verification. Provisioning,
+Hyperdrive and PlanetScale, deployment and hosted checks belong to #28.
+
+| Module                                   | Contents                                                                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `src/entrypoints/worker.ts`              | The `fetch` handler: validates `env` once per isolate, builds telemetry and the composition, hands the flush to `ctx.waitUntil` |
+| `src/composition/worker.ts`              | `composeWorkerApplication`: `createApp` with a per-request database (pool and Prisma client over Hyperdrive)                    |
+| `src/telemetry/workers/sdk.ts`           | `createWorkersTelemetry`: tracer and meter providers, span buffer, DELTA reader, `console.log` sink, `flush()`                  |
+| `src/telemetry/workers/otlp-exporter.ts` | OTLP/HTTP protobuf over `fetch`, serialized by `@opentelemetry/otlp-transformer`                                                |
+| `src/telemetry/workers/context.ts`       | `AsyncLocalStorage` context manager                                                                                             |
+| `wrangler.jsonc`                         | `nodejs_compat`, pinned `compatibility_date`, the `HYPERDRIVE` binding, `observability`, non-secret `vars`                      |
+
+### Approach and why
+
+Tracing and metrics use the **OpenTelemetry JS SDK inside the Worker**
+(`TracerProvider` from `@opentelemetry/sdk-trace`, `MeterProvider` from
+`@opentelemetry/sdk-metrics`, the W3C propagator), wired into the unchanged
+runtime-neutral `Telemetry` port. Export is OTLP/HTTP protobuf over `fetch`,
+once per request, handed to `ctx.waitUntil`.
+
+- **Not Cloudflare's automatic Workers tracing.** It traces the platform's
+  view (the handler invocation, `fetch` subrequests, bindings). It does not
+  produce our use-case and persistence spans, our span names, status rules
+  (4xx unset, 5xx error) or sanitized `exception` events, and it records no
+  `http.server.request.duration` or `scos.order.submissions`. Running it
+  beside our spans would add a second SERVER-like span per request and a span
+  for every OTLP export. So `wrangler.jsonc` sets
+  `observability.traces.enabled: false`, and Workers Logs stays on for logs
+  only.
+- **Not `@microlabs/otel-cf-workers`.** It wraps the handler and globals
+  (`fetch`, bindings) to create its own spans, brings its own SDK setup,
+  exporter and flush, and would duplicate our SERVER span and add spans for
+  our own exports. It also records no metrics. Our middleware and decorators
+  already produce every span we want; what the Worker needed was only
+  providers, a context manager and an exporter that fit the runtime, which
+  are a few small modules here.
+- **Same SDK as Node, so the same contract.** Both runtimes hand
+  `ReadableSpan`/`MetricData` to the shared contract suites, and the
+  attribute and naming code is shared, not re-implemented.
+- **No Node composition pieces.** `NodeSDK`, `PinoInstrumentation` (a
+  `require` hook), `@opentelemetry/context-async-hooks`, the periodic metric
+  reader and the Node OTLP exporters (Node `http`) are not used. The
+  `@opentelemetry/exporter-*-otlp-proto` browser builds use `fetch` but with
+  browser-only options (`keepalive`, `mode`) and a retrying transport with
+  backoff timers, which do not fit a per-request export, so
+  `otlp-exporter.ts` serializes with the SDK's own
+  `@opentelemetry/otlp-transformer` and posts once.
+
+### Context
+
+`WorkersContextManager` (`telemetry/workers/context.ts`) is a
+`ContextManager` over `AsyncLocalStorage` from `node:async_hooks`, which
+workerd provides with `nodejs_compat`. It is registered once per isolate.
+Each request's active span follows its own async chain, so concurrent
+requests in one isolate never see each other's context. Tests prove it inside
+workerd: the contract suite's concurrent-requests test, and twelve concurrent
+requests through the real `fetch` handler whose request logs each carry their
+own `traceparent`'s trace ID and their own path
+(`entrypoints/worker.workers.test.ts`).
+
+### Logs and the collection path
+
+The Worker's logger is the runtime-neutral `createConsoleJsonLogger`, so the
+[log record contract](#log-record-contract) is identical to Pino's: the same
+fields and severity mapping, the same redaction and error sanitizing, the
+same reserved keys, and `trace_id`/`span_id`/`trace_flags` only from a valid
+active span (the logger contract suite runs inside workerd). Its sink,
+`logRecord`, logs **the record object**, one `console.log` call per record.
+No Pino, no OTel Logs SDK, no log export from the application.
+
+- **Workers Logs** (`observability.logs.enabled: true`) stores each
+  `console.log` call as one event. It extracts and indexes the fields of a
+  logged object, which is why the sink logs the object and not a JSON string:
+  a string is kept as one opaque message. Verified locally in `wrangler dev`'s
+  observability store: the string form was stored as `["{\"level\":...}"]`,
+  the object form as `[{"level":"info",...}]`.
+- **Logpush** (Workers Trace Events, Paid plan) ships the same events, with
+  each record in `Logs[].Message`, to R2, S3 or a log vendor; a Collector or
+  pipeline there maps them with the table below. Cloudflare's OTLP log export
+  or a Tail Worker are alternatives for #28.
+- **Mapping.** Exactly the [LogRecord mapping](#mapping-to-the-otel-logrecord-model):
+  `time` to Timestamp, `level`/`severity_number` to SeverityText/Number,
+  `msg` to Body, `trace_id`/`span_id`/`trace_flags` to the trace fields,
+  `service.*`/`deployment.environment.name` to the Resource, everything else
+  to Attributes. Workers Logs adds its own invocation metadata (the request,
+  outcome, CPU and wall time) beside the record.
+- One `console.log` per record, so a record is never split or merged.
+- Export failures and invalid configuration are the only other logs:
+  `warn` `OpenTelemetry export failed` with `scos.telemetry.signal` and a
+  `diagnostic` of `HTTP <status>`, `timeout` or an error class name (never the
+  endpoint, headers or response), and `console.error` lines naming invalid
+  variables (never their values).
+
+### Metrics and accuracy
+
+There is no long-lived process and no timer between requests, so there is no
+periodic reader. `RequestMetricReader` is a pull reader with **DELTA**
+temporality, collected on every flush: each flush exports what was recorded
+in this isolate since the previous flush, and nothing when nothing was
+recorded. Every recording is exported exactly once (unless its export
+fails), whichever concurrent request's flush carries it.
+
+- **Why DELTA.** Isolates are many, short-lived and evicted without notice.
+  Cumulative series per isolate would each restart at zero, and a backend
+  would see many overlapping, resetting series; per-request deltas add up
+  without that. A backend that only accepts cumulative data needs the
+  Collector's `deltatocumulative` processor. Node/Lambda stays cumulative.
+- **Cardinality.** The attributes are exactly the Node ones (method, route
+  template, status, bounded outcomes). No isolate or request identifier is
+  added, so DELTA points from all isolates of one version aggregate into the
+  same series.
+- **Accuracy loss.**
+  - workerd advances `Date.now()` and `performance.now()` only on I/O (a
+    Spectre mitigation). `http.server.request.duration` and span durations
+    therefore measure time spent waiting on I/O (database, Hyperdrive), at
+    millisecond resolution; CPU-only work such as `GET /health` measures `0`.
+    Log `time` values have the same resolution. Use Workers Logs' CPU and
+    wall time for compute cost.
+  - A DELTA point's start and end times are often equal for the same reason.
+  - A failed export loses that flush's metrics (no retry) and its spans.
+  - Up to the response, recordings are in memory; an isolate evicted before a
+    flush completes loses them. The flush runs right after each response.
+
+### Flush, limits and subrequests
+
+- **Per request:** after `app.fetch` returns, the handler calls
+  `ctx.waitUntil(runtime.flush())`. The flush is never awaited on the
+  response path, and it starts after the request's database work has
+  finished (the transaction is committed or rolled back, the request's pool
+  is being closed under its own `waitUntil`), so it can never hold a lock or
+  extend a transaction. Decorators await nothing but the wrapped call.
+- **Bounded:** one flush exports at most one span batch
+  (`maxExportBatchSize` 512) and one metrics collection. Each OTLP request is
+  bounded by `OTEL_EXPORTER_OTLP_TIMEOUT` (default 3 s, at most 30 s, the
+  `waitUntil` allowance) through an `AbortSignal`, and the whole flush by
+  that plus 250 ms. It never rejects. The span buffer holds at most 2048
+  spans; beyond that, spans are dropped (`droppedSpans()`), never queued
+  without bound. A request produces at most 15 spans (a submission with
+  three transaction attempts).
+- **No retries:** a failed export is dropped and logged once per signal. A
+  down or slow collector therefore costs the same as a healthy one, and it
+  cannot change a status, a body or an outcome. Tests cover a refused
+  connection, a 503, a collector that never answers (the timeout) and a real
+  unreachable address, in unit tests and against PostgreSQL (five
+  submissions in a row, each under 5 s, with the collector down).
+- **Subrequests per request:** at most **2** (one `POST /v1/traces`, one
+  `POST /v1/metrics`), and fewer when there is nothing to send: an unsampled
+  request sends no spans, and another request's flush may already have
+  exported its data. With exporters `none` it is **0**; with `console` it is
+  0 (printed to the Workers console). The limits are 50 subrequests per
+  request on Workers Free and 10,000 on Paid. The database connection to
+  Hyperdrive is a socket, one of the six simultaneous connections a request
+  may open (the pool allows two); the OTLP requests are two more at most.
+  Measured locally: every request produced exactly one traces and one metrics
+  POST at the Collector (18 exports for 9 requests).
+- **CPU:** serializing a few spans and two metrics is well under a
+  millisecond. The Free plan's 10 ms CPU limit per request is more likely to
+  be reached by Prisma (see below) than by telemetry.
+
+### Database: Prisma 7 over Hyperdrive
+
+- **Per-request pool and Prisma client.** As #28 specifies and as
+  Cloudflare's Hyperdrive connection-lifecycle guidance requires, the
+  database client is created inside the request handler, per request, and
+  released when the request ends. Workers do not allow an I/O object (a
+  socket) created for one request to be used by another; Hyperdrive keeps
+  the pooled connections to the origin, so connecting to it is cheap. Each
+  request that reaches a use case gets its own Prisma client over its own pg
+  **`Pool` of at most 2 connections** (a `Pool`, not a single `Client`,
+  because `@prisma/adapter-pg` takes a pool; a request's queries are
+  sequential, so it opens one connection and the second is headroom, well
+  under Workers' six simultaneous connections per request), on the
+  Hyperdrive binding's connection string. Both are created on first use and
+  released under `ctx.waitUntil` after the response (Prisma disconnected,
+  then the pool ended). `GET /health`, the docs and requests rejected by
+  validation open nothing.
+- **Once per isolate:** configuration validation, telemetry, the app, its
+  routes and the OpenAPI document, and the use-case wiring. Never a database
+  client.
+- **Supporting evidence for the per-request client.** Sharing one Prisma
+  client across requests is unsafe even over per-request pools: a spike with
+  one isolate-wide Prisma client over a pool routed per request with
+  `AsyncLocalStorage` hung under ten concurrent requests, because Prisma
+  batches concurrent calls, so one request's query ran on another request's
+  connection. Creating a client per request is local work (no connection
+  until the first query); the query compiler is a precompiled WebAssembly
+  module in the upload, which each client instantiates.
+- **Prisma on workerd needs its own client build.** Prisma's Node client
+  compiles the query compiler from base64 at run time, which workerd forbids
+  (`WebAssembly.Module(): Wasm code generation disallowed by embedder`), and
+  it reads `import.meta.url`. `packages/persistence` therefore generates a
+  second client (`generator workerd`, `runtime = "workerd"` in
+  `schema.prisma`) and builds the same sources over it to
+  `dist/workerd/` (`tsdown.config.ts`), exported under the `workerd` package
+  condition. Wrangler and `@cloudflare/vitest-pool-workers` resolve it; Node
+  never does. The adapters' `Prisma.PrismaClientKnownRequestError`,
+  `Prisma.Decimal` and isolation levels then come from the same runtime as
+  the client, so error classification and retries behave as on Node.
+- Transaction pooling, isolation, lock timeouts and connection budgets under
+  Hyperdrive are verified in #28. Locally, `wrangler dev` connects straight
+  to PostgreSQL (`localConnectionString`); the integration test runs eight
+  concurrent submissions and eight concurrent verifications through one
+  isolate.
+
+### Configuration
+
+Validated once per isolate, on the first request, by `parseWorkerConfig`
+(`config.ts`, the same Zod helpers as every runtime). `DATABASE_URL` is the
+Hyperdrive binding's `connectionString`; a variable named `DATABASE_URL` is
+ignored. If anything is invalid, the Worker serves nothing: every request
+gets `500 INTERNAL_ERROR` with the standard envelope, and the problems are
+logged once as `NAME: reason` lines without values (for example
+`HYPERDRIVE (binding connectionString): is required`). A failure while
+building the composition is logged by error class only.
+
+| Variable (Worker `vars` or secret)                                                                 | Default                 | Rule on Workers                                                                         |
+| -------------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------- |
+| `OTEL_SDK_DISABLED`, `OTEL_SERVICE_NAME`, `SERVICE_VERSION`, `DEPLOYMENT_ENVIRONMENT`, `LOG_LEVEL` | as on Node              | As on Node                                                                              |
+| `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`                                                    | `none`                  | `otlp`, `console` or `none`                                                             |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`                                                   | parent-based, `1`       | As on Node                                                                              |
+| `OTEL_EXPORTER_OTLP_PROTOCOL`                                                                      | `http/protobuf`         | Only this value                                                                         |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `..._TRACES_ENDPOINT`, `..._METRICS_ENDPOINT`                       | `http://localhost:4318` | As on Node; checked only when an exporter is `otlp`                                     |
+| `OTEL_EXPORTER_OTLP_TIMEOUT`                                                                       | `3000`                  | Milliseconds, 1-30000 (the `waitUntil` allowance). Per OTLP request                     |
+| `OTEL_EXPORTER_OTLP_HEADERS` (**secret**)                                                          | none                    | `name=value,name2=value2`, values URL-encoded; sent on every OTLP request. Never echoed |
+| `OTEL_METRIC_EXPORT_INTERVAL`, `OTEL_METRIC_EXPORT_TIMEOUT`                                        |                         | Not used on Workers (no periodic reader) and ignored                                    |
+
+- Non-secret values go in `wrangler.jsonc` `vars` (traces and metrics are
+  `none` there until #28 sets an endpoint per environment). Collector
+  credentials are only ever a secret: `wrangler secret put
+OTEL_EXPORTER_OTLP_HEADERS` when deployed, `apps/api/.dev.vars` locally
+  (ignored by Git; see `apps/api/.dev.vars.example`). They never appear in
+  `wrangler.jsonc`, logs or error messages. Endpoint URLs with credentials are
+  rejected, as on Node.
+- Unlike Node, the exporter reads nothing from the environment itself: every
+  setting, headers included, comes from this validated configuration.
+
+### Wrangler configuration and bundle
+
+- `compatibility_date` `2026-08-15` (pinned, not later than the workerd
+  release of the pinned Wrangler and pool), `compatibility_flags`
+  `["nodejs_compat"]`, `send_metrics: false`.
+- `hyperdrive`: binding `HYPERDRIVE` with a placeholder ID (#28 injects the
+  real one) and a local-only `localConnectionString` (the docker compose
+  database, the same local credentials as `.env.example`). Override it with
+  `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE`.
+- `observability`: Workers Logs on with invocation logs; automatic traces off.
+- `alias`: `effect` points at a stub that throws if ever loaded. hono-openapi's
+  unused schema adapters would otherwise bundle `effect` and `fast-check`
+  (2.8 MB); `build.mjs` leaves the same modules external on Node.
+- Wrangler bundles the Worker with esbuild; `build.mjs` is unchanged.
+  **Measured bundle** (`wrangler deploy --dry-run`): **5,515 KiB uncompressed,
+  1,538 KiB gzip**, of which 3.4 MB is Prisma's query compiler
+  (`query_compiler_fast_bg.wasm`). The Workers limit is 64 MiB uncompressed
+  on every plan (the compressed limits were removed on 2026-09-04); the
+  bundle also fits the former 3 MB Free limit. Startup must stay under 1 s;
+  nothing heavy runs at global scope (the app is built on the first request).
+  `src/entrypoints/worker.bundle.test.ts` builds it on every `pnpm test` and
+  fails if Pino, instrumentation, the async-hooks context manager, the
+  `exporter-*` packages, `@hono/node-server`, `effect` or the Node Prisma
+  runtime appear, or if the upload exceeds an 8 MiB budget.
+
+### Tests
+
+| Project                                 | Command                                             | Runs in              | Covers                                                                                                                                                                  |
+| --------------------------------------- | --------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vitest.workers.config.mjs`             | `pnpm test:workers` (part of `pnpm test` and CI)    | workerd, no database | Both contract suites; OTLP `fetch` export; DELTA values; exporter failure; span buffer; sampling; the sink; the handler; the composition                                |
+| `vitest.config.mjs` (Node)              | `pnpm test`                                         | Node                 | Workers config schema, the runtime boundary, the Wrangler bundle                                                                                                        |
+| `vitest.workers.integration.config.mjs` | `pnpm test:integration` (needs `DATABASE_TEST_URL`) | workerd + PostgreSQL | The real handler through the `HYPERDRIVE` binding: every endpoint, persistence spans, counter values, correlated logs, no sensitive data, concurrency, a down collector |
+
+- The workerd projects use `@cloudflare/vitest-pool-workers` with the
+  Worker's own `wrangler.jsonc`. `vitest.workers.shared.mjs` points pg's
+  `pg-protocol` and `pg-cloudflare` at their CommonJS builds: the pool loads
+  pg through a CommonJS fallback that ignores the `workerd` condition
+  Wrangler's bundler uses.
+- The integration project's `globalSetup` (Node) creates an isolated,
+  migrated and seeded database from `DATABASE_TEST_URL`, as the Node
+  integration tests do, and points the binding at it.
+- The 80% coverage gates apply to the Node project. V8 coverage does not
+  run inside workerd, so the Workers-only modules are excluded from the Node
+  coverage report and covered by the workerd projects instead (not measured).
+- **`Uncaught (in promise) Error: Network connection lost`.** Under
+  `@cloudflare/vitest-pool-workers`, workerd prints this line (as
+  `uncaught exception; source = Uncaught (in promise); ...`) once for every
+  `fetch` that fails to connect, so once per signal when the collector is
+  down: two per request, ten in the collector-down integration test. It is
+  workerd's own log, not an unhandled rejection in our code:
+  - A minimal repro with none of our code, run in the same pool, prints it
+    once per call for every variant: a `GET` with no body, and a `POST` with
+    a string, a `Uint8Array`, an `ArrayBuffer`, or an `ArrayBuffer` plus an
+    `AbortSignal`, each awaited with a rejection handler:
+
+    ```ts
+    addEventListener("unhandledrejection", (event) => unhandled.push(event.reason));
+    await fetch("http://127.0.0.1:9/x", { method: "POST", body: new Uint8Array([1]) }).then(
+      () => "ok",
+      (error) => error.message,
+    ); // "Network connection lost."
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // unhandled.length === 0 for every variant
+    ```
+
+    In the same repro, a genuine `void Promise.reject(...)` did reach the
+    `unhandledrejection` listener and Vitest reported it as an unhandled
+    error; the failed `fetch` did neither.
+
+  - Our export body is already a `Uint8Array` (never a stream), the response
+    body is cancelled, and `postOtlp` awaits the `fetch` inside a `try`.
+  - `sdk.workers.test.ts` ("a failed export leaves no unhandled rejection")
+    and the collector-down integration test assert that no
+    `unhandledrejection` event fires while exports fail against
+    `127.0.0.1:9`, and Vitest would fail either run on any unhandled error.
+  - `wrangler dev` did not print the line in the collector-down sample.
+    #28/#33 should check the deployed Worker's logs with the collector down
+    for the same line or any `waitUntil`/uncaught-exception warning.
+
+### Running locally
+
+```sh
+./dev.sh                     # once: shared PostgreSQL, this worktree's database, migrations, seed
+export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgresql://scos:scos@127.0.0.1:5432/<database>
+pnpm --filter @scos/persistence build
+pnpm --filter @scos/api dev:worker   # wrangler dev on http://localhost:8787
+```
+
+To export to a local Collector, run the Collector from
+[Local OpenTelemetry Collector](#local-opentelemetry-collector-test-sink) and
+put the OTLP variables in `apps/api/.dev.vars` (or pass
+`--var OTEL_TRACES_EXPORTER:otlp --var OTEL_METRICS_EXPORTER:otlp --var OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318`).
+
+### Sample output from `wrangler dev`
+
+Captured with Wrangler 4.124.0 (`wrangler dev`, local workerd) over this
+worktree's migrated and seeded database, exporting OTLP to a local
+`otel/opentelemetry-collector:0.104.0` with the `debug` exporter
+(`SERVICE_VERSION=0.0.0-issue17`). Requests: health; a verification with
+`traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01` and
+`tracestate: vendor=opaque`; an accepted submission (201); its replay (201);
+a shipping rejection (422); a conflicting reuse (409); an invalid body with an
+all-zero `traceparent` (400); an unknown path (404). The Collector received
+exactly one traces and one metrics export per request. Neither the logs nor
+the Collector output contained the submission ID, a coordinate, an order
+number or the database credentials.
+
+**Logs**, as Workers Logs stores them (read back from `wrangler dev`'s local
+observability store, one event per `console.log` call; shown as JSON):
+
+```json
+{"level":"info","severity_number":9,"time":"2026-09-19T13:10:10.681Z","service.name":"scos-api","service.version":"0.0.0-issue17","deployment.environment.name":"local","trace_id":"3ce94046bba211c64322138aceebb881","span_id":"5b9c56ca2522f7e4","trace_flags":"01","http.request.method":"GET","url.scheme":"http","http.response.status_code":200,"http.route":"/health","url.path":"/health","http.server.request.duration":0,"msg":"request completed"}
+{"level":"info","severity_number":9,"time":"2026-09-19T13:10:10.821Z","service.name":"scos-api","service.version":"0.0.0-issue17","deployment.environment.name":"local","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"0525edb6677be159","trace_flags":"01","http.request.method":"POST","url.scheme":"http","http.response.status_code":200,"http.route":"/api/v1/orders/verify","url.path":"/api/v1/orders/verify","http.server.request.duration":0.129,"msg":"request completed"}
+{"level":"info","severity_number":9,"time":"2026-09-19T13:10:10.894Z","service.name":"scos-api","service.version":"0.0.0-issue17","deployment.environment.name":"local","trace_id":"336d5f2a1281d4e09c32b0be8c1eb809","span_id":"aae175715beffb00","trace_flags":"01","http.request.method":"POST","url.scheme":"http","http.response.status_code":201,"http.route":"/api/v1/orders","url.path":"/api/v1/orders","http.server.request.duration":0.061,"msg":"request completed"}
+{"level":"info","severity_number":9,"time":"2026-09-19T13:10:10.923Z","service.name":"scos-api","service.version":"0.0.0-issue17","deployment.environment.name":"local","trace_id":"908dd2f36ce03fe139b9a273804f60c5","span_id":"a9cf36e89faaed73","trace_flags":"01","http.request.method":"POST","url.scheme":"http","http.response.status_code":201,"http.route":"/api/v1/orders","url.path":"/api/v1/orders","http.server.request.duration":0.013,"msg":"request completed"}
+{"level":"info","severity_number":9,"time":"2026-09-19T13:10:10.965Z","service.name":"scos-api","service.version":"0.0.0-issue17","deployment.environment.name":"local","trace_id":"de66374c4dc620f6c90977da12970f1c","span_id":"9ce8751e2055a960","trace_flags":"01","http.request.method":"POST","url.scheme":"http","http.response.status_code":422,"http.route":"/api/v1/orders","url.path":"/api/v1/orders","http.server.request.duration":0.031,"msg":"request completed"}
+{"level":"info","severity_number":9,"time":"2026-09-19T13:10:10.985Z","service.name":"scos-api","service.version":"0.0.0-issue17","deployment.environment.name":"local","trace_id":"1f6978500d9642b4ade1f7388d98ccd7","span_id":"61a34d708ee18f5c","trace_flags":"01","http.request.method":"POST","url.scheme":"http","http.response.status_code":409,"http.route":"/api/v1/orders","url.path":"/api/v1/orders","http.server.request.duration":0.009,"msg":"request completed"}
+{"level":"info","severity_number":9,"time":"2026-09-19T13:10:10.997Z","service.name":"scos-api","service.version":"0.0.0-issue17","deployment.environment.name":"local","trace_id":"52dd06b3b6a26d65a37281b675860947","span_id":"d535cd9076027a6b","trace_flags":"01","http.request.method":"POST","url.scheme":"http","http.response.status_code":400,"http.route":"/api/v1/orders/verify","url.path":"/api/v1/orders/verify","http.server.request.duration":0,"msg":"request completed"}
+{"level":"info","severity_number":9,"time":"2026-09-19T13:10:11.010Z","service.name":"scos-api","service.version":"0.0.0-issue17","deployment.environment.name":"local","trace_id":"f5df9252adc284cb220f95e4278fcb7e","span_id":"26de1bf441ad47c6","trace_flags":"01","http.request.method":"GET","url.scheme":"http","http.response.status_code":404,"url.path":"/nope","http.server.request.duration":0,"msg":"request completed"}
+```
+
+The verification record carries the caller's trace ID and the SERVER span's
+ID `0525edb6...` below; the all-zero `traceparent` was ignored (new trace
+`52dd06b3...`). Durations are whole milliseconds, and `0` without database
+I/O, because workerd's clock only advances on I/O. The `wrangler dev`
+terminal prints the same objects in inspect format.
+
+**Spans** (Collector `debug` exporter, verification trace, abridged):
+
+```text
+Resource attributes:
+     -> service.name: Str(scos-api)
+     -> service.version: Str(0.0.0-issue17)
+     -> deployment.environment.name: Str(local)
+ScopeSpans SchemaURL: https://opentelemetry.io/schemas/1.43.0
+InstrumentationScope @scos/api 0.0.0
+Span #0
+    Trace ID       : 4bf92f3577b34da6a3ce929d0e0e4736
+    Parent ID      : 21be4ea2bfbed169
+    ID             : fc9cc41f5c174d59
+    Name           : InventoryReader.readInventorySnapshot
+    Kind           : Internal
+    TraceState     : vendor=opaque
+     -> scos.inventory.warehouse_count: Int(6)
+Span #1
+    Parent ID      : 0525edb6677be159
+    ID             : 21be4ea2bfbed169
+    Name           : VerifyOrder
+    Kind           : Internal
+     -> scos.estimate.valid: Bool(true)
+Span #2
+    Parent ID      : 00f067aa0ba902b7
+    ID             : 0525edb6677be159
+    Name           : POST /api/v1/orders/verify
+    Kind           : Server
+    TraceState     : vendor=opaque
+    Status code    : Unset
+     -> http.request.method: Str(POST)
+     -> url.scheme: Str(http)
+     -> url.path: Str(/api/v1/orders/verify)
+     -> http.response.status_code: Int(200)
+     -> http.route: Str(/api/v1/orders/verify)
+```
+
+The accepted submission's trace `336d5f2a1281d4e09c32b0be8c1eb809` (one
+export of seven spans):
+
+```text
+POST /api/v1/orders                              aae175715beffb00  parent: none              201
+  SubmitOrder                                    e5886461249f43cb  outcome=accepted, replayed=false
+    SubmissionStore.findOrderBySubmissionKey     2c2b26a345f2bf59  order_found=false
+    SubmissionStore.runInTransaction             6462a43a4d1f21fb
+      SubmissionTransaction.lockInventory        f2804b395f8d8134  warehouse_count=6
+      SubmissionTransaction.findOrderBySubmissionKey 087ff2bba17099b8 order_found=false
+      SubmissionTransaction.saveAcceptedOrder    ee002157982cb19f
+```
+
+**Metrics** (Collector `debug` exporter; the accepted submission's flush,
+abridged):
+
+```text
+Metric #0
+     -> Name: http.server.request.duration
+     -> Unit: s
+     -> DataType: Histogram
+     -> AggregationTemporality: Delta
+Data point attributes:
+     -> http.request.method: Str(POST)
+     -> url.scheme: Str(http)
+     -> http.response.status_code: Int(201)
+     -> http.route: Str(/api/v1/orders)
+Count: 1
+Sum: 0.061000
+Metric #1
+     -> Name: scos.order.submissions
+     -> Unit: {submission}
+     -> DataType: Sum
+     -> IsMonotonic: true
+     -> AggregationTemporality: Delta
+Data point attributes:
+     -> scos.submission.outcome: Str(accepted)
+     -> scos.submission.replayed: Bool(false)
+Value: 1
+```
+
+The later flushes carried `accepted`/`replayed=true`, `rejected` with
+`rejection_reason=SHIPPING_EXCEEDS_LIMIT`, and `conflict`, each with value 1,
+and one `http.server.request.duration` point per request (the 400 and 404
+included, the 404 without `http.route`).
+
+**Collector down** (`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:9`,
+`OTEL_EXPORTER_OTLP_TIMEOUT=1000`): both submissions returned `201` (120 ms
+and 31 ms), and each request logged one failure per signal:
+
+```json
+{"level":"warn","severity_number":13,"time":"2026-09-19T13:06:44.654Z","service.name":"scos-api","service.version":"0.0.0","deployment.environment.name":"local","scos.telemetry.signal":"traces","diagnostic":"Error","msg":"OpenTelemetry export failed"}
+{"level":"warn","severity_number":13,"time":"2026-09-19T13:06:44.654Z","service.name":"scos-api","service.version":"0.0.0","deployment.environment.name":"local","scos.telemetry.signal":"metrics","diagnostic":"Error","msg":"OpenTelemetry export failed"}
+```
+
+### Workers limitations
+
+- **Verified locally only**, in `wrangler dev` and workerd tests, with
+  `wrangler dev` connecting straight to PostgreSQL instead of through a real
+  Hyperdrive. Hyperdrive's transaction pooling, Workers Logs and Logpush
+  ingestion, CPU time on the Free plan and the placeholder Hyperdrive ID are
+  #28's to verify and replace. Hosted checks for #28/#33 should also confirm
+  that, with the collector down, the deployed Worker's logs show only the
+  `OpenTelemetry export failed` warnings (no `Network connection lost`
+  uncaught exception, no cancelled-`waitUntil` warning).
+- **Clock resolution:** durations and timestamps advance only on I/O (see
+  [Metrics and accuracy](#metrics-and-accuracy)).
+- **No export retries**; a failed export loses that flush's spans and
+  metric deltas, by design.
+- **A Prisma client per request** costs some CPU on each database request;
+  it was not measured on Cloudflare. If the Free plan's 10 ms CPU limit is a
+  problem, #28 should measure it.
+- **The `workerd` persistence build** is a second generated Prisma client;
+  both are generated from the same schema by `prisma generate`.
+- **Local observability store:** `wrangler dev` records Cloudflare's own
+  request and `fetch` spans locally even with `traces.enabled: false`; that
+  setting governs the deployed Worker.
+
 ## Versions
 
 Pinned in `apps/api/package.json`:
@@ -752,6 +1252,9 @@ Pinned in `apps/api/package.json`:
 | `@opentelemetry/instrumentation`             | 0.222.0                               |
 | `@opentelemetry/instrumentation-pino`        | 0.68.0 (supports `pino >=5.14.0 <11`) |
 | `@opentelemetry/semantic-conventions`        | 1.43.0                                |
+| `@opentelemetry/otlp-transformer` (Workers)  | 0.222.0                               |
+| `wrangler` (dev)                             | 4.124.0                               |
+| `@cloudflare/vitest-pool-workers` (dev)      | 0.22.0 (workerd 1.20260815.1)         |
 
 Semantic conventions: **1.43.0**. Spans and metrics carry the scope schema
 URL `https://opentelemetry.io/schemas/1.43.0`, and a unit test keeps
@@ -777,7 +1280,8 @@ URL `https://opentelemetry.io/schemas/1.43.0`, and a unit test keeps
 - **Pino must ship beside the bundle** (see "Runtime artifact").
 - **Lambda handler and flush wiring** are specified here but implemented in
   #14; warm reuse and flush behaviour must be verified on AWS there (#15).
-- **The Workers composition** is not implemented yet (follow-up PR under #17).
+- **Workers: see [its limitations](#workers-limitations)** (clock
+  resolution, per-request export cost, no retries, local-only verification).
 - **The Collector container recipe was not run** in this change; OTLP export
   was verified against a local HTTP sink.
 - **Console exporter output is not JSON** and mixes with JSON logs on stdout;

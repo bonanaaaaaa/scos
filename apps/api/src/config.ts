@@ -17,9 +17,12 @@ import { z } from "zod";
 import {
   REFINE_ALWAYS,
   type TelemetryConfig,
+  type WorkersTelemetryConfig,
   refineTelemetry,
   telemetryEnvironmentShape,
   toTelemetryConfig,
+  toWorkersTelemetryConfig,
+  workersTelemetryEnvironmentShape,
 } from "./telemetry/config";
 
 export const DEFAULT_PORT = 3000;
@@ -131,5 +134,30 @@ export function parseConfig(environment: Environment): ConfigResult {
     databaseUrl: data.DATABASE_URL,
     port: data.PORT,
     telemetry: toTelemetryConfig(data),
+  }));
+}
+
+/**
+ * The Cloudflare Worker: DATABASE_URL (taken from the Hyperdrive binding's
+ * connection string by `entrypoints/worker.ts`, never from a variable) and the
+ * Workers telemetry variables.
+ */
+export const workerEnvironmentSchema = z
+  .object({ DATABASE_URL: databaseUrlSchema, ...workersTelemetryEnvironmentShape })
+  .superRefine(refineTelemetry, REFINE_ALWAYS);
+
+export interface WorkerConfig {
+  readonly databaseUrl: string;
+  readonly telemetry: WorkersTelemetryConfig;
+}
+
+/**
+ * Parses the Worker's environment. Like every parser here, failures are
+ * `NAME: reason` lines without values.
+ */
+export function parseWorkerConfig(environment: Environment): ParseResult<WorkerConfig> {
+  return parseEnvironment(workerEnvironmentSchema, environment, (data) => ({
+    databaseUrl: data.DATABASE_URL,
+    telemetry: toWorkersTelemetryConfig(data),
   }));
 }

@@ -7,5 +7,6 @@ allowBuilds:
   "@prisma/engines": true
   esbuild: true
   prisma: true
+  workerd: true
 
 injectWorkspacePackages: true

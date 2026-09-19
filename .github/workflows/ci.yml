@@ -53,7 +53,7 @@ jobs:
         run: pnpm exec turbo run //#format:check:root
       - name: Test workspace
         id: tests
-        run: pnpm exec turbo run test //#test:root
+        run: pnpm exec turbo run test test:workers //#test:root
       - name: Upload coverage summaries
         id: coverage
         if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
