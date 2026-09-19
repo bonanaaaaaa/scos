@@ -33,5 +33,6 @@ export {
 export { MONEY_MAX_STRING, Money } from "./domain/shared/money";
 export { type CreateOrderInput, type Order, createOrder } from "./domain/ordering/order";
 export { type OrderRequest, orderRequestSchema } from "./domain/ordering/order-request";
+export { type SubmissionKey, submissionKeySchema } from "./domain/ordering/submission-key";
 export type { DiscountRate } from "./domain/pricing/pricing";
 export { MAX_QUANTITY, type Quantity, quantitySchema } from "./domain/shared/quantity";

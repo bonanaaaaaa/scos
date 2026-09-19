@@ -21,11 +21,14 @@ import type { WarehouseAllocation, ShippingPlan } from "../shipping/allocation";
 import { isShippingWithinLimit, shippingCostFor } from "../shipping/shipping";
 
 import type { OrderEstimate } from "./estimate";
+import { type SubmissionKey, submissionKeySchema } from "./submission-key";
 
 /** An accepted order. Amounts are immutable historical facts. */
 export interface Order {
   readonly id: string;
   readonly orderNumber: string;
+  /** The client's retry key, stored as the Order's unique submission_key. */
+  readonly submissionKey: SubmissionKey;
   readonly quantity: Quantity;
   readonly destination: Destination;
   readonly merchandiseSubtotal: Money;
@@ -40,6 +43,7 @@ export interface Order {
 export interface CreateOrderInput {
   readonly id: string;
   readonly orderNumber: string;
+  readonly submissionKey: SubmissionKey;
   readonly estimate: OrderEstimate;
 }
 
@@ -84,9 +88,13 @@ function assertAllocations(quantity: number, allocations: readonly WarehouseAllo
  * rows to `Order` directly (see issue #10).
  */
 export function createOrder(input: CreateOrderInput): Order {
-  const { id, orderNumber, estimate } = input;
+  const { id, orderNumber, submissionKey, estimate } = input;
   invariant(id.length > 0, "Order id is required.");
   invariant(orderNumber.length > 0, "Order number is required.");
+  invariant(
+    submissionKeySchema.safeParse(submissionKey).success,
+    "Submission key must be a validated SubmissionKey.",
+  );
   invariant(estimate.valid, `Only a valid estimate can become an order (${estimate.reason}).`);
 
   const { quantity, allocations, shippingCost, orderTotal } = estimate;
@@ -133,6 +141,7 @@ export function createOrder(input: CreateOrderInput): Order {
   return Object.freeze({
     id,
     orderNumber,
+    submissionKey,
     quantity,
     destination: estimate.destination,
     merchandiseSubtotal: estimate.merchandiseSubtotal,

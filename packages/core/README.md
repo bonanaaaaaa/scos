@@ -15,8 +15,8 @@ import only the package root (`src/index.ts`).
   - `pricing/`: discount tiers and merchandise pricing;
   - `shipping/`: distance, nearest-first allocation, and shipping cost and
     limit;
-  - `ordering/`: the order request schema, `estimateOrder`, and the `Order`
-    aggregate.
+  - `ordering/`: the order request and submission key schemas,
+    `estimateOrder`, and the `Order` aggregate.
 - `src/application/` (added with the use cases): VerifyOrder / SubmitOrder and
   the driven ports that persistence implements.
 
@@ -104,6 +104,10 @@ Enforced by the exported Zod schemas:
   preserved, unknown keys are stripped, and the parsed value is frozen.
 - **Order request (`orderRequestSchema`):** `{ quantity, latitude, longitude }`
   with the rules above, parsed to a frozen `{ quantity, destination }`.
+- **Submission key (`submissionKeySchema`):** the client's retry key, stored on
+  the accepted Order as its unique `submission_key` (ADR 0004). A string of 1 to
+  255 characters with no leading or trailing whitespace; keys are rejected, not
+  trimmed, so the stored key is exactly what the client sent.
 
 ### Overflow behaviour of `estimateOrder`
 

@@ -9,6 +9,7 @@ import type { WarehouseStock } from "../shipping/allocation";
 
 import { type OrderEstimate, type ValidOrderEstimate, estimateOrder } from "./estimate";
 import { createOrder } from "./order";
+import type { SubmissionKey } from "./submission-key";
 
 const destination = { latitude: 0, longitude: 0 } as Destination;
 const inventory: readonly WarehouseStock[] = [
@@ -22,12 +23,24 @@ function validEstimate(): ValidOrderEstimate {
   return estimate;
 }
 
+const submissionKey = "submission-1" as SubmissionKey;
+
 const expectInvalid = (
   estimate: unknown,
   message: RegExp,
-  { id = "id-1", orderNumber = "SO-1" }: { id?: string; orderNumber?: string } = {},
+  {
+    id = "id-1",
+    orderNumber = "SO-1",
+    key = submissionKey,
+  }: { id?: string; orderNumber?: string; key?: string } = {},
 ) => {
-  const run = () => createOrder({ id, orderNumber, estimate: estimate as OrderEstimate });
+  const run = () =>
+    createOrder({
+      id,
+      orderNumber,
+      submissionKey: key as SubmissionKey,
+      estimate: estimate as OrderEstimate,
+    });
   expect(run).toThrow(DomainError);
   expect(run).toThrow(message);
 };
@@ -35,8 +48,13 @@ const expectInvalid = (
 describe("createOrder", () => {
   test("creates an immutable order from a valid estimate", () => {
     const estimate = validEstimate();
-    const order = createOrder({ id: "id-1", orderNumber: "SO-1", estimate });
-    expect(order).toMatchObject({ id: "id-1", orderNumber: "SO-1", quantity: 30 });
+    const order = createOrder({ id: "id-1", orderNumber: "SO-1", submissionKey, estimate });
+    expect(order).toMatchObject({
+      id: "id-1",
+      orderNumber: "SO-1",
+      submissionKey: "submission-1",
+      quantity: 30,
+    });
     expect(order.orderTotal.toString()).toBe(estimate.orderTotal.toString());
     expect(order.allocations.map((entry) => [entry.warehouseId, entry.quantity])).toEqual([
       ["a", 20],
@@ -62,6 +80,12 @@ describe("createOrder", () => {
   test("requires identifiers", () => {
     expectInvalid(validEstimate(), /id is required/, { id: "" });
     expectInvalid(validEstimate(), /number is required/, { id: "id", orderNumber: "" });
+  });
+
+  test("requires a validated submission key even when an invalid one is cast", () => {
+    for (const key of ["", "   ", " submission-1", "x".repeat(256)]) {
+      expectInvalid(validEstimate(), /Submission key must be a validated SubmissionKey/, { key });
+    }
   });
 
   test("enforces allocation invariants", () => {

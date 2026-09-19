@@ -21,6 +21,7 @@ describe("@scos/core public entry point", () => {
       "estimateOrder",
       "orderRequestSchema",
       "quantitySchema",
+      "submissionKeySchema",
     ]);
   });
 });

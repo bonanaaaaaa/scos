@@ -44,8 +44,8 @@ flowchart LR
    result. It needs outside data but must not know how it is stored, so it
    declares what it needs as ports.
 3. **Ports** are interfaces owned by core, for example "give me the inventory
-   snapshot" or "within one transaction, check for a duplicate submission, lock
-   stock and save the order". Core defines their shape and never implements
+   snapshot" or "within one transaction, lock stock, find the Order already
+   stored for this submission key, or save the new order". Core defines their shape and never implements
    them.
 4. **Adapters** are the plugs on the outside.
    - **Driving adapters** call into the application. The Hono API turns an HTTP
@@ -77,7 +77,7 @@ PostgreSQL by a spreadsheet:
 | Answer                                                  | Layer                 | Examples                                                                       |
 | ------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------ |
 | Yes, and it is a rule                                   | Domain                | discount tiers, allocation, shipping limit, Order invariants                   |
-| Yes, but it is a sequence of steps needing outside data | Use case, plus a port | lock stock, then allocate, then save; replay an earlier submission             |
+| Yes, but it is a sequence of steps needing outside data | Use case, plus a port | lock stock, then allocate, then save; return the Order that has the same key   |
 | No, it is about a specific technology                   | Adapter               | SQL and row locking, HTTP status codes, Zod request schemas for HTTP, env vars |
 
 For example, warehouse allocation is domain code, not a use case. It applies
@@ -95,8 +95,11 @@ allocate and with which data; the domain decides how.
   adding a driving adapter, not rewriting logic. Changing the database means
   rewriting one adapter.
 - **Clear ownership:** rules in [design decisions](design-decisions.md) such as
-  "Prisma types stay outside the domain" and "persist application outcomes, not
-  HTTP statuses" are this architecture written down.
+  "Prisma types stay outside the domain" and "persist accepted Orders as
+  snapshots, not HTTP status codes" are this architecture written down. Only
+  accepted Orders are stored ([ADR 0004](adr/0004-deduplicate-accepted-orders.md)):
+  a repeated submission is matched by the Order's submission key, rejections
+  are not stored, and HTTP statuses are never persisted.
 
 ## Hexagonal architecture and DDD
 
@@ -121,6 +124,7 @@ classDiagram
         <<AggregateRoot>>
         +id string
         +orderNumber string
+        +submissionKey SubmissionKey
         +quantity Quantity
         +destination Destination
         +merchandiseSubtotal Money
@@ -133,9 +137,12 @@ classDiagram
     }
     class CreateOrder {
         <<Factory>>
-        +createOrder(id, orderNumber, estimate) Order
+        +createOrder(id, orderNumber, submissionKey, estimate) Order
     }
 
+    class SubmissionKey {
+        <<ValueObject>>
+    }
     class Quantity {
         <<ValueObject>>
     }
@@ -205,6 +212,7 @@ classDiagram
         +estimateOrder(request, inventory) OrderEstimate
     }
 
+    Order *-- SubmissionKey
     Order *-- Quantity
     Order *-- Destination
     Order *-- Money
@@ -232,24 +240,28 @@ classDiagram
     Shipping ..> WarehouseAllocation : uses
     Pricing ..> Quantity : uses
     CreateOrder ..> OrderEstimate : uses
+    CreateOrder ..> SubmissionKey : uses
     CreateOrder ..> Pricing : re-verifies with
     CreateOrder ..> Shipping : re-verifies with
     CreateOrder ..> Order : returns
 ```
 
 - **Aggregate root: `Order`.** An accepted order with its identity (`id`,
-  `orderNumber`), amounts and allocations. The only way to build one is the
+  `orderNumber`), the client's `submissionKey`, amounts and allocations. The only way to build one is the
   `createOrder` factory, which accepts only a valid `OrderEstimate` and
   re-verifies every invariant (quantity range, allocations summing to the
   quantity, subtotal, discount tier and amount, shipping cost and the 15% limit,
   order total) before returning a frozen value; a violation throws
   `DomainError`.
-- **Value objects** have no identity and are immutable: `Quantity` and
-  `Destination` (branded, produced by the Zod input schemas), `Money`,
+- **Value objects** have no identity and are immutable: `Quantity`,
+  `Destination` and `SubmissionKey` (branded, produced by the Zod input
+  schemas), `Money`,
   `DiscountRate`, `WarehouseAllocation`, `ShippingPlan` (a non-empty list of
   allocations), `OrderRequest` and `OrderEstimate`. An estimate carries the
   request's quantity and destination, the priced amounts, and either a
-  `ShippingPlan` or a rejection `reason`.
+  `ShippingPlan` or a rejection `reason`. `SubmissionKey` is the client's retry
+  key, stored verbatim as the accepted Order's unique `submission_key`; it is
+  not part of what is ordered, so it is not in `OrderRequest`.
 - **Domain services** are stateless functions: pricing (discount tiers,
   merchandise totals), shipping (combined cost rounded once, exact 15% limit),
   allocation (nearest-first; it returns no plan when stock is insufficient) and
