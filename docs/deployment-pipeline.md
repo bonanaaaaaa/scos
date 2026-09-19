@@ -301,6 +301,8 @@ Actionlint (`actionlint.yml`) checks both workflows on any change under
 
 ### After CI on `main`: `deploy.yml`
 
+![The deployment pipeline after CI on main](images/deployment-pipeline.svg)
+
 Triggered by `workflow_run` when `CI` completes on `main`. A manual run
 (`workflow_dispatch`) is allowed only on `main`, and only for a commit with a
 successful CI push run (checked through the API).

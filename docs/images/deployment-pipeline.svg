@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="770" viewBox="0 0 680 770" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>SCOS deployment pipeline after CI on main</title>
+  <desc>After CI passes for a push to main, a gate without secrets checks that the repository variable DEPLOY_ENABLED is true and that main is still at the tested commit; otherwise nothing runs. With the prod environment approval, the deploy job proves the R2 state lock and backs up the state, applies the saved Terraform plan for Hyperdrive, runs prisma migrate deploy directly against PlanetScale with the migration role, deploys the Worker bundle built once with its SHA-256 recorded, and checks GET /health. The job checks again that main has not moved on before the apply and before wrangler deploy. Any failing step stops the run and nothing is destroyed.</desc>
+  <style>
+    .bg { fill: #ffffff; }
+    .gray rect { fill: #F1EFE8; stroke: #5F5E5A; }
+    .gray .th { fill: #444441; } .gray .ts { fill: #5F5E5A; }
+    .teal rect { fill: #E1F5EE; stroke: #0F6E56; }
+    .teal .th { fill: #085041; } .teal .ts { fill: #0F6E56; }
+    .purple rect { fill: #EEEDFE; stroke: #534AB7; }
+    .purple .th { fill: #3C3489; } .purple .ts { fill: #534AB7; }
+    .gate rect { stroke-dasharray: 5 3; }
+    .th { font-size: 14px; font-weight: 500; }
+    .ts { font-size: 12px; }
+    .legend, .note, .lbl { font-size: 12px; fill: #5F5E5A; }
+    .arr { stroke: #888780; stroke-width: 1.5; fill: none; }
+    .check { stroke: #888780; stroke-width: 1; stroke-dasharray: 4 3; fill: none; }
+    .head { stroke: #888780; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .gray rect { fill: #444441; stroke: #B4B2A9; }
+      .gray .th { fill: #F1EFE8; } .gray .ts { fill: #D3D1C7; }
+      .teal rect { fill: #085041; stroke: #5DCAA5; }
+      .teal .th { fill: #E1F5EE; } .teal .ts { fill: #9FE1CB; }
+      .purple rect { fill: #3C3489; stroke: #AFA9EC; }
+      .purple .th { fill: #EEEDFE; } .purple .ts { fill: #CECBF6; }
+      .legend, .note, .lbl { fill: #D3D1C7; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="head" d="M2 1L8 5L2 9" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="680" height="770" rx="8"/>
+
+  <!-- 1. CI -->
+  <g class="gray"><rect x="40" y="40" width="380" height="52" rx="4" stroke-width="1"/>
+    <text class="th" x="230" y="62" text-anchor="middle">CI passes on main</text>
+    <text class="ts" x="230" y="80" text-anchor="middle">a push to main in this repository</text></g>
+  <line class="arr" x1="230" y1="92" x2="230" y2="118" marker-end="url(#a)"/>
+
+  <!-- 2. Gate -->
+  <g class="gray gate"><rect x="40" y="120" width="380" height="60" rx="4" stroke-width="1"/>
+    <text class="th" x="230" y="144" text-anchor="middle">Gate (no environment, no secrets)</text>
+    <text class="ts" x="230" y="163" text-anchor="middle">DEPLOY_ENABLED is true and main is still at this commit?</text></g>
+  <line class="arr" x1="420" y1="150" x2="458" y2="150" marker-end="url(#a)"/>
+  <text class="lbl" x="439" y="143" text-anchor="middle">no</text>
+  <g class="gray"><rect x="460" y="124" width="180" height="52" rx="4" stroke-width="1"/>
+    <text class="th" x="550" y="146" text-anchor="middle">Nothing runs</text>
+    <text class="ts" x="550" y="164" text-anchor="middle">no prod job or approval</text></g>
+  <line class="arr" x1="230" y1="180" x2="230" y2="210" marker-end="url(#a)"/>
+  <text class="lbl" x="240" y="199">yes</text>
+
+  <!-- 3. Approval -->
+  <g class="gray"><rect x="40" y="212" width="380" height="52" rx="4" stroke-width="1"/>
+    <text class="th" x="230" y="234" text-anchor="middle">prod environment approval</text>
+    <text class="ts" x="230" y="252" text-anchor="middle">required reviewer; checks out the commit CI tested</text></g>
+  <line class="arr" x1="230" y1="264" x2="230" y2="290" marker-end="url(#a)"/>
+
+  <!-- 4. Lock proof and backup -->
+  <g class="teal"><rect x="40" y="292" width="380" height="52" rx="4" stroke-width="1"/>
+    <text class="th" x="230" y="314" text-anchor="middle">R2 state lock proof and state backup</text>
+    <text class="ts" x="230" y="332" text-anchor="middle">a second Terraform run must be rejected</text></g>
+  <line class="arr" x1="230" y1="344" x2="230" y2="370" marker-end="url(#a)"/>
+
+  <!-- 5. Terraform -->
+  <g class="teal"><rect x="40" y="372" width="380" height="52" rx="4" stroke-width="1"/>
+    <text class="th" x="230" y="394" text-anchor="middle">terraform plan -out, then apply that plan</text>
+    <text class="ts" x="230" y="412" text-anchor="middle">Hyperdrive with caching disabled; plan never printed</text></g>
+  <line class="check" x1="420" y1="398" x2="452" y2="398"/>
+  <text class="note" x="458" y="394">checks main has not</text>
+  <text class="note" x="458" y="410">moved on before apply</text>
+  <line class="arr" x1="230" y1="424" x2="230" y2="450" marker-end="url(#a)"/>
+
+  <!-- 6. Migrations -->
+  <g class="purple"><rect x="40" y="452" width="380" height="52" rx="4" stroke-width="1"/>
+    <text class="th" x="230" y="474" text-anchor="middle">prisma migrate deploy</text>
+    <text class="ts" x="230" y="492" text-anchor="middle">migration role, direct to PlanetScale, not Hyperdrive</text></g>
+  <line class="arr" x1="230" y1="504" x2="230" y2="530" marker-end="url(#a)"/>
+
+  <!-- 7. Wrangler -->
+  <g class="teal"><rect x="40" y="532" width="380" height="52" rx="4" stroke-width="1"/>
+    <text class="th" x="230" y="554" text-anchor="middle">wrangler deploy</text>
+    <text class="ts" x="230" y="572" text-anchor="middle">bundle built once, SHA-256 recorded, Hyperdrive ID injected</text></g>
+  <line class="check" x1="420" y1="558" x2="452" y2="558"/>
+  <text class="note" x="458" y="554">checks main has not</text>
+  <text class="note" x="458" y="570">moved on before upload</text>
+  <line class="arr" x1="230" y1="584" x2="230" y2="610" marker-end="url(#a)"/>
+
+  <!-- 8. Health -->
+  <g class="gray"><rect x="40" y="612" width="380" height="52" rx="4" stroke-width="1"/>
+    <text class="th" x="230" y="634" text-anchor="middle">GET /health</text>
+    <text class="ts" x="230" y="652" text-anchor="middle">on the deployed URL, with retries</text></g>
+
+  <text class="note" x="40" y="696">Any failing step stops the run. Nothing is ever destroyed; rollback is wrangler rollback.</text>
+
+  <!-- Legend -->
+  <g class="gray"><rect x="40" y="718" width="14" height="14" rx="2" stroke-width="1"/></g>
+  <text class="legend" x="60" y="730">GitHub Actions</text>
+  <g class="teal"><rect x="170" y="718" width="14" height="14" rx="2" stroke-width="1"/></g>
+  <text class="legend" x="190" y="730">Cloudflare (R2, Hyperdrive, Workers)</text>
+  <g class="purple"><rect x="410" y="718" width="14" height="14" rx="2" stroke-width="1"/></g>
+  <text class="legend" x="430" y="730">PlanetScale Postgres</text>
+</svg>
