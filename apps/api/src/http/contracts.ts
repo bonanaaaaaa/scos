@@ -223,7 +223,15 @@ export interface ResponseContract {
   readonly headers?: Readonly<Record<string, string>>;
 }
 
+/** The standalone app factory (in `app.ts`) that serves a route. */
+export type EndpointApp = "createHealthApp" | "createVerifyOrderApp" | "createSubmitOrderApp";
+
 export interface RouteContract {
+  /**
+   * The standalone Hono app that serves this route and nothing else (one
+   * deployable function per endpoint). `createApp` mounts all of them.
+   */
+  readonly servedBy: EndpointApp;
   readonly method: "get" | "post";
   readonly path: string;
   readonly summary: string;
@@ -244,11 +252,14 @@ const internalError: ResponseContract = {
 };
 
 /**
- * Every route the API serves with each documented status. Any other path
- * returns 404 with `errorResponseSchema` and code `NOT_FOUND`.
+ * Every route the API serves with each documented status, and the standalone
+ * app that serves it (`servedBy`). Each standalone app, and the combined
+ * `createApp`, returns 404 with `errorResponseSchema` and code `NOT_FOUND`
+ * for any other method or path.
  */
 export const routes = {
   health: {
+    servedBy: "createHealthApp",
     method: "get",
     path: "/health",
     summary: "Liveness check; does not touch the database.",
@@ -257,6 +268,7 @@ export const routes = {
     },
   },
   verifyOrder: {
+    servedBy: "createVerifyOrderApp",
     method: "post",
     path: "/orders/verify",
     summary: "Advisory Order Estimate against current stock; reserves and stores nothing.",
@@ -272,6 +284,7 @@ export const routes = {
     },
   },
   submitOrder: {
+    servedBy: "createSubmitOrderApp",
     method: "post",
     path: "/orders",
     summary: "Submit an Order against current stock, deduplicated by submissionId.",

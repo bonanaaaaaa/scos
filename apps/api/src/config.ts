@@ -38,39 +38,76 @@ const portSchema = z
   .optional()
   .transform((port) => port ?? DEFAULT_PORT);
 
-export const environmentSchema = z.object({
-  DATABASE_URL: databaseUrlSchema,
-  PORT: portSchema,
-});
+/**
+ * Per-runtime environment schemas. Health needs nothing; verification and
+ * submission need a database; the local server also takes a port.
+ */
+export const healthEnvironmentSchema = z.object({});
 
-export interface ServerConfig {
-  readonly databaseUrl: string;
-  readonly port: number;
-}
+export const databaseEnvironmentSchema = z.object({ DATABASE_URL: databaseUrlSchema });
 
-export type ConfigResult =
-  | { readonly success: true; readonly config: ServerConfig }
+export const serverEnvironmentSchema = databaseEnvironmentSchema.extend({ PORT: portSchema });
+
+type Environment = Readonly<Record<string, string | undefined>>;
+
+export type ParseResult<Config> =
+  | { readonly success: true; readonly config: Config }
   | { readonly success: false; readonly errors: readonly string[] };
 
 /**
- * Parses the process environment. Returns sanitized `NAME: reason` lines on
- * failure; values are never included.
+ * Validates only the variables `schema` declares. Returns sanitized
+ * `NAME: reason` lines on failure; values are never included.
  */
-export function parseConfig(
-  environment: Readonly<Record<string, string | undefined>>,
-): ConfigResult {
-  const parsed = environmentSchema.safeParse({
-    DATABASE_URL: environment.DATABASE_URL,
-    PORT: environment.PORT,
-  });
+function parseEnvironment<Schema extends z.ZodObject, Config>(
+  schema: Schema,
+  environment: Environment,
+  toConfig: (data: z.output<Schema>) => Config,
+): ParseResult<Config> {
+  const declared = Object.fromEntries(
+    Object.keys(schema.shape).map((name) => [name, environment[name]]),
+  );
+  const parsed = schema.safeParse(declared);
   if (!parsed.success) {
     return {
       success: false,
       errors: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
     };
   }
-  return {
-    success: true,
-    config: { databaseUrl: parsed.data.DATABASE_URL, port: parsed.data.PORT },
-  };
+  return { success: true, config: toConfig(parsed.data) };
+}
+
+/** Health has no configuration; this always succeeds. */
+export type HealthConfig = Readonly<Record<string, never>>;
+
+export function parseHealthConfig(environment: Environment): ParseResult<HealthConfig> {
+  return parseEnvironment(healthEnvironmentSchema, environment, () => ({}));
+}
+
+/** What the verify and submit compositions need. */
+export interface DatabaseConfig {
+  readonly databaseUrl: string;
+}
+
+/** For a verify-only or submit-only runtime: requires DATABASE_URL. */
+export function parseDatabaseConfig(environment: Environment): ParseResult<DatabaseConfig> {
+  return parseEnvironment(databaseEnvironmentSchema, environment, (data) => ({
+    databaseUrl: data.DATABASE_URL,
+  }));
+}
+
+export interface ServerConfig extends DatabaseConfig {
+  readonly port: number;
+}
+
+export type ConfigResult = ParseResult<ServerConfig>;
+
+/**
+ * Parses the local server's environment (DATABASE_URL and PORT). Returns
+ * sanitized `NAME: reason` lines on failure; values are never included.
+ */
+export function parseConfig(environment: Environment): ConfigResult {
+  return parseEnvironment(serverEnvironmentSchema, environment, (data) => ({
+    databaseUrl: data.DATABASE_URL,
+    port: data.PORT,
+  }));
 }

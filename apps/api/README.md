@@ -5,20 +5,70 @@ use cases (`VerifyOrder`, `SubmitOrder`), and maps their typed outcomes to HTTP
 responses. Business rules live in `packages/core`; SQL lives in
 `packages/persistence`.
 
-| File                    | Role                                                                        |
-| ----------------------- | --------------------------------------------------------------------------- |
-| `src/http/contracts.ts` | Zod request/response schemas, error codes, and the route/status table       |
-| `src/app.ts`            | `createApp({ verifyOrder, submitOrder, logger? })`: routes and mapping      |
-| `src/composition.ts`    | Composition root: pool, Prisma, adapters, use cases, app (`{ app, close }`) |
-| `src/config.ts`         | Environment schema, validated once at startup                               |
-| `src/server.ts`         | Node.js entrypoint: validate config, listen, graceful shutdown              |
+| File                    | Role                                                                                |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| `src/http/contracts.ts` | Zod request/response schemas, error codes, and the route/status table (`servedBy`)  |
+| `src/app.ts`            | One Hono app per endpoint, plus `createApp`, which mounts all three                 |
+| `src/composition.ts`    | Composition roots per endpoint and combined: pool, Prisma, adapters, use cases, app |
+| `src/config.ts`         | Environment schemas per runtime (health, database endpoints, local server)          |
+| `src/server.ts`         | Node.js entrypoint: validate config, listen, graceful shutdown                      |
 
-`createApp` and `src/http/contracts.ts` read no environment and open no
+The app factories and `src/http/contracts.ts` read no environment and open no
 connection, so tests and an offline OpenAPI export (#12) can import them
 without deployment configuration. The schemas convert with
 `z.toJSONSchema(schema, { target: "draft-07" })`; the submissionId refinements
 (no surrounding whitespace, no NUL, well-formed Unicode) are not expressible in
 JSON Schema and must be documented in prose.
+
+## Per-endpoint apps and compositions
+
+Each endpoint is a separately constructible Hono app, so each can be deployed
+as its own Lambda function (#14):
+
+| Route                 | App factory                                      | Composition                              | Builds                         | Configuration  |
+| --------------------- | ------------------------------------------------ | ---------------------------------------- | ------------------------------ | -------------- |
+| `GET /health`         | `createHealthApp({ logger? })`                   | `composeHealthApplication()`             | nothing                        | none           |
+| `POST /orders/verify` | `createVerifyOrderApp({ verifyOrder, logger? })` | `composeVerifyOrderApplication(options)` | pool, Prisma, inventory reader | `DATABASE_URL` |
+| `POST /orders`        | `createSubmitOrderApp({ submitOrder, logger? })` | `composeSubmitOrderApplication(options)` | pool, Prisma, submission store | `DATABASE_URL` |
+
+- Every standalone app is complete: the same Content-Type and JSON handling,
+  error envelope and 500 mapping (with its route's message), and the same
+  `404 NOT_FOUND` envelope for every other method or path. They share this
+  through one helper in `src/app.ts`, and tests check that each standalone app
+  returns the same status, `Content-Type`, `Retry-After` and body as the
+  combined app.
+- Each composition returns `{ app, close }`. The submit composition also takes
+  the submission store options, `maxSubmissionAttempts`, and
+  `decorateSubmissionStore`, which the tests use for failure injection.
+- `createApp({ verifyOrder, submitOrder, logger? })` mounts the three with
+  Hono's `app.route()`. Each mounted app keeps its own error handler for its
+  route, and the combined app answers everything else with the same 404
+  envelope, so its behaviour is identical to the standalone apps.
+  `composeApplication` builds it over one pool for the local server
+  (`src/server.ts`) and for the documentation routes (#12).
+- Configuration is validated per runtime: `parseHealthConfig` requires
+  nothing, `parseDatabaseConfig` requires `DATABASE_URL`, and the local server
+  (`parseConfig`) requires `DATABASE_URL` and accepts `PORT`.
+- Everything above is exported from `src/index.ts`, and `routes[*].servedBy`
+  in the contract names the app that serves each route.
+
+### Notes for Lambda deployment (#14)
+
+- The in-process pg pool belongs to one Lambda execution environment. An
+  environment serves one request at a time, so the pool never shares
+  connections across environments. Nothing sets the pool size yet (pg
+  defaults to 10); the recommendation is for #14 to apply and verify `max: 1`
+  per Lambda environment.
+- The connection approach is **RDS Proxy**. It pools connections across all
+  per-endpoint functions and bounds the connections that reach PostgreSQL.
+- Open checks for #14 (not yet verified):
+  - Connection pinning with this stack. The submission transaction runs
+    `set_config('lock_timeout' | 'statement_timeout', ..., true)`. Check
+    whether that pins the client connection, and whether pg/Prisma prepared
+    statements do.
+  - IAM or Secrets Manager authentication for RDS Proxy.
+  - RDS Proxy timeouts (connection borrow and idle client timeouts) versus
+    our 5 s connect timeout (`connectionTimeoutMillis`).
 
 ## Endpoints
 
@@ -278,7 +328,7 @@ DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
 The integration tests (`test/*.integration.test.ts`) create an isolated,
 migrated and seeded database per file beside `scos_test` and drop it
 afterwards. They fail, rather than skip, when `DATABASE_TEST_URL` is missing
-or does not name `scos_test`. They cover verification leaving every row
+or does not name `scos_test`. They cover the per-endpoint verify and submit compositions over separate pools, verification leaving every row
 unchanged, acceptance and both rejections, repeats after stock changes and a
 restart, conflicts, concurrent submissions under controlled lock overlap, and
 failure injection (rollback at each stage, `submission_key` unique violations,

@@ -1,8 +1,15 @@
 /**
- * Composition root: wires the PostgreSQL adapters into the core use cases and
- * the use cases into the Hono app.
+ * Composition roots: wire the PostgreSQL adapters into the core use cases and
+ * the use cases into the Hono apps.
  *
- * pool -> Prisma client -> inventory reader + submission store -> use cases -> app
+ * One per endpoint, each building only what its endpoint needs (for one
+ * Lambda function per endpoint, #14):
+ *
+ * - health: nothing (no configuration, no pool)
+ * - verify: pool -> Prisma client -> inventory reader -> VerifyOrder -> app
+ * - submit: pool -> Prisma client -> submission store -> SubmitOrder -> app
+ *
+ * `composeApplication` builds all routes over one pool for the local server.
  *
  * Building it opens no connection (pg connects lazily on the first query), so
  * `/health` answers even while the database is unreachable. `close()` releases
@@ -18,9 +25,16 @@
  * @module
  */
 
-import { type SubmissionStore, createSubmitOrder, createVerifyOrder } from "@scos/core";
+import {
+  type SubmissionStore,
+  type SubmitOrder,
+  type VerifyOrder,
+  createSubmitOrder,
+  createVerifyOrder,
+} from "@scos/core";
 import {
   type DatabasePoolOptions,
+  type PrismaClient,
   type PrismaSubmissionStoreOptions,
   createDatabasePool,
   createPrismaClient,
@@ -29,7 +43,13 @@ import {
 } from "@scos/persistence";
 import type { Hono } from "hono";
 
-import { type Logger, createApp } from "./app";
+import {
+  type Logger,
+  createApp,
+  createHealthApp,
+  createSubmitOrderApp,
+  createVerifyOrderApp,
+} from "./app";
 
 /** Default limit for acquiring or opening a pooled connection. */
 export const DEFAULT_CONNECTION_TIMEOUT_MS = 5_000;
@@ -47,14 +67,26 @@ export function databasePoolTimeouts(
   return { connectionTimeoutMillis: connectionTimeoutMs };
 }
 
-export interface CompositionOptions {
+export interface ComposedApplication {
+  readonly app: Hono;
+  /** Releases what the composition opened. Safe to call more than once. */
+  close(): Promise<void>;
+}
+
+/** Options every database-backed composition accepts. */
+export interface DatabaseCompositionOptions {
   /** A validated PostgreSQL connection string (see `config.ts`). */
   readonly databaseUrl: string;
   readonly logger?: Logger;
-  /** Transaction timeouts for submissions; persistence defaults apply otherwise. */
-  readonly submissionStore?: PrismaSubmissionStoreOptions;
   /** Limit for acquiring or opening a connection; {@link DEFAULT_CONNECTION_TIMEOUT_MS}. */
   readonly connectionTimeoutMs?: number;
+}
+
+export type VerifyOrderCompositionOptions = DatabaseCompositionOptions;
+
+export interface SubmitOrderCompositionOptions extends DatabaseCompositionOptions {
+  /** Transaction timeouts for submissions; persistence defaults apply otherwise. */
+  readonly submissionStore?: PrismaSubmissionStoreOptions;
   /** Total SubmitOrder attempts for transient failures; core default otherwise. */
   readonly maxSubmissionAttempts?: number;
   /**
@@ -64,40 +96,26 @@ export interface CompositionOptions {
   readonly decorateSubmissionStore?: (store: SubmissionStore) => SubmissionStore;
 }
 
-export interface ComposedApplication {
-  readonly app: Hono;
-  /** Disconnects Prisma, then ends the pool. Safe to call more than once. */
+/** Everything, for the local server: all options of both database endpoints. */
+export type CompositionOptions = SubmitOrderCompositionOptions;
+
+interface Database {
+  readonly prisma: PrismaClient;
   close(): Promise<void>;
 }
 
-export function composeApplication(options: CompositionOptions): ComposedApplication {
+/** Pool and Prisma client; nothing connects until the first query. */
+function openDatabase(options: DatabaseCompositionOptions): Database {
   const pool = createDatabasePool(
     options.databaseUrl,
     databasePoolTimeouts(options.connectionTimeoutMs),
   );
   const prisma = createPrismaClient(pool);
-
-  const realStore = createPrismaSubmissionStore(prisma, options.submissionStore);
-  const store = options.decorateSubmissionStore?.(realStore) ?? realStore;
-
-  const verifyOrder = createVerifyOrder({ inventoryReader: createPrismaInventoryReader(prisma) });
-  const submitOrder = createSubmitOrder({
-    store,
-    ...(options.maxSubmissionAttempts === undefined
-      ? {}
-      : { maxAttempts: options.maxSubmissionAttempts }),
-  });
-
-  const app = createApp({
-    verifyOrder,
-    submitOrder,
-    ...(options.logger === undefined ? {} : { logger: options.logger }),
-  });
-
   let closing: Promise<void> | undefined;
   return {
-    app,
+    prisma,
     close() {
+      // Disconnect Prisma first, then end the pool it borrows.
       closing ??= (async () => {
         try {
           await prisma.$disconnect();
@@ -108,4 +126,86 @@ export function composeApplication(options: CompositionOptions): ComposedApplica
       return closing;
     },
   };
+}
+
+function buildVerifyOrder(prisma: PrismaClient): VerifyOrder {
+  return createVerifyOrder({ inventoryReader: createPrismaInventoryReader(prisma) });
+}
+
+function buildSubmitOrder(
+  prisma: PrismaClient,
+  options: SubmitOrderCompositionOptions,
+): SubmitOrder {
+  const realStore = createPrismaSubmissionStore(prisma, options.submissionStore);
+  const store = options.decorateSubmissionStore?.(realStore) ?? realStore;
+  return createSubmitOrder({
+    store,
+    ...(options.maxSubmissionAttempts === undefined
+      ? {}
+      : { maxAttempts: options.maxSubmissionAttempts }),
+  });
+}
+
+function withLogger(logger: Logger | undefined): { logger?: Logger } {
+  return logger === undefined ? {} : { logger };
+}
+
+/** `GET /health` alone: no configuration, no database; `close()` is a no-op. */
+export function composeHealthApplication(
+  options: { readonly logger?: Logger } = {},
+): ComposedApplication {
+  return { app: createHealthApp(options), close: async () => undefined };
+}
+
+/** `POST /orders/verify` alone: pool, Prisma, inventory reader. */
+export function composeVerifyOrderApplication(
+  options: VerifyOrderCompositionOptions,
+): ComposedApplication {
+  const database = openDatabase(options);
+  try {
+    const verifyOrder = buildVerifyOrder(database.prisma);
+    return {
+      app: createVerifyOrderApp({ verifyOrder, ...withLogger(options.logger) }),
+      close: database.close,
+    };
+  } catch (error) {
+    // Not awaited: pg connects lazily, so nothing has connected yet.
+    void database.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+/** `POST /orders` alone: pool, Prisma, submission store. */
+export function composeSubmitOrderApplication(
+  options: SubmitOrderCompositionOptions,
+): ComposedApplication {
+  const database = openDatabase(options);
+  try {
+    const submitOrder = buildSubmitOrder(database.prisma, options);
+    return {
+      app: createSubmitOrderApp({ submitOrder, ...withLogger(options.logger) }),
+      close: database.close,
+    };
+  } catch (error) {
+    // Not awaited: pg connects lazily, so nothing has connected yet.
+    void database.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Every route over one pool, for the local server and documentation routes. */
+export function composeApplication(options: CompositionOptions): ComposedApplication {
+  const database = openDatabase(options);
+  try {
+    const app = createApp({
+      verifyOrder: buildVerifyOrder(database.prisma),
+      submitOrder: buildSubmitOrder(database.prisma, options),
+      ...withLogger(options.logger),
+    });
+    return { app, close: database.close };
+  } catch (error) {
+    // Not awaited: pg connects lazily, so nothing has connected yet.
+    void database.close().catch(() => undefined);
+    throw error;
+  }
 }

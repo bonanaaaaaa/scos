@@ -7,7 +7,7 @@
 - Deadline: next Monday, interpreted as September 21, 2026, Bangkok time.
 - Budget: approximately four hours for core implementation, with separate review time.
 - AWS deployment provisioning has a separate budget from the four-hour core implementation.
-- Stack: TypeScript 7 (required), Hono, Prisma, PostgreSQL; deploy on AWS Lambda. PostgreSQL hosting and the database connection approach remain undecided.
+- Stack: TypeScript 7 (required), Hono, Prisma, PostgreSQL; deploy on AWS Lambda. The database connection approach is RDS Proxy (see Agreed architecture). Because RDS Proxy fronts Amazon RDS for PostgreSQL or Aurora PostgreSQL, hosting is narrowed to those two; the engine and instance choice remains open.
 - Use a pnpm workspace and Turborepo monorepo. Oxlint is the selected linter and Oxfmt is the selected formatter. Type-aware lint rule configuration remains an implementation choice to finalize.
 - Use hexagonal architecture and domain-driven design (DDD), with one Ordering bounded context covering pricing, shipping allocation, orders, and available inventory.
 - Do not use the experimental, non-standard Idempotency-Key HTTP header. Use a required client-generated submissionId in the JSON request body to prevent duplicate Orders. See [ADR 0004](adr/0004-deduplicate-accepted-orders.md).
@@ -41,6 +41,8 @@
 - Use third normal form (3NF) as the relational database design baseline. Separate entity facts and relationships, enforce keys and foreign keys, and evaluate functional dependencies beyond the UUID primary key. Accepted order prices, discounts, shipping charges, and totals are immutable historical facts; preserve them rather than deriving them from current commercial rules. Store the independent facts (quantity, unit price, discount rate and amount, shipping cost) and derive subtotals and the Order Total from those stored values with exact decimal arithmetic, so the amounts returned always equal what was charged. Any deliberate denormalization requires a documented reason.
 - Inventory is persisted separately. The SubmitOrder application use case coordinates inventory changes and order creation atomically.
 - Hono is an inbound adapter calling VerifyOrder and SubmitOrder application use cases. Lambda starts the application.
+- Each endpoint is a separately constructible Hono app with its own composition root (`GET /health`, `POST /orders/verify`, `POST /orders`), building only the adapters it needs, so each can be deployed as its own Lambda function. A combined app mounts all three for local serving and the API documentation routes, with identical responses.
+- Lambda functions reach PostgreSQL through RDS Proxy, which pools connections across all per-endpoint functions and bounds the connections reaching the database. Nothing sets the in-process pool size yet (pg defaults to 10); the recommendation for deployment (#14) is to apply and verify a pool of at most one connection per execution environment, which serves one request at a time. Deployment must also check whether session settings or prepared statements pin connections, and verify IAM or Secrets Manager authentication and proxy timeouts.
 - Application use cases depend on the domain model and application-owned persistence interfaces. The Prisma outbound adapter implements persistence and transaction locking.
 - Prisma types and HTTP objects stay outside the domain and application use cases.
 - A transaction interface encompasses the duplicate-key lookup, stock reads, order and allocation persistence, and inventory updates together.
@@ -139,5 +141,6 @@ sequenceDiagram
 
 ## Unresolved
 
-- Monthly demo budget, PostgreSQL hosting, and database connection approach; deployment starts from scratch.
+- Monthly demo budget; deployment starts from scratch.
+- PostgreSQL engine and instance choice: Amazon RDS for PostgreSQL or Aurora PostgreSQL (the two that RDS Proxy fronts). The connection approach itself is decided: RDS Proxy.
 - Deployment exposure and packaging, subject to Q26 infrastructure and budget constraints.
