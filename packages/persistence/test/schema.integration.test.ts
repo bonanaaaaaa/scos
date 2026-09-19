@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { formatMoney, toOrderRecord } from "../src/records.js";
+import { formatMoney, toOrderRecord } from "../src/records";
 import {
   assertDatabaseError,
   createMigratedDatabase,
   type MigratedDatabase,
   runPrisma,
-} from "./support/database.js";
+} from "./support/database";
 
 const CHECK_VIOLATION = "23514";
 const UNIQUE_VIOLATION = "23505";

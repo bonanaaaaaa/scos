@@ -1,4 +1,4 @@
-import { runConfirmResetCommand } from "../commands.js";
+import { runConfirmResetCommand } from "../commands";
 
 try {
   runConfirmResetCommand();

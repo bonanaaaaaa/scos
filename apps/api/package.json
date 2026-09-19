@@ -3,18 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node build.mjs",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "oxlint --deny-warnings src",
+    "lint": "oxlint --deny-warnings src build.mjs",
     "test": "vitest run --coverage"
   },
   "dependencies": {
@@ -27,6 +21,7 @@
     "@scos/typescript-config": "workspace:*",
     "@types/node": "24.13.5",
     "@vitest/coverage-v8": "5.0.1",
+    "esbuild": "0.28.2",
     "vitest": "5.0.1"
   }
 }

@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 
-import { runConfirmResetCommand, runSeedCommand } from "./commands.js";
-import { confirmDatabaseReset } from "./reset.js";
-import { seedWarehouses, warehouseSeeds } from "./seed.js";
+import { runConfirmResetCommand, runSeedCommand } from "./commands";
+import { confirmDatabaseReset } from "./reset";
+import { seedWarehouses, warehouseSeeds } from "./seed";
 
 const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 

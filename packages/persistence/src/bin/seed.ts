@@ -1,4 +1,4 @@
-import { runSeedCommand } from "../commands.js";
+import { runSeedCommand } from "../commands";
 
 try {
   await runSeedCommand();

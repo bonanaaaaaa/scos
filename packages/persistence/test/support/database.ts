@@ -6,8 +6,8 @@ import { promisify } from "node:util";
 import { Client, DatabaseError, type Pool } from "pg";
 import { expect } from "vitest";
 
-import { createDatabasePool } from "../../src/database.js";
-import { createPrismaClient, type PrismaClient } from "../../src/prisma.js";
+import { createDatabasePool } from "../../src/database";
+import { createPrismaClient, type PrismaClient } from "../../src/prisma";
 
 const execFileAsync = promisify(execFile);
 

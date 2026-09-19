@@ -1,0 +1,88 @@
+{
+  "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  "overrides": [
+    {
+      "files": ["src/domain/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/application", "**/application/**"],
+                "message": "Hexagonal layering: domain must not depend on the application layer."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/domain/shared/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/application", "**/application/**"],
+                "message": "Hexagonal layering: domain must not depend on the application layer."
+              },
+              {
+                "group": [
+                  "**/pricing",
+                  "**/pricing/**",
+                  "**/shipping",
+                  "**/shipping/**",
+                  "**/ordering",
+                  "**/ordering/**"
+                ],
+                "message": "Domain layering: shared/ must not import pricing/, shipping/, ordering/ (shared value objects depend on no other domain concept). Allowed order: shared <- pricing, shipping <- ordering."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/domain/pricing/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/application", "**/application/**"],
+                "message": "Hexagonal layering: domain must not depend on the application layer."
+              },
+              {
+                "group": ["**/shipping", "**/shipping/**", "**/ordering", "**/ordering/**"],
+                "message": "Domain layering: pricing/ must not import shipping/, ordering/ (pricing is independent of shipping and is used by ordering). Allowed order: shared <- pricing, shipping <- ordering."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/domain/shipping/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/application", "**/application/**"],
+                "message": "Hexagonal layering: domain must not depend on the application layer."
+              },
+              {
+                "group": ["**/pricing", "**/pricing/**", "**/ordering", "**/ordering/**"],
+                "message": "Domain layering: shipping/ must not import pricing/, ordering/ (shipping is independent of pricing and is used by ordering). Allowed order: shared <- pricing, shipping <- ordering."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

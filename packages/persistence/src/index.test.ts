@@ -1,24 +1,25 @@
-import assert from "node:assert/strict";
-import { test } from "vitest";
+import { describe, expect, test } from "vitest";
 
-import { createDatabasePool, persistencePackage, readDatabaseUrl } from "./index.js";
+import { createDatabasePool, persistencePackage, readDatabaseUrl } from "./index";
 
-test("the persistence adapter points inward to core", () => {
-  assert.deepEqual(persistencePackage, { name: "persistence", supports: "core" });
-});
+describe("@scos/persistence", () => {
+  test("the persistence adapter points inward to core", () => {
+    expect(persistencePackage).toStrictEqual({ name: "persistence", supports: "core" });
+  });
 
-test("database configuration fails clearly when missing", () => {
-  assert.throws(() => readDatabaseUrl({}), /DATABASE_URL is required/);
-  assert.throws(() => readDatabaseUrl({ DATABASE_URL: "" }), /DATABASE_URL is required/);
-});
+  test("database configuration fails clearly when missing", () => {
+    expect(() => readDatabaseUrl({})).toThrow(/DATABASE_URL is required/);
+    expect(() => readDatabaseUrl({ DATABASE_URL: "" })).toThrow(/DATABASE_URL is required/);
+  });
 
-test("database pools use the configured connection string without connecting eagerly", async () => {
-  const connectionString = "postgresql://example:example@localhost:5432/example";
-  const pool = createDatabasePool(connectionString);
+  test("database pools use the configured connection string without connecting eagerly", async () => {
+    const connectionString = "postgresql://example:example@localhost:5432/example";
+    const pool = createDatabasePool(connectionString);
 
-  try {
-    assert.equal(pool.options.connectionString, connectionString);
-  } finally {
-    await pool.end();
-  }
+    try {
+      expect(pool.options.connectionString).toBe(connectionString);
+    } finally {
+      await pool.end();
+    }
+  });
 });

@@ -3,13 +3,13 @@ import { promisify } from "node:util";
 
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { seedWarehouses, warehouseSeeds } from "../src/seed.js";
+import { seedWarehouses, warehouseSeeds } from "../src/seed";
 import {
   assertDatabaseError,
   createMigratedDatabase,
   type MigratedDatabase,
   packageDirectory,
-} from "./support/database.js";
+} from "./support/database";
 
 const execFileAsync = promisify(execFile);
 

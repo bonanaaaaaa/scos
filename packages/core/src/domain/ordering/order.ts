@@ -1,0 +1,157 @@
+/**
+ * Aggregate root and factory: Order.
+ *
+ * An accepted order has identity (`id`, `orderNumber`) and is the consistency
+ * boundary for its amounts and allocations. `createOrder` is the only way in
+ * and enforces every invariant.
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
+import { DomainDecimal } from "../shared/decimal";
+import type { Destination } from "../shared/destination";
+import { DomainError } from "../shared/errors";
+import { Money } from "../shared/money";
+import { UNIT_PRICE } from "../shared/product";
+import { type Quantity, MAX_QUANTITY } from "../shared/quantity";
+
+import { type DiscountRate, discountRateFor } from "../pricing/pricing";
+import type { WarehouseAllocation, ShippingPlan } from "../shipping/allocation";
+import { isShippingWithinLimit, shippingCostFor } from "../shipping/shipping";
+
+import type { OrderEstimate } from "./estimate";
+import { type SubmissionKey, submissionKeySchema } from "./submission-key";
+
+/** An accepted order. Amounts are immutable historical facts. */
+export interface Order {
+  readonly id: string;
+  readonly orderNumber: string;
+  /** The client's retry key, stored as the Order's unique submission_key. */
+  readonly submissionKey: SubmissionKey;
+  readonly quantity: Quantity;
+  readonly destination: Destination;
+  readonly merchandiseSubtotal: Money;
+  readonly discountRate: DiscountRate;
+  readonly discountAmount: Money;
+  readonly discountedMerchandiseTotal: Money;
+  readonly shippingCost: Money;
+  readonly orderTotal: Money;
+  readonly allocations: ShippingPlan;
+}
+
+export interface CreateOrderInput {
+  readonly id: string;
+  readonly orderNumber: string;
+  readonly submissionKey: SubmissionKey;
+  readonly estimate: OrderEstimate;
+}
+
+function invariant(condition: boolean, message: string): asserts condition {
+  if (!condition) {
+    throw new DomainError("INVALID_ORDER", message);
+  }
+}
+
+function assertAllocations(quantity: number, allocations: readonly WarehouseAllocation[]): void {
+  invariant(allocations.length > 0, "An order requires at least one warehouse allocation.");
+  const warehouseIds = new Set<string>();
+  let allocated = 0;
+  for (const allocation of allocations) {
+    invariant(
+      Number.isSafeInteger(allocation.quantity) && allocation.quantity > 0,
+      "Each allocation quantity must be a positive integer.",
+    );
+    invariant(
+      Number.isFinite(allocation.distanceKm) && allocation.distanceKm >= 0,
+      "Each allocation distance must be finite and non-negative.",
+    );
+    invariant(
+      !warehouseIds.has(allocation.warehouseId),
+      `Warehouse ${allocation.warehouseId} is allocated more than once.`,
+    );
+    warehouseIds.add(allocation.warehouseId);
+    allocated += allocation.quantity;
+  }
+  invariant(allocated === quantity, "Allocations must sum to the ordered quantity.");
+}
+
+/**
+ * The acceptance-time factory: creates an accepted Order from a valid estimate
+ * and externally supplied identifiers. Throws DomainError INVALID_ORDER if the
+ * estimate is not valid or any accepted-order invariant does not hold. Money
+ * values already guarantee cent scale and NUMERIC(12, 2) range.
+ *
+ * It re-verifies the amounts against the CURRENT unit price, discount tiers and
+ * shipping rule, so it must not be used to rehydrate stored orders: accepted
+ * amounts are immutable historical facts, and loading from the database maps
+ * rows to `Order` directly (see issue #10).
+ */
+export function createOrder(input: CreateOrderInput): Order {
+  const { id, orderNumber, submissionKey, estimate } = input;
+  invariant(id.length > 0, "Order id is required.");
+  invariant(orderNumber.length > 0, "Order number is required.");
+  invariant(
+    submissionKeySchema.safeParse(submissionKey).success,
+    "Submission key must be a validated SubmissionKey.",
+  );
+  invariant(estimate.valid, `Only a valid estimate can become an order (${estimate.reason}).`);
+
+  const { quantity, allocations, shippingCost, orderTotal } = estimate;
+  invariant(
+    Number.isSafeInteger(quantity) && quantity > 0 && quantity <= MAX_QUANTITY,
+    "Order quantity must be a positive integer within the supported range.",
+  );
+  assertAllocations(quantity, allocations);
+  invariant(
+    estimate.merchandiseSubtotal.toDecimal().equals(UNIT_PRICE.times(quantity)),
+    "Merchandise subtotal must equal quantity times unit price.",
+  );
+  invariant(
+    estimate.discountRate === discountRateFor(quantity),
+    "Discount rate must be the highest tier the quantity qualifies for.",
+  );
+  invariant(
+    estimate.discountAmount
+      .toDecimal()
+      .equals(
+        estimate.merchandiseSubtotal.toDecimal().times(new DomainDecimal(estimate.discountRate)),
+      ),
+    "Discount amount must equal subtotal times the discount rate.",
+  );
+  invariant(
+    estimate.merchandiseSubtotal
+      .minus(estimate.discountAmount)
+      .equals(estimate.discountedMerchandiseTotal),
+    "Discounted merchandise total must equal subtotal minus discount.",
+  );
+  invariant(
+    shippingCost.equals(shippingCostFor(allocations)),
+    "Shipping cost must equal the combined charge for the allocations' distances.",
+  );
+  invariant(
+    isShippingWithinLimit(shippingCost, estimate.discountedMerchandiseTotal),
+    "Shipping cost exceeds 15% of the discounted merchandise total.",
+  );
+  invariant(
+    estimate.discountedMerchandiseTotal.plus(shippingCost).equals(orderTotal),
+    "Order total must equal discounted merchandise total plus shipping.",
+  );
+
+  return Object.freeze({
+    id,
+    orderNumber,
+    submissionKey,
+    quantity,
+    destination: estimate.destination,
+    merchandiseSubtotal: estimate.merchandiseSubtotal,
+    discountRate: estimate.discountRate,
+    discountAmount: estimate.discountAmount,
+    discountedMerchandiseTotal: estimate.discountedMerchandiseTotal,
+    shippingCost,
+    orderTotal,
+    allocations: Object.freeze(
+      [...allocations].map((a) => Object.freeze({ ...a })),
+    ) as ShippingPlan,
+  });
+}

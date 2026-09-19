@@ -1,7 +1,6 @@
 import { defineConfig } from "tsdown";
 
-// @scos/persistence is bundled with tsdown; its sources keep NodeNext `.js`
-// relative imports like the rest of the workspace. The generated Prisma client
+// @scos/persistence is bundled with tsdown. The generated Prisma client
 // (src/generated/prisma) is bundled; runtime dependencies stay external and
 // Prisma's query compiler is loaded from @prisma/client at run time.
 export default defineConfig({
@@ -14,6 +13,8 @@ export default defineConfig({
   outDir: "dist",
   format: "esm",
   platform: "node",
+  target: "node24",
+  tsconfig: "tsconfig.json",
   // Keep .js/.d.ts names so package.json exports and db:* scripts stay stable.
   fixedExtension: false,
   sourcemap: true,

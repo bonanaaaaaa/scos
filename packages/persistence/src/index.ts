@@ -5,8 +5,8 @@ export const persistencePackage = Object.freeze({
   supports: corePackage.name,
 });
 
-export { createDatabasePool, readDatabaseUrl } from "./database.js";
-export { createPrismaClient, Prisma, type PrismaClient } from "./prisma.js";
-export * from "./records.js";
-export { seedWarehouses, warehouseSeeds, type SeedQueryable, type WarehouseSeed } from "./seed.js";
-export { confirmDatabaseReset, resetConfirmationVariable } from "./reset.js";
+export { createDatabasePool, readDatabaseUrl } from "./database";
+export { createPrismaClient, Prisma, type PrismaClient } from "./prisma";
+export * from "./records";
+export { seedWarehouses, warehouseSeeds, type SeedQueryable, type WarehouseSeed } from "./seed";
+export { confirmDatabaseReset, resetConfirmationVariable } from "./reset";
