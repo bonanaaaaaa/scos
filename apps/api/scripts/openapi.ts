@@ -1,25 +1,26 @@
 /**
- * CLI for the OpenAPI export: `tsx scripts/openapi.ts export` writes
- * `docs/openapi.json` from the route contracts; `check` exits 1 when the
- * committed file differs from regenerated output. Needs no server,
- * environment or database. The logic is in `src/openapi/export.ts`.
+ * CLI for the OpenAPI export: writes the document served at
+ * `GET /openapi.json` to the given path, or to `apps/api/dist/openapi.json`.
+ * Needs no server, environment or database. `pnpm openapi:export` runs it
+ * with tsx; the build (`build.mjs`) bundles it with esbuild and runs it with
+ * an explicit path. The logic is in `src/openapi/export.ts`.
  *
  * @module
  */
 
 import {
-  OPENAPI_EXPORT_PATH,
   OPENAPI_USAGE,
-  parseOpenApiCommand,
-  runOpenApiCommand,
+  exportArguments,
+  exportOpenApiDocument,
+  exportPath,
 } from "../src/openapi/export";
 
-const command = parseOpenApiCommand(process.argv[2]);
-if (command === undefined) {
+const [argument, ...extra] = exportArguments(process.argv.slice(2));
+if (extra.length > 0 || argument === "--help" || argument === "-h") {
   console.error(OPENAPI_USAGE);
   process.exitCode = 2;
 } else {
-  const result = await runOpenApiCommand(command, OPENAPI_EXPORT_PATH);
-  (result.exitCode === 0 ? console.log : console.error)(result.message);
-  process.exitCode = result.exitCode;
+  const path = exportPath(argument, process.cwd());
+  await exportOpenApiDocument(path);
+  console.log(`Wrote ${path}`);
 }

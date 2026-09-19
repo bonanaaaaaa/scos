@@ -22,6 +22,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { createHealthApp } from "../../src/endpoints/health/app";
 import { createSubmitOrderApp } from "../../src/endpoints/submit-order/app";
 import { createVerifyOrderApp } from "../../src/endpoints/verify-order/app";
+import { renderOpenApiDocument } from "../../src/openapi/offline";
 import {
   type TestDatabase,
   createTestDatabase,
@@ -52,8 +53,6 @@ import {
 // ajv-formats is CommonJS; its default export arrives wrapped under ESM.
 const addFormats = ((addFormatsModule as unknown as { default?: unknown }).default ??
   addFormatsModule) as typeof addFormatsModule;
-
-const EXPORTED_SPEC = new URL("../../../../docs/openapi.json", import.meta.url);
 
 const VERIFY = "/api/v1/orders/verify";
 const SUBMIT = "/api/v1/orders";
@@ -221,10 +220,16 @@ describe("GET /openapi.json", () => {
     ).resolves.toBeDefined();
   });
 
-  test("is exactly the committed docs/openapi.json export", async () => {
-    const exported = JSON.parse(await readFile(EXPORTED_SPEC, "utf8")) as unknown;
-    const served = (await get(api, "/openapi.json")).json();
-    expect(served).toStrictEqual(exported);
+  test("is exactly the offline-generated export", async () => {
+    const served = await get(api, "/openapi.json");
+    expect(served.text).toBe(await renderOpenApiDocument());
+  });
+
+  test("is exactly the build artifact dist/openapi.json", async () => {
+    // turbo's test:integration depends on build, which writes this file.
+    const artifact = await readFile(new URL("../../dist/openapi.json", import.meta.url), "utf8");
+    const served = await get(api, "/openapi.json");
+    expect(served.text).toBe(artifact);
   });
 
   test("is stable across requests", async () => {

@@ -8,8 +8,8 @@
  * route documents its own 400).
  *
  * Deterministic: it reads no environment, opens no connection and adds no
- * timestamps, so `GET /openapi.json` and the offline export
- * (`docs/openapi.json`, `offline.ts`) are the same bytes.
+ * timestamps, so `GET /openapi.json` and the offline export (`offline.ts`,
+ * written to `apps/api/dist/openapi.json` by the build) are the same bytes.
  *
  * @module
  */
@@ -80,7 +80,7 @@ export async function generateOpenApiDocument(app: Hono): Promise<OpenApiDocumen
 }
 
 /**
- * The document exactly as exported to `docs/openapi.json` and served at
+ * The document exactly as exported to `apps/api/dist/openapi.json` and served at
  * `GET /openapi.json`: two-space indentation and a trailing newline.
  */
 export function serializeOpenApiDocument(document: OpenApiDocument): string {

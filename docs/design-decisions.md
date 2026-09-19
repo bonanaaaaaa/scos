@@ -80,11 +80,11 @@
 ## OpenAPI deliverable
 
 - Deliver a machine-readable OpenAPI specification for POST /api/v1/orders/verify, POST /api/v1/orders, and GET /health, generated from the API adapter's route and validation schemas.
-- Serve the specification at GET /openapi.json and interactive API documentation at GET /docs. Provide a deterministic export command producing docs/openapi.json for review without starting the application or connecting to PostgreSQL.
+- Serve the specification at GET /openapi.json and interactive API documentation at GET /docs. Generate the specification during the API build as an uncommitted artifact, apps/api/dist/openapi.json, deterministically and without starting the application or connecting to PostgreSQL; keep an on-demand export command. The specification is not committed, so there is no drift check.
 - Document request and response schemas, quantity and coordinate constraints, submissionId, decimal-string monetary amounts, nullable totals for insufficient stock, and business rejection codes.
 - Include examples of valid verification, insufficient stock, excessive shipping, accepted submission, rejected submission, a repeated submissionId returning the original Order, and conflicting submissionId reuse. State that rejections are not stored.
 - Document success responses and malformed-input, business-rejection, conflicting-ID, and transient-failure responses. HTTP status mapping belongs to the API adapter and specification, never persisted records.
-- Validate the generated specification and check representative HTTP responses against its schemas. Check that the committed export matches regenerated output.
+- Validate the generated specification and check representative HTTP responses against its schemas. Check that the build artifact matches the served /openapi.json.
 
 ## Verification and submission sequence
 

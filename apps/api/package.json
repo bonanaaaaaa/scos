@@ -11,8 +11,7 @@
     "lint": "oxlint --deny-warnings src test scripts build.mjs vitest.config.mjs vitest.integration.config.mjs",
     "test": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.mjs",
-    "openapi:export": "tsx scripts/openapi.ts export",
-    "openapi:check": "tsx scripts/openapi.ts check"
+    "openapi:export": "tsx scripts/openapi.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.1",

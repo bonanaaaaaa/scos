@@ -39,11 +39,6 @@
       "cache": false,
       "outputs": []
     },
-    "openapi:check": {
-      "dependsOn": ["^build"],
-      "cache": false,
-      "outputs": []
-    },
     "db:migrate": {
       "cache": false,
       "env": ["DATABASE_URL"],

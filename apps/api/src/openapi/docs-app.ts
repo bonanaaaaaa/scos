@@ -30,9 +30,10 @@ export const SWAGGER_UI_VERSION = "5.33.0";
 /**
  * hono-openapi generates the document of `documented` (the combined app) at
  * runtime, once, on the first request; it is served as the exact bytes of the
- * offline export (`docs/openapi.json`), which is generated the same way from
- * the same routes. Swagger UI loads it from {@link OPENAPI_PATH} and sends
- * "Try it out" requests to the same origin (the document's server URL is `/`).
+ * offline export (the build's `apps/api/dist/openapi.json`), which is
+ * generated the same way from the same routes. Swagger UI loads it from
+ * {@link OPENAPI_PATH} and sends "Try it out" requests to the same origin (the
+ * document's server URL is `/`).
  */
 export function createDocsApp(logger: Logger, documented: Hono): Hono {
   const app = createEndpointApp(logger, () => MESSAGES.internal);

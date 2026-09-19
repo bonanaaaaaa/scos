@@ -39,7 +39,7 @@ export function buildOpenApiDocument(): Promise<OpenApiDocument> {
   return generateOpenApiDocument(offlineApp());
 }
 
-/** The offline document as exported to `docs/openapi.json`. */
+/** The offline document as exported to `apps/api/dist/openapi.json`. */
 export async function renderOpenApiDocument(): Promise<string> {
   return serializeOpenApiDocument(await buildOpenApiDocument());
 }
