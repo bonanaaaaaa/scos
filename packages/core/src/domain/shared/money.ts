@@ -1,3 +1,13 @@
+/**
+ * Value object: Money.
+ *
+ * An amount with no identity, equal by amount, immutable and self-validating:
+ * an invalid or unstorable amount cannot be constructed.
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
 import { type Decimal, DomainDecimal } from "./decimal";
 import { DomainError } from "./errors";
 

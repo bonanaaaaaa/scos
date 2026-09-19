@@ -1,3 +1,13 @@
+/**
+ * Technical utility: decimal arithmetic configuration.
+ *
+ * Not a DDD building block: it is the arithmetic configuration that the value
+ * objects and domain services rely on for exact monetary calculation.
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
 import { Decimal } from "decimal.js";
 
 /**

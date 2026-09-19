@@ -1,15 +1,50 @@
-import { type Destination, geoPointSchema } from "../shared/destination";
-import { haversineDistanceKm } from "./distance";
+/**
+ * Domain service: Allocation.
+ *
+ * Stateless nearest-first allocation of an order across warehouses.
+ * `WarehouseStock` / `InventorySnapshot` are a read model handed in through a
+ * port: `Warehouse` is not a domain entity in core.
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
+import { z } from "zod";
+
+import { type Destination, latitudeSchema, longitudeSchema } from "../shared/destination";
 import { DomainError } from "../shared/errors";
 import type { Quantity } from "../shared/quantity";
 
+import { haversineDistanceKm } from "./distance";
+
+/**
+ * Invariant check for one warehouse's stock: a non-empty ID, valid
+ * coordinates and a non-negative safe-integer available count.
+ */
+const warehouseStockSchema = z.object({
+  warehouseId: z.string().min(1),
+  latitude: latitudeSchema,
+  longitude: longitudeSchema,
+  available: z.number().int().nonnegative(),
+});
+
+/** Invariant check for a whole snapshot: every entry valid, IDs unique. */
+const inventorySnapshotSchema = z.array(warehouseStockSchema).superRefine((warehouses, ctx) => {
+  const seen = new Set<string>();
+  for (const [index, { warehouseId }] of warehouses.entries()) {
+    if (seen.has(warehouseId)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Duplicate warehouse ID "${warehouseId}"; IDs must be unique.`,
+        path: [index, "warehouseId"],
+      });
+    }
+    seen.add(warehouseId);
+  }
+});
+
 /** One warehouse's available stock in an immutable inventory snapshot. */
-export interface WarehouseStock {
-  readonly warehouseId: string;
-  readonly latitude: number;
-  readonly longitude: number;
-  readonly available: number;
-}
+export type WarehouseStock = Readonly<z.infer<typeof warehouseStockSchema>>;
 
 export type InventorySnapshot = readonly WarehouseStock[];
 
@@ -28,28 +63,14 @@ interface RankedWarehouse {
   readonly distanceKm: number;
 }
 
+/**
+ * A corrupt snapshot is a data error on our side, not client input, so every
+ * problem is reported in one DomainError and a ZodError never escapes.
+ */
 function assertValidSnapshot(inventory: InventorySnapshot): void {
-  const seen = new Set<string>();
-  for (const warehouse of inventory) {
-    if (warehouse.warehouseId.length === 0 || seen.has(warehouse.warehouseId)) {
-      throw new DomainError(
-        "INVALID_INVENTORY",
-        `Warehouse IDs must be non-empty and unique; received "${warehouse.warehouseId}".`,
-      );
-    }
-    seen.add(warehouse.warehouseId);
-    if (!Number.isSafeInteger(warehouse.available) || warehouse.available < 0) {
-      throw new DomainError(
-        "INVALID_INVENTORY",
-        `Warehouse ${warehouse.warehouseId} available stock must be a non-negative integer.`,
-      );
-    }
-    if (!geoPointSchema.safeParse(warehouse).success) {
-      throw new DomainError(
-        "INVALID_INVENTORY",
-        `Warehouse ${warehouse.warehouseId} has invalid coordinates.`,
-      );
-    }
+  const result = inventorySnapshotSchema.safeParse(inventory);
+  if (!result.success) {
+    throw new DomainError("INVALID_INVENTORY", z.prettifyError(result.error));
   }
 }
 

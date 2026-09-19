@@ -1,8 +1,28 @@
+/**
+ * Value object: OrderRequest.
+ *
+ * A validated request to estimate an order, with no identity. The Zod schema
+ * is its constructor: a parsed request is proof its fields were validated.
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
 import { z } from "zod";
 
-import { destinationSchema, latitudeSchema, longitudeSchema } from "../shared/destination";
-import type { OrderRequest } from "./estimate";
-import { quantitySchema } from "../shared/quantity";
+import {
+  type Destination,
+  destinationSchema,
+  latitudeSchema,
+  longitudeSchema,
+} from "../shared/destination";
+import { type Quantity, quantitySchema } from "../shared/quantity";
+
+/** A validated order request; build one with {@link orderRequestSchema}. */
+export interface OrderRequest {
+  readonly quantity: Quantity;
+  readonly destination: Destination;
+}
 
 /**
  * Domain input guard for a raw order request `{ quantity, latitude, longitude }`.

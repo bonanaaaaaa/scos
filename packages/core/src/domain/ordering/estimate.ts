@@ -1,21 +1,30 @@
+/**
+ * Domain service returning a value object: estimateOrder.
+ *
+ * Composes pricing, allocation and shipping into an Order Estimate. The
+ * estimate has no identity, is not persisted, and is a three-way discriminated
+ * result (valid, SHIPPING_EXCEEDS_LIMIT or INSUFFICIENT_STOCK).
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
+import { type Destination, geoPointSchema } from "../shared/destination";
+import { DomainError } from "../shared/errors";
+import type { Money } from "../shared/money";
+import { type Quantity, quantitySchema } from "../shared/quantity";
+
+import { type DiscountRate, priceMerchandise } from "../pricing/pricing";
 import {
   type InventorySnapshot,
   type ShippingPlan,
   allocateNearestFirst,
 } from "../shipping/allocation";
-import { type Destination, geoPointSchema } from "../shared/destination";
-import { DomainError } from "../shared/errors";
-import type { Money } from "../shared/money";
-import { type DiscountRate, priceMerchandise } from "../pricing/pricing";
 import { isShippingWithinLimit, shippingCostFor } from "../shipping/shipping";
-import { type Quantity, quantitySchema } from "../shared/quantity";
+
+import type { OrderRequest } from "./order-request";
 
 export type EstimateRejectionReason = "INSUFFICIENT_STOCK" | "SHIPPING_EXCEEDS_LIMIT";
-
-export interface OrderRequest {
-  readonly quantity: Quantity;
-  readonly destination: Destination;
-}
 
 interface EstimateBase {
   readonly quantity: Quantity;
@@ -76,8 +85,18 @@ export type OrderEstimate =
  * shipping and total; if shipping exceeds the limit it is
  * SHIPPING_EXCEEDS_LIMIT with every amount retained.
  *
- * Throws DomainError AMOUNT_OUT_OF_RANGE if shipping or the order total would
- * exceed NUMERIC(12, 2); that needs tens of millions of units in stock.
+ * Business rejections are returned, never thrown. Every throw is a DomainError
+ * that signals a problem on our side and maps to a server error (HTTP 500), per
+ * "Error handling" in packages/core/README.md:
+ *
+ * - `INVALID_REQUEST`: the request did not come from `orderRequestSchema` (for
+ *   example a cast, unvalidated quantity or destination).
+ * - `INVALID_INVENTORY`: the inventory snapshot is corrupt (empty or duplicate
+ *   warehouse IDs, invalid coordinates, or negative or fractional stock).
+ * - `AMOUNT_OUT_OF_RANGE`: a SHIPPING_EXCEEDS_LIMIT estimate whose order total
+ *   would overflow NUMERIC(12, 2). Valid and INSUFFICIENT_STOCK estimates cannot
+ *   overflow; this needs roughly 51.8 million or more units in stock, allocated
+ *   at near-antipodal distance.
  */
 export function estimateOrder(request: OrderRequest, inventory: InventorySnapshot): OrderEstimate {
   const { quantity, destination } = request;

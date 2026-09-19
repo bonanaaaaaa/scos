@@ -1,12 +1,14 @@
 import { describe, expect, test } from "vitest";
 
-import type { WarehouseStock } from "../shipping/allocation";
 import type { Destination } from "../shared/destination";
 import { DomainError } from "../shared/errors";
-import { type OrderEstimate, type ValidOrderEstimate, estimateOrder } from "./estimate";
 import { Money } from "../shared/money";
-import { createOrder } from "./order";
 import type { Quantity } from "../shared/quantity";
+
+import type { WarehouseStock } from "../shipping/allocation";
+
+import { type OrderEstimate, type ValidOrderEstimate, estimateOrder } from "./estimate";
+import { createOrder } from "./order";
 
 const destination = { latitude: 0, longitude: 0 } as Destination;
 const inventory: readonly WarehouseStock[] = [

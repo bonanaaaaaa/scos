@@ -1,3 +1,13 @@
+/**
+ * Domain service with a policy: Pricing.
+ *
+ * Stateless merchandise pricing. The volume discount tiers are a business
+ * policy expressed as data, applied to the whole subtotal.
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
 import { DomainDecimal } from "../shared/decimal";
 import { Money } from "../shared/money";
 import { UNIT_PRICE } from "../shared/product";
@@ -10,19 +20,24 @@ export interface DiscountTier {
   readonly rate: DiscountRate;
 }
 
-/** Volume discount tiers, highest threshold first. */
+/** The rate for a quantity below every discount tier. */
+const NO_DISCOUNT_RATE: DiscountRate = "0.00";
+
+/**
+ * Volume discount tiers, highest threshold first. A quantity below the lowest
+ * threshold gets {@link NO_DISCOUNT_RATE}.
+ */
 export const DISCOUNT_TIERS: readonly DiscountTier[] = Object.freeze([
   Object.freeze({ minimumQuantity: 250, rate: "0.20" }),
   Object.freeze({ minimumQuantity: 100, rate: "0.15" }),
   Object.freeze({ minimumQuantity: 50, rate: "0.10" }),
   Object.freeze({ minimumQuantity: 25, rate: "0.05" }),
-  Object.freeze({ minimumQuantity: 0, rate: "0.00" }),
 ] satisfies DiscountTier[]);
 
 /** The highest qualifying tier's rate, applied to the whole subtotal. */
-export function discountRateFor(quantity: number): DiscountRate {
+export function discountRateFor(quantity: Quantity): DiscountRate {
   const tier = DISCOUNT_TIERS.find((candidate) => quantity >= candidate.minimumQuantity);
-  return tier?.rate ?? "0.00";
+  return tier?.rate ?? NO_DISCOUNT_RATE;
 }
 
 export interface MerchandisePricing {

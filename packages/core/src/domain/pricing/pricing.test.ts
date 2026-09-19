@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { DomainDecimal } from "../shared/decimal";
 import { MAX_QUANTITY, type Quantity } from "../shared/quantity";
+
 import { discountRateFor, priceMerchandise } from "./pricing";
 
 const asQuantity = (value: number): Quantity => value as Quantity;
@@ -21,7 +22,7 @@ describe("volume discount", () => {
   ])(
     "%s units: rate %s, subtotal %s, discount %s, discounted %s",
     (units, rate, sub, disc, net) => {
-      expect(discountRateFor(units)).toBe(rate);
+      expect(discountRateFor(asQuantity(units))).toBe(rate);
       const pricing = priceMerchandise(asQuantity(units));
       expect(pricing.discountRate).toBe(rate);
       expect(pricing.merchandiseSubtotal.toString()).toBe(sub);
@@ -44,9 +45,5 @@ describe("volume discount", () => {
     const pricing = priceMerchandise(asQuantity(MAX_QUANTITY));
     expect(pricing.merchandiseSubtotal.toString()).toBe("9999999900.00");
     expect(pricing.discountedMerchandiseTotal.toString()).toBe("7999999920.00");
-  });
-
-  test("falls back to no discount below every tier", () => {
-    expect(discountRateFor(-1)).toBe("0.00");
   });
 });

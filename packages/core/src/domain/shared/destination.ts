@@ -1,3 +1,13 @@
+/**
+ * Value object: Destination.
+ *
+ * A delivery location with no identity, equal by its coordinates. It is
+ * branded: holding a `Destination` proves the coordinates were validated.
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
 import { z } from "zod";
 
 /** A point on Earth in decimal degrees (WGS84-style latitude/longitude). */

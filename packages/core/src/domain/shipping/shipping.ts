@@ -1,6 +1,17 @@
+/**
+ * Domain service: Shipping.
+ *
+ * Stateless business rules for the combined shipping charge and the limit
+ * that shipping may not exceed 15% of the discounted merchandise total.
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
 import { type Decimal, DomainDecimal } from "../shared/decimal";
 import { Money } from "../shared/money";
 import { SHIPPING_LIMIT_RATIO, SHIPPING_RATE_PER_KG_KM, UNIT_WEIGHT_KG } from "../shared/product";
+
 import type { WarehouseAllocation } from "./allocation";
 
 /** Exact, unrounded sum of units x 0.365 kg x $0.01/kg/km x distance. */

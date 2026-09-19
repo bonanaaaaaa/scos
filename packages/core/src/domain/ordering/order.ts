@@ -1,13 +1,26 @@
-import type { WarehouseAllocation, ShippingPlan } from "../shipping/allocation";
+/**
+ * Aggregate root and factory: Order.
+ *
+ * An accepted order has identity (`id`, `orderNumber`) and is the consistency
+ * boundary for its amounts and allocations. `createOrder` is the only way in
+ * and enforces every invariant.
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
+import { DomainDecimal } from "../shared/decimal";
 import type { Destination } from "../shared/destination";
 import { DomainError } from "../shared/errors";
 import { Money } from "../shared/money";
-import type { OrderEstimate } from "./estimate";
-import { DomainDecimal } from "../shared/decimal";
-import { type DiscountRate, discountRateFor } from "../pricing/pricing";
-import { isShippingWithinLimit, shippingCostFor } from "../shipping/shipping";
 import { UNIT_PRICE } from "../shared/product";
 import { type Quantity, MAX_QUANTITY } from "../shared/quantity";
+
+import { type DiscountRate, discountRateFor } from "../pricing/pricing";
+import type { WarehouseAllocation, ShippingPlan } from "../shipping/allocation";
+import { isShippingWithinLimit, shippingCostFor } from "../shipping/shipping";
+
+import type { OrderEstimate } from "./estimate";
 
 /** An accepted order. Amounts are immutable historical facts. */
 export interface Order {
@@ -60,10 +73,15 @@ function assertAllocations(quantity: number, allocations: readonly WarehouseAllo
 }
 
 /**
- * Creates an accepted Order from a valid estimate and externally supplied
- * identifiers. Throws DomainError INVALID_ORDER if the estimate is not valid or
- * any accepted-order invariant does not hold. Money values already guarantee
- * cent scale and NUMERIC(12, 2) range.
+ * The acceptance-time factory: creates an accepted Order from a valid estimate
+ * and externally supplied identifiers. Throws DomainError INVALID_ORDER if the
+ * estimate is not valid or any accepted-order invariant does not hold. Money
+ * values already guarantee cent scale and NUMERIC(12, 2) range.
+ *
+ * It re-verifies the amounts against the CURRENT unit price, discount tiers and
+ * shipping rule, so it must not be used to rehydrate stored orders: accepted
+ * amounts are immutable historical facts, and loading from the database maps
+ * rows to `Order` directly (see issue #10).
  */
 export function createOrder(input: CreateOrderInput): Order {
   const { id, orderNumber, estimate } = input;

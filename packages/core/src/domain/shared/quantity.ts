@@ -1,3 +1,13 @@
+/**
+ * Value object: Quantity.
+ *
+ * A number of units with no identity, equal by value. It is branded: holding a
+ * `Quantity` proves the value was validated.
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
 import { z } from "zod";
 
 import { MONEY_MAX } from "./money";

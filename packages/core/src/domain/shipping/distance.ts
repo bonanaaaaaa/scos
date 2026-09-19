@@ -1,3 +1,13 @@
+/**
+ * Domain service: Distance.
+ *
+ * A pure geometric calculation: the great-circle distance between two points,
+ * with no state and no business policy.
+ *
+ * @see docs/architecture.md, "Domain model"
+ * @module
+ */
+
 import type { GeoPoint } from "../shared/destination";
 
 /**
@@ -41,7 +51,7 @@ const DEGREES_TO_RADIANS = Math.PI / 180;
  *   note that rounding error can push `a` slightly outside [0, 1].
  * @see https://www.movable-type.co.uk/scripts/latlong.html — reference
  *   JavaScript implementation of the same formula.
- * @see ../../../docs/design-decisions.md "Distance calculation and precision"
+ * @see docs/design-decisions.md, section "Distance calculation and precision"
  *   — project policy for number arithmetic, clamping and no rounding.
  */
 export function haversineDistanceKm(from: GeoPoint, to: GeoPoint): number {
