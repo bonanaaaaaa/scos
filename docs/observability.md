@@ -480,16 +480,91 @@ received `POST /v1/traces` and `POST /v1/metrics` with
 
 ### Automated tests
 
-| What                                                                                                                                                       | Where                                                                                                   |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Configuration: valid, invalid, conditional, sanitized messages                                                                                             | `src/telemetry/config.test.ts`                                                                          |
-| Log contract, severity mapping, redaction, one record per call, child loggers, Pino = console fields                                                       | `src/telemetry/node/pino-logger.test.ts`, `src/http/logger.test.ts`, `src/telemetry/log-record.test.ts` |
-| PinoInstrumentation correlation (ordinary and child logger, none without a valid span), resource across signals, sampling, bounded flush, exporter failure | `src/telemetry/node/sdk.test.ts`                                                                        |
-| Server spans, traceparent (valid and invalid), concurrent isolation, status per 2xx/4xx/422/5xx, histogram, sensitive data                                 | `src/telemetry/http.test.ts`                                                                            |
-| Use-case and port spans, counter values including replays and retries, sanitized failures                                                                  | `src/telemetry/decorators.test.ts`                                                                      |
-| Persistence spans against PostgreSQL, a real lock timeout, a silent collector and locks                                                                    | `test/telemetry.integration.test.ts`                                                                    |
-| No runtime-specific imports in neutral modules                                                                                                             | `src/runtime-boundary.test.ts`                                                                          |
-| The built `dist/server.js` still correlates logs (PinoInstrumentation on the bundled load path)                                                            | `src/server.bundle.test.ts`                                                                             |
+| What                                                                                                                                                                  | Where                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Logger port contract (see [Port contract tests](#port-contract-tests)) for Pino and the console JSON logger                                                           | `src/telemetry/node/pino-logger.test.ts`, `src/http/logger.test.ts` |
+| Telemetry port contract over the Node SDK with in-memory exporters, including the Node compositions                                                                   | `src/telemetry/node/telemetry-contract.test.ts`                     |
+| Pino specifics: newline-terminated writes, defaults, identical records from Pino and the console logger for the same calls                                            | `src/telemetry/node/pino-logger.test.ts`                            |
+| Console logger specifics: no trailing newline, defaults, `defaultLogger` through `console.log`                                                                        | `src/http/logger.test.ts`                                           |
+| Log contract helpers: severity constants, redaction, sanitized errors and SQLSTATEs, correlation fields, resource fields                                              | `src/telemetry/log-record.test.ts`                                  |
+| Configuration: valid, invalid, conditional, sanitized messages                                                                                                        | `src/telemetry/config.test.ts`                                      |
+| `startTelemetry` init-once and registration, correlation through the started runtime, resource across signals, sampling, bounded flush, exporter failure, diagnostics | `src/telemetry/node/sdk.test.ts`                                    |
+| Middleware specifics: the request log, compositions without telemetry, a failing logger, tracer or meter never changes a response                                     | `src/telemetry/http.test.ts`                                        |
+| Decorator specifics: invalid estimates, sanitized database and errno failures, retries and `unavailable`, unexpected errors                                           | `src/telemetry/decorators.test.ts`                                  |
+| Persistence spans against PostgreSQL, a real lock timeout, a silent collector and locks                                                                               | `test/telemetry.integration.test.ts`                                |
+| No runtime-specific imports in neutral modules                                                                                                                        | `src/runtime-boundary.test.ts`                                      |
+| The built `dist/server.js` still correlates logs (PinoInstrumentation on the bundled load path)                                                                       | `src/server.bundle.test.ts`                                         |
+
+### Port contract tests
+
+Each telemetry port comes with a contract test suite, so that adapters stay
+interchangeable. An implementation runs the whole suite with one call. The
+suites live in `src/testing/` beside the other test support.
+
+**Logger port**: `describeLoggerContract(name, createHarness)` in
+`src/testing/logger-contract.test-support.ts`. The factory is called once,
+before any test. It registers whatever the runtime's composition registers
+for logging: the context manager that `context.with` uses, and for Pino,
+`registerLogCorrelation()` before Pino is first loaded. It returns
+`create({ level, base })`, which gives `{ logger, writes() }`, where
+`writes()` returns every raw write. The suite checks the
+[log record contract](#log-record-contract):
+
+- one record per call, each a single JSON line;
+- the exact field names, and severity text and number for every level;
+- level filtering and `silent`;
+- the resource fields on every record, children included;
+- child bindings, including nested children;
+- the redaction paths, in details and bindings;
+- errors reduced to type, safe code (and SQLSTATE) and stack frames, never
+  the message;
+- reserved keys moved to `detail.*`, never overriding the real values;
+- `trace_id`/`span_id`/`trace_flags` present only inside a valid span and
+  matching it (`00` when unsampled), and absent with no span or an invalid
+  one.
+
+**Telemetry port**: `describeTelemetryContract(name, createHarness)` in
+`src/testing/telemetry-contract.test-support.ts`. The factory is called
+before every test and returns the runtime's `Telemetry` port backed by test
+exporters, with `spans()`, `metrics()`, `flush()` and `shutdown()`. It must also return the runtime's own `compositions` (combined and
+health), because a composition is where a request could get wrapped twice.
+`spans()` and `metrics()` return the OpenTelemetry JS SDK shapes
+(`ReadableSpan` and `MetricData`). A runtime that records through the JS SDK
+hands over in-memory exporter output directly. A Workers composition that
+does not (for example Cloudflare's platform tracing) needs an adapter to
+these shapes, or the harness must be narrowed to what the suite reads; the
+Workers PR decides which. The
+suite drives the real Hono apps, the HTTP middleware and the decorators,
+using fake use cases or real use cases over in-memory ports. It checks:
+
+- exactly one SERVER span per request in the combined app, each standalone
+  app and the runtime's compositions, with responses unchanged, and a 500
+  logged exactly once;
+- the `METHOD /route` span name and the HTTP semantic-convention attributes;
+- span status: unset for 2xx, 4xx and 422, `ERROR` for 5xx;
+- W3C `traceparent`/`tracestate` honoured, invalid context ignored;
+- concurrent requests never share context;
+- the INTERNAL span names and parents for the use cases and ports;
+- `http.server.request.duration`: name, unit `s`, buckets, attributes, and
+  one count per request. The sum is checked as non-negative and below 5 s,
+  not as positive, because workerd only advances timers after I/O; the
+  Node tests check that a real delay is measured;
+- `scos.order.submissions`: its attribute sets, with replays counted and
+  400s not counted;
+- no submission ID, coordinate, order number, raw URL, query string or body
+  in any span or metric attribute, and span attribute keys limited to the
+  documented set.
+
+Node/Lambda runs the logger suite for `createPinoLogger` and
+`createConsoleJsonLogger`, and the telemetry suite over
+`createTelemetryRuntime` (`telemetry/node/sdk.ts`) with in-memory exporters
+and the Node compositions. The Workers composition (follow-up PR under #17)
+plugs in the same way: one `describeLoggerContract` call for its
+`console.log` logger, with its context manager registered in the factory,
+and one `describeTelemetryContract` call over its `Telemetry` with test
+exporters and its own compositions. Implementation details stay in each
+runtime's own tests, for example SDK init-once, the exporters, shutdown and
+Pino's require hook.
 
 ## Sample output from real API requests
 

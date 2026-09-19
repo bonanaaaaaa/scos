@@ -315,6 +315,27 @@ export function createTelemetryRuntime(
   };
 }
 
+let logCorrelationRegistered = false;
+
+/**
+ * Registers the AsyncLocalStorage context manager and `PinoInstrumentation`
+ * in correlation-only mode (`disableLogSending: true`,
+ * `disableLogCorrelation: false`), once per process. Must run before the
+ * first Pino logger is created: the instrumentation patches Pino through
+ * Node's require hook when `createPinoLogger` first loads it.
+ */
+export function registerLogCorrelation(): void {
+  ensureContextManager();
+  if (!logCorrelationRegistered) {
+    registerInstrumentations({
+      instrumentations: [
+        new PinoInstrumentation({ disableLogSending: true, disableLogCorrelation: false }),
+      ],
+    });
+    logCorrelationRegistered = true;
+  }
+}
+
 let running: TelemetryRuntime | undefined;
 
 /**
@@ -332,13 +353,8 @@ export function startTelemetry(
     return running;
   }
   if (config.enabled) {
-    ensureContextManager();
     propagation.setGlobalPropagator(new W3CTraceContextPropagator());
-    registerInstrumentations({
-      instrumentations: [
-        new PinoInstrumentation({ disableLogSending: true, disableLogCorrelation: false }),
-      ],
-    });
+    registerLogCorrelation();
   }
   const runtime = createTelemetryRuntime(config, overrides);
   if (runtime.providers !== undefined) {

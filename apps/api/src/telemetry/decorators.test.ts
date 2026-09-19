@@ -1,16 +1,15 @@
 import {
-  type NewOrder,
-  type Order,
   type SubmissionStore,
   TransientSubmissionError,
   createSubmitOrder,
   createVerifyOrder,
   orderRequestSchema,
 } from "@scos/core";
-import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
+import { SpanStatusCode } from "@opentelemetry/api";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { inventory, submitBody, verifyBody } from "../testing/fixtures.test-support";
+import { memorySubmissionStore } from "../testing/telemetry-contract.test-support";
 import { attributesOf, testTelemetry } from "../testing/telemetry.test-support";
 import {
   traceInventoryReader,
@@ -27,31 +26,7 @@ afterEach(async () => {
   harness = testTelemetry();
 });
 
-/** An in-memory SubmissionStore over the one-warehouse fixture inventory. */
-function memoryStore(): SubmissionStore {
-  const orders = new Map<string, Order>();
-  let stock = inventory;
-  return {
-    findOrderBySubmissionKey: async (key) => orders.get(key) ?? null,
-    async runInTransaction(work) {
-      return work({
-        lockInventory: async () => stock,
-        findOrderBySubmissionKey: async (key) => orders.get(key) ?? null,
-        async saveAcceptedOrder(order: NewOrder) {
-          const saved: Order = { ...order, id: "01996000-0000-7000-8000-00000000abcd" };
-          orders.set(order.submissionKey, saved);
-          stock = stock.map((warehouse) => ({
-            ...warehouse,
-            available: warehouse.available - order.quantity,
-          }));
-          return saved;
-        },
-      });
-    },
-  };
-}
-
-function tracedSubmit(store: SubmissionStore = memoryStore(), maxAttempts = 3) {
+function tracedSubmit(store: SubmissionStore = memorySubmissionStore(), maxAttempts = 3) {
   const { telemetry } = harness;
   return traceSubmitOrder(
     createSubmitOrder({ store: traceSubmissionStore(store, telemetry), maxAttempts }),
@@ -59,34 +34,7 @@ function tracedSubmit(store: SubmissionStore = memoryStore(), maxAttempts = 3) {
   );
 }
 
-function names() {
-  return harness.finished().map((span) => span.name);
-}
-
-describe("VerifyOrder and InventoryReader spans", () => {
-  test("a valid estimate: VerifyOrder parents the inventory read; no error status", async () => {
-    const reader = traceInventoryReader(
-      { readInventorySnapshot: async () => inventory },
-      harness.telemetry,
-    );
-    const verify = traceVerifyOrder(
-      createVerifyOrder({ inventoryReader: reader }),
-      harness.telemetry,
-    );
-
-    const estimate = await verify(orderRequestSchema.parse(verifyBody));
-
-    expect(estimate.valid).toBe(true);
-    const outer = harness.span("VerifyOrder");
-    const read = harness.span("InventoryReader.readInventorySnapshot");
-    expect(outer.kind).toBe(SpanKind.INTERNAL);
-    expect(read.parentSpanContext?.spanId).toBe(outer.spanContext().spanId);
-    expect(outer.attributes).toStrictEqual({ "scos.estimate.valid": true });
-    expect(read.attributes).toStrictEqual({ "scos.inventory.warehouse_count": 1 });
-    expect(outer.status.code).toBe(SpanStatusCode.UNSET);
-    expect(outer.duration[0] * 1e9 + outer.duration[1]).toBeGreaterThanOrEqual(0);
-  });
-
+describe("VerifyOrder and InventoryReader span details", () => {
   test("an invalid estimate is a business answer: reason recorded, status unset", async () => {
     const verify = traceVerifyOrder(
       createVerifyOrder({ inventoryReader: { readInventorySnapshot: async () => inventory } }),
@@ -161,94 +109,9 @@ describe("Node errno codes are not SQLSTATEs", () => {
   );
 });
 
-describe("SubmitOrder and persistence spans", () => {
-  test("a new Order: SubmitOrder > unlocked lookup, transaction > lock, locked lookup, save", async () => {
-    const outcome = await tracedSubmit()(submitBody);
-    expect(outcome.kind).toBe("accepted");
-
-    expect(names()).toStrictEqual([
-      "SubmissionStore.findOrderBySubmissionKey",
-      "SubmissionTransaction.lockInventory",
-      "SubmissionTransaction.findOrderBySubmissionKey",
-      "SubmissionTransaction.saveAcceptedOrder",
-      "SubmissionStore.runInTransaction",
-      "SubmitOrder",
-    ]);
-    const submit = harness.span("SubmitOrder");
-    const transaction = harness.span("SubmissionStore.runInTransaction");
-    const parentOf = (name: string) => harness.span(name).parentSpanContext?.spanId;
-    expect(parentOf("SubmissionStore.findOrderBySubmissionKey")).toBe(submit.spanContext().spanId);
-    expect(parentOf("SubmissionStore.runInTransaction")).toBe(submit.spanContext().spanId);
-    for (const name of [
-      "SubmissionTransaction.lockInventory",
-      "SubmissionTransaction.findOrderBySubmissionKey",
-      "SubmissionTransaction.saveAcceptedOrder",
-    ]) {
-      expect(parentOf(name), name).toBe(transaction.spanContext().spanId);
-    }
-    expect(submit.attributes).toStrictEqual({
-      "scos.submission.outcome": "accepted",
-      "scos.submission.replayed": false,
-    });
-    expect(harness.span("SubmissionStore.findOrderBySubmissionKey").attributes).toStrictEqual({
-      "scos.submission.order_found": false,
-    });
-    for (const span of harness.finished()) {
-      expect(span.status.code, span.name).toBe(SpanStatusCode.UNSET);
-    }
-  });
-
-  test("scos.order.submissions counts every completed call once, replays included", async () => {
-    const submit = tracedSubmit();
-
-    await submit(submitBody); // accepted
-    await submit(submitBody); // replay of the accepted Order
-    await submit(submitBody); // another replay
-    await submit({ ...submitBody, quantity: 31 }); // conflict: same key, other inputs
-    await submit({ ...submitBody, submissionId: "big", quantity: 1_000 }); // rejected: stock
-    await submit({ ...submitBody, submissionId: "far", quantity: 1, latitude: 90 }); // rejected: shipping
-    await submit({ submissionId: "x" }); // invalid
-
-    const points = await harness.points(SUBMISSIONS_METRIC);
-    const byAttributes = Object.fromEntries(
-      points.map((point) => [JSON.stringify(point.attributes), point.value]),
-    );
-    expect(byAttributes).toStrictEqual({
-      [JSON.stringify({
-        "scos.submission.outcome": "accepted",
-        "scos.submission.replayed": false,
-      })]: 1,
-      [JSON.stringify({
-        "scos.submission.outcome": "accepted",
-        "scos.submission.replayed": true,
-      })]: 2,
-      [JSON.stringify({
-        "scos.submission.outcome": "conflict",
-        "scos.submission.replayed": false,
-      })]: 1,
-      [JSON.stringify({
-        "scos.submission.outcome": "rejected",
-        "scos.submission.replayed": false,
-        "scos.submission.rejection_reason": "INSUFFICIENT_STOCK",
-      })]: 1,
-      [JSON.stringify({
-        "scos.submission.outcome": "rejected",
-        "scos.submission.replayed": false,
-        "scos.submission.rejection_reason": "SHIPPING_EXCEEDS_LIMIT",
-      })]: 1,
-      [JSON.stringify({
-        "scos.submission.outcome": "invalid",
-        "scos.submission.replayed": false,
-      })]: 1,
-    });
-    // Rejections and conflicts are business outcomes: no error status.
-    for (const span of harness.finished()) {
-      expect(span.status.code, span.name).toBe(SpanStatusCode.UNSET);
-    }
-  });
-
+describe("SubmitOrder and persistence span failures", () => {
   test("retries inside the use case are counted once; `unavailable` fails the SubmitOrder span", async () => {
-    const store = memoryStore();
+    const store = memorySubmissionStore();
     let attempts = 0;
     const submit = tracedSubmit(
       {
@@ -295,7 +158,7 @@ describe("SubmitOrder and persistence spans", () => {
   test("an unexpected error counts once as `error` with a sanitized type, and fails the spans", async () => {
     const failure = new RangeError("INSERT INTO order VALUES (leaky-coordinates 12.34)");
     const submit = tracedSubmit({
-      ...memoryStore(),
+      ...memorySubmissionStore(),
       runInTransaction: async () => {
         throw failure;
       },
@@ -315,22 +178,5 @@ describe("SubmitOrder and persistence spans", () => {
     expect(
       JSON.stringify(harness.finished().map((span) => [span.attributes, span.events])),
     ).not.toMatch(/leaky|12\.34|INSERT/);
-  });
-
-  test("no span or counter attribute carries the submission key, order number or coordinates", async () => {
-    const secretKey = "customer-secret-key-7f3a";
-    const body = { submissionId: secretKey, quantity: 30, latitude: 0.123456, longitude: 0.654321 };
-    const submit = tracedSubmit();
-    const accepted = await submit(body);
-    await submit(body);
-    const orderNumber = accepted.kind === "accepted" ? accepted.order.orderNumber : "unreachable";
-
-    const recorded = JSON.stringify([
-      harness.finished().map((span) => [span.name, span.attributes, span.events]),
-      await harness.points(SUBMISSIONS_METRIC),
-    ]);
-    for (const secret of [secretKey, orderNumber, "0.123456", "0.654321", "abcd"]) {
-      expect(recorded).not.toContain(secret);
-    }
   });
 });

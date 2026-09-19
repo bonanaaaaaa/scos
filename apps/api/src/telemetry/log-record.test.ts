@@ -2,6 +2,7 @@ import { ROOT_CONTEXT, TraceFlags, context, trace } from "@opentelemetry/api";
 import { describe, expect, test } from "vitest";
 
 import {
+  OTEL_SEVERITY_NUMBERS,
   REDACTED_KEYS,
   REDACTION_CENSOR,
   REDACT_PATHS,
@@ -11,6 +12,17 @@ import {
   sanitizeDetails,
   sanitizeError,
 } from "./log-record";
+
+test("OTEL_SEVERITY_NUMBERS maps each Pino level to its OTel range start", () => {
+  expect(OTEL_SEVERITY_NUMBERS).toStrictEqual({
+    trace: 1,
+    debug: 5,
+    info: 9,
+    warn: 13,
+    error: 17,
+    fatal: 21,
+  });
+});
 
 describe("redaction", () => {
   test("REDACT_PATHS are every key at the top level and one level down", () => {

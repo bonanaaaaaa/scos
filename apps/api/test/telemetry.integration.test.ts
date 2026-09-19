@@ -168,9 +168,15 @@ describe("persistence decorator spans over the real database", () => {
 
     // No submission key, order number, coordinates, SQL or connection details anywhere.
     const orderNumber = (JSON.parse(accepted.text) as { orderNumber: string }).orderNumber;
+    // Where data could leak: span names, attributes and events, and metric
+    // names and data-point attributes. Timestamps and measured values are
+    // left out: a duration such as 0.00171 would falsely "contain" 170.
     const recorded = JSON.stringify([
       harness.finished().map((span) => [span.name, span.attributes, span.events]),
-      await harness.metrics(),
+      (await harness.metrics()).map((metric) => [
+        metric.descriptor.name,
+        metric.dataPoints.map((point) => point.attributes),
+      ]),
     ]);
     for (const secret of [
       "telemetry-1",

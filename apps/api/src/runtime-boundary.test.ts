@@ -27,7 +27,7 @@ function sources(directory: string): string[] {
 /** Module paths (relative to src/) that must stay runtime-neutral. */
 function isNeutral(path: string): boolean {
   return (
-    ["app.ts", "routes.ts", "config.ts"].includes(path) ||
+    ["app.ts", "routes.ts", "config.ts", "composed-application.ts"].includes(path) ||
     path.startsWith("http/") ||
     /^endpoints\/[^/]+\/(?:app|contract|messages|serializers|config)\.ts$/.test(path) ||
     /^telemetry\/[^/]+\.ts$/.test(path)
@@ -55,6 +55,7 @@ describe("runtime-neutral modules", () => {
     expect(neutral).toEqual(
       expect.arrayContaining([
         "app.ts",
+        "composed-application.ts",
         "http/logger.ts",
         "endpoints/submit-order/app.ts",
         "telemetry/decorators.ts",

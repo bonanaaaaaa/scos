@@ -22,6 +22,7 @@ import {
 } from "@scos/persistence";
 import type { Hono } from "hono";
 
+import type { ComposedApplication } from "./composed-application";
 import type { Logger } from "./http/logger";
 import { instrumentApp } from "./telemetry/http";
 import type { Telemetry } from "./telemetry/telemetry";
@@ -42,11 +43,7 @@ export function databasePoolTimeouts(
   return { connectionTimeoutMillis: connectionTimeoutMs };
 }
 
-export interface ComposedApplication {
-  readonly app: Hono;
-  /** Releases what the composition opened. Safe to call more than once. */
-  close(): Promise<void>;
-}
+export type { ComposedApplication } from "./composed-application";
 
 /** Options every database-backed composition accepts. */
 export interface DatabaseCompositionOptions {
