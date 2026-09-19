@@ -1,0 +1,264 @@
+/**
+ * QA API acceptance: GET /health and POST /api/v1/orders/verify over real HTTP.
+ *
+ * Literal amounts below are hand-computed from the PRD rules and seed data;
+ * `expectedEstimate` is the independent oracle in ./support.ts.
+ */
+
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+
+import { type TestDatabase, createTestDatabase, readState } from "../support/database";
+import {
+  AT_PARIS,
+  FAR_AWAY,
+  MANHATTAN,
+  MAX_QUANTITY,
+  type RunningApi,
+  TOTAL_STOCK,
+  expectJson,
+  expectedEstimate,
+  get,
+  postJson,
+  startApi,
+  warehouse,
+} from "./support";
+
+let db: TestDatabase;
+let api: RunningApi;
+
+beforeAll(async () => {
+  db = await createTestDatabase();
+  await db.reset();
+  api = await startApi(db.url);
+});
+
+afterAll(async () => {
+  await api?.stop();
+  await db?.drop();
+});
+
+const verify = (body: unknown) => postJson(api, "/api/v1/orders/verify", body);
+
+describe("GET /health", () => {
+  test('200 {"status":"ok"} as JSON', async () => {
+    const response = await get(api, "/health");
+    expect(expectJson(response, 200)).toStrictEqual({ status: "ok" });
+    expect(response.text).toBe('{"status":"ok"}');
+  });
+});
+
+describe("POST /api/v1/orders/verify: valid estimates", () => {
+  test("30 units to Manhattan: New York stock, 5% discount, shipping rounded once half-up", async () => {
+    // 30 x $150 = 4500.00; 5% = 225.00; 4275.00.
+    // New York to (40.7128, -74.006) ~ 20.80497 km; 30 x 0.365 x 0.01 x 20.80497 = 2.2781 -> 2.28.
+    const response = await verify({ quantity: 30, ...MANHATTAN });
+    const body = expectJson(response, 200);
+
+    expect(body).toStrictEqual({
+      valid: true,
+      reason: null,
+      quantity: 30,
+      destination: MANHATTAN,
+      merchandiseSubtotal: "4500.00",
+      discountRate: "0.05",
+      discountAmount: "225.00",
+      discountedMerchandiseTotal: "4275.00",
+      shippingCost: "2.28",
+      orderTotal: "4277.28",
+      allocations: [
+        {
+          warehouseId: warehouse("New York").id,
+          quantity: 30,
+          distanceKm: expect.closeTo(20.80497359288961, 6),
+        },
+      ],
+    });
+    expect(body).toStrictEqual(expectedEstimate(30, MANHATTAN));
+  });
+
+  test("a destination at a warehouse has zero shipping", async () => {
+    const body = expectJson(await verify({ quantity: 10, ...AT_PARIS }), 200);
+    expect(body).toStrictEqual({
+      valid: true,
+      reason: null,
+      quantity: 10,
+      destination: AT_PARIS,
+      merchandiseSubtotal: "1500.00",
+      discountRate: "0.00",
+      discountAmount: "0.00",
+      discountedMerchandiseTotal: "1500.00",
+      shippingCost: "0.00",
+      orderTotal: "1500.00",
+      allocations: [{ warehouseId: warehouse("Paris").id, quantity: 10, distanceKm: 0 }],
+    });
+  });
+
+  test("700 units at Paris split nearest-first: 694 Paris + 6 Warsaw", async () => {
+    // 105000.00 - 20% (21000.00) = 84000.00; 6 x 0.00365 x 1342.78413 = 29.4070 -> 29.41.
+    const body = expectJson(await verify({ quantity: 700, ...AT_PARIS }), 200);
+    expect(body).toStrictEqual({
+      valid: true,
+      reason: null,
+      quantity: 700,
+      destination: AT_PARIS,
+      merchandiseSubtotal: "105000.00",
+      discountRate: "0.20",
+      discountAmount: "21000.00",
+      discountedMerchandiseTotal: "84000.00",
+      shippingCost: "29.41",
+      orderTotal: "84029.41",
+      allocations: [
+        { warehouseId: warehouse("Paris").id, quantity: 694, distanceKm: 0 },
+        {
+          warehouseId: warehouse("Warsaw").id,
+          quantity: 6,
+          distanceKm: expect.closeTo(1342.7841255600601, 6),
+        },
+      ],
+    });
+  });
+
+  test("verification stores nothing and changes no row", async () => {
+    const before = await readState(db.pool);
+    for (const body of [
+      { quantity: 30, ...MANHATTAN },
+      { quantity: 1, ...FAR_AWAY },
+      { quantity: TOTAL_STOCK + 1, ...AT_PARIS },
+    ]) {
+      expectJson(await verify(body), 200);
+    }
+    expect(await readState(db.pool)).toStrictEqual(before);
+  });
+});
+
+describe("POST /api/v1/orders/verify: discount tier boundaries (at Paris, zero shipping)", () => {
+  const cases = [
+    // quantity, subtotal, rate, discount, discounted
+    [24, "3600.00", "0.00", "0.00", "3600.00"],
+    [25, "3750.00", "0.05", "187.50", "3562.50"],
+    [49, "7350.00", "0.05", "367.50", "6982.50"],
+    [50, "7500.00", "0.10", "750.00", "6750.00"],
+    [99, "14850.00", "0.10", "1485.00", "13365.00"],
+    [100, "15000.00", "0.15", "2250.00", "12750.00"],
+    [249, "37350.00", "0.15", "5602.50", "31747.50"],
+    [250, "37500.00", "0.20", "7500.00", "30000.00"],
+  ] as const;
+
+  test.each(cases)("%i units", async (quantity, subtotal, rate, discount, discounted) => {
+    const body = expectJson(await verify({ quantity, ...AT_PARIS }), 200);
+    expect(body).toStrictEqual({
+      valid: true,
+      reason: null,
+      quantity,
+      destination: AT_PARIS,
+      merchandiseSubtotal: subtotal,
+      discountRate: rate,
+      discountAmount: discount,
+      discountedMerchandiseTotal: discounted,
+      shippingCost: "0.00",
+      orderTotal: discounted,
+      allocations: [{ warehouseId: warehouse("Paris").id, quantity, distanceKm: 0 }],
+    });
+    expect(body).toStrictEqual(expectedEstimate(quantity, AT_PARIS));
+  });
+});
+
+describe("POST /api/v1/orders/verify: invalid estimates are 200", () => {
+  test("SHIPPING_EXCEEDS_LIMIT keeps every amount and allocation", async () => {
+    // 1 unit from Hong Kong, ~9391.25073 km: 0.00365 x 9391.25073 = 34.2781 -> 34.28 > 22.50.
+    const body = expectJson(await verify({ quantity: 1, ...FAR_AWAY }), 200);
+    expect(body).toStrictEqual({
+      valid: false,
+      reason: "SHIPPING_EXCEEDS_LIMIT",
+      quantity: 1,
+      destination: FAR_AWAY,
+      merchandiseSubtotal: "150.00",
+      discountRate: "0.00",
+      discountAmount: "0.00",
+      discountedMerchandiseTotal: "150.00",
+      shippingCost: "34.28",
+      orderTotal: "184.28",
+      allocations: [
+        {
+          warehouseId: warehouse("Hong Kong").id,
+          quantity: 1,
+          distanceKm: expect.closeTo(9391.250728720299, 6),
+        },
+      ],
+    });
+  });
+
+  test("exact stock exhaustion (2556 at Paris) allocates every warehouse and exceeds the limit", async () => {
+    // 306720.00 discounted; limit 46008.00; combined shipping 49066.60.
+    const body = expectJson(await verify({ quantity: TOTAL_STOCK, ...AT_PARIS }), 200);
+    expect(body).toMatchObject({
+      valid: false,
+      reason: "SHIPPING_EXCEEDS_LIMIT",
+      merchandiseSubtotal: "383400.00",
+      discountRate: "0.20",
+      discountAmount: "76680.00",
+      discountedMerchandiseTotal: "306720.00",
+      shippingCost: "49066.60",
+      orderTotal: "355786.60",
+    });
+    expect(body).toStrictEqual(expectedEstimate(TOTAL_STOCK, AT_PARIS));
+  });
+
+  test("INSUFFICIENT_STOCK has merchandise amounts, null shipping/total and no allocations", async () => {
+    const body = expectJson(await verify({ quantity: TOTAL_STOCK + 1, ...AT_PARIS }), 200);
+    expect(body).toStrictEqual({
+      valid: false,
+      reason: "INSUFFICIENT_STOCK",
+      quantity: 2557,
+      destination: AT_PARIS,
+      merchandiseSubtotal: "383550.00",
+      discountRate: "0.20",
+      discountAmount: "76710.00",
+      discountedMerchandiseTotal: "306840.00",
+      shippingCost: null,
+      orderTotal: null,
+      allocations: [],
+    });
+  });
+
+  test("MAX_QUANTITY is well-formed: INSUFFICIENT_STOCK with the largest amounts", async () => {
+    const body = expectJson(await verify({ quantity: MAX_QUANTITY, ...AT_PARIS }), 200);
+    expect(body).toMatchObject({
+      valid: false,
+      reason: "INSUFFICIENT_STOCK",
+      merchandiseSubtotal: "9999999900.00",
+      discountRate: "0.20",
+      discountAmount: "1999999980.00",
+      discountedMerchandiseTotal: "7999999920.00",
+      shippingCost: null,
+      orderTotal: null,
+      allocations: [],
+    });
+  });
+});
+
+describe("POST /api/v1/orders/verify: coordinate endpoints are accepted", () => {
+  const endpoints = [
+    { latitude: 90, longitude: 180 },
+    { latitude: -90, longitude: -180 },
+    { latitude: 90, longitude: -180 },
+    { latitude: -90, longitude: 180 },
+    { latitude: 0, longitude: 180 },
+    { latitude: 0, longitude: -180 },
+  ];
+
+  test.each(endpoints)("(%o)", async (destination) => {
+    const body = expectJson(await verify({ quantity: 1, ...destination }), 200);
+    expect(body).toStrictEqual(expectedEstimate(1, destination));
+  });
+
+  test("north pole literal: Warsaw, 0.00365 x 4206.97324 = 15.3554 -> 15.36, valid", async () => {
+    const body = expectJson(await verify({ quantity: 1, latitude: 90, longitude: 180 }), 200);
+    expect(body).toMatchObject({
+      valid: true,
+      shippingCost: "15.36",
+      orderTotal: "165.36",
+      allocations: [{ warehouseId: warehouse("Warsaw").id, quantity: 1 }],
+    });
+  });
+});

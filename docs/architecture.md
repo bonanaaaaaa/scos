@@ -49,10 +49,32 @@ flowchart LR
    stored for this submission key, or save the new order". Core defines their shape and never implements
    them.
 4. **Adapters** are the plugs on the outside.
-   - **Driving adapters** call into the application. The Hono API turns an HTTP
-     request into a use-case call and maps the typed outcome to a status code
-     (200, 201, 400, 409, 422 or 500). A Lambda handler is a second driving
-     adapter for the same use cases.
+   - **Driving adapters** call into the application. The Hono API validates
+     the HTTP request with Zod, turns it into a use-case call and maps the typed
+     outcome to a status code (200, 201, 400, 409, 422, 500 or 503; 404 for
+     unknown routes). The order endpoints are `POST /api/v1/orders/verify` and
+     `POST /api/v1/orders` (the `API_PREFIX` constant); `GET /health` stays at
+     the root. See [apps/api/README.md](../apps/api/README.md) for the
+     contract. Each endpoint is its own Hono app with its own composition
+     (`createHealthApp`, `createVerifyOrderApp`, `createSubmitOrderApp`), which
+     builds only the adapters that endpoint needs, so each can be deployed as a
+     separate Lambda function. Each lives in its own folder,
+     `apps/api/src/endpoints/{health,verify-order,submit-order}/`, with its
+     contract, app, composition, configuration and tests; shared HTTP pieces
+     (error envelope, JSON handling, shared schemas) are in `src/http/`, which
+     never imports an endpoint, and endpoints never import each other.
+     `createApp` (`src/app.ts`) mounts all three for the local server and the
+     API documentation. Lambda handlers (#14) are a second driving adapter
+     over the same per-endpoint apps.
+   - **Lambda connections (#14):** each Lambda execution environment has its
+     own in-process pg pool and serves one request at a time. Nothing sets the
+     pool size yet (pg defaults to 10); the recommendation is for #14 to apply
+     and verify `max: 1` per environment. RDS Proxy, the chosen connection
+     approach, pools connections across all per-endpoint functions and bounds
+     those reaching PostgreSQL. #14 must check whether the transaction's
+     `set_config(..., true)` calls pin the client connection, and whether
+     pg/Prisma prepared statements do; verify IAM or Secrets Manager
+     authentication; and compare proxy timeouts with the 5 s connect timeout.
    - **Driven adapters** are called by the application. `packages/persistence`
      implements the ports with Prisma and SQL.
 
@@ -69,8 +91,10 @@ Dependencies point inward only:
 
 The database is reached through dependency inversion. The use case needs
 persistence, but instead of importing it, core declares a port and
-`packages/persistence` implements it. The composition root in `apps/api` wires
-the adapter into the use case at startup.
+`packages/persistence` implements it. The composition roots in `apps/api`
+(`src/endpoints/<name>/composition.ts` per endpoint, and `src/composition.ts`
+for the combined app) wire the adapter into the use case at startup, after the
+runtime entrypoint (`src/server.ts` locally) has validated the environment.
 
 ## Where does code go?
 

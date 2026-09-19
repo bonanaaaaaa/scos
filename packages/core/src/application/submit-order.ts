@@ -84,9 +84,16 @@ export interface InvalidSubmission {
   readonly issues: readonly SubmitOrderIssue[];
 }
 
-/** Every attempt failed transiently; nothing was committed. */
+/**
+ * A transient failure SubmitOrder could not overcome; this request committed
+ * nothing. The key stays reusable unless a concurrent request with the same
+ * key committed its Order first, in which case a retry returns that Order (or
+ * a conflict). Either every transaction attempt failed
+ * transiently, or an unlocked lookup of the key failed transiently.
+ */
 export interface UnavailableSubmission {
   readonly kind: "unavailable";
+  /** Transaction attempts made (0 when the initial lookup failed). */
   readonly attempts: number;
 }
 
@@ -124,6 +131,30 @@ const submitOrderInputSchema = z
     request: orderRequestSchema.parse({ quantity, latitude, longitude }),
   }));
 
+const UNAVAILABLE = Symbol("unavailable");
+
+/**
+ * The unlocked lookup, with a {@link TransientSubmissionError} (a read that
+ * could not run) reported as {@link UNAVAILABLE} instead of thrown.
+ */
+async function unlockedLookup(
+  store: SubmissionStore,
+  submissionKey: SubmissionKey,
+): Promise<Order | null | typeof UNAVAILABLE> {
+  try {
+    return await store.findOrderBySubmissionKey(submissionKey);
+  } catch (error) {
+    if (error instanceof TransientSubmissionError) {
+      return UNAVAILABLE;
+    }
+    throw error;
+  }
+}
+
+function unavailable(attempts: number): UnavailableSubmission {
+  return Object.freeze({ kind: "unavailable", attempts });
+}
+
 /** The same key with the same quantity and destination is a repeat. */
 function resolveExisting(
   existing: Order,
@@ -146,6 +177,7 @@ function resolveExisting(
  * 4. Retry transient failures up to `maxAttempts` in total, then `unavailable`.
  * 5. If a concurrent submission took the key first, resolve it by looking the
  *    winner up; if it is not visible yet, treat the attempt as transient.
+ * 6. If either unlocked lookup fails transiently, return `unavailable`.
  */
 export function createSubmitOrder(dependencies: SubmitOrderDependencies): SubmitOrder {
   const {
@@ -189,7 +221,10 @@ export function createSubmitOrder(dependencies: SubmitOrderDependencies): Submit
     }
     const { submissionKey, request } = parsed.data;
 
-    const existing = await store.findOrderBySubmissionKey(submissionKey);
+    const existing = await unlockedLookup(store, submissionKey);
+    if (existing === UNAVAILABLE) {
+      return unavailable(0);
+    }
     if (existing !== null) {
       return resolveExisting(existing, submissionKey, request);
     }
@@ -199,7 +234,11 @@ export function createSubmitOrder(dependencies: SubmitOrderDependencies): Submit
         return await store.runInTransaction((tx) => attempt(tx, submissionKey, request));
       } catch (error) {
         if (error instanceof SubmissionKeyTakenError) {
-          const winner = await store.findOrderBySubmissionKey(submissionKey);
+          const winner = await unlockedLookup(store, submissionKey);
+          if (winner === UNAVAILABLE) {
+            // Our attempt rolled back; the winner cannot be read right now.
+            return unavailable(attempts);
+          }
           if (winner !== null) {
             return resolveExisting(winner, submissionKey, request);
           }
@@ -209,6 +248,6 @@ export function createSubmitOrder(dependencies: SubmitOrderDependencies): Submit
         }
       }
     }
-    return Object.freeze({ kind: "unavailable", attempts: maxAttempts });
+    return unavailable(maxAttempts);
   };
 }

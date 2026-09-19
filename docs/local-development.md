@@ -7,7 +7,7 @@ PostgreSQL container.
 
 ## First run in each worktree
 
-Install the Node.js version in `.node-version`, Corepack, and Docker with
+Install the Node.js version in `.node-version`, pnpm, and Docker with
 Compose v2. Start Docker, then run:
 
 ```sh
@@ -15,7 +15,7 @@ Compose v2. Start Docker, then run:
 ./dev.sh
 ```
 
-`setup.sh` checks prerequisites, selects the pinned pnpm through Corepack,
+`setup.sh` checks prerequisites, checks that pnpm switches to the pinned version,
 installs with a frozen lockfile, and creates `.env` only if absent. Existing
 configuration is preserved. Rerun setup when dependencies change. Both scripts
 resolve paths from their own location, so they work from another directory.
@@ -58,6 +58,11 @@ same database. Moving a worktree changes its database identity.
 
 The launcher exports the generated `DATABASE_URL` to the API, overriding copied
 or inherited database URLs without editing `.env`. It does not log the password.
+The API requires `DATABASE_URL` and validates it (and `PORT`) at startup: a
+missing or malformed value stops it with a nonzero exit before it listens, and
+the value is never printed. Outside the launcher, export `DATABASE_URL` before
+`pnpm api:dev` or `api:start`; Turbo passes `DATABASE_URL` and `PORT`
+through to both tasks.
 Before starting the API it runs `db:seed`, which applies pending migrations and
 inserts any missing seed warehouses. Both steps are idempotent: repeated
 launches never reset data or replenish consumed stock. Integration-test
@@ -70,9 +75,9 @@ read `.env`, so export the URL first (the launcher does this for the worktree
 database).
 
 ```sh
-corepack pnpm db:migrate   # apply pending migrations
-corepack pnpm db:seed      # apply migrations, then insert missing warehouses
-SCOS_CONFIRM_DATABASE_RESET=<database-name> corepack pnpm db:reset
+pnpm db:migrate   # apply pending migrations
+pnpm db:seed      # apply migrations, then insert missing warehouses
+SCOS_CONFIRM_DATABASE_RESET=<database-name> pnpm db:reset
 ```
 
 `db:reset` is the only destructive command. It refuses to run unless
@@ -99,7 +104,8 @@ The selected URL is printed before Turbo starts the API in watch mode and builds
 its dependencies. Turbo's local development task uses loose environment mode
 so the generated database URL reaches the API. Check `/health` at the printed URL.
 
-Ctrl+C stops the API. The shared PostgreSQL container and all databases remain
+Ctrl+C stops the API gracefully: it closes the listener, then its database
+connections. The shared PostgreSQL container and all databases remain
 available. The scripts never stop the shared container, reset databases, or
 remove volumes. Worktree
 removal does not delete its database; keep or remove that data separately when

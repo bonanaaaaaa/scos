@@ -146,10 +146,11 @@ As implemented by `createPrismaSubmissionStore` in `src/submission-store.ts`:
   | `23505` on `orders_order_number_key`                                                                                                      | `TransientSubmissionError`                             |
   | `40001`, `40P01`, `55P03`, `57014`, `P2034`                                                                                               | `TransientSubmissionError`                             |
   | `P2028` for an expired transaction or one that could not start (no commit was sent)                                                       | `TransientSubmissionError`                             |
+  | pg-pool connection timeout (`connectionTimeoutMillis`; no statement was sent), also for the unlocked lookup                               | `TransientSubmissionError`                             |
   | anything else, including a `COMMIT` failure without one of the SQLSTATEs above (such as a deferred-trigger error) or a dropped connection | propagated unchanged                                   |
 
 - The classifier does not distinguish the statement that failed: a `COMMIT` that fails with a transient SQLSTATE is retried like any other statement. This is safe because a `COMMIT` that returns an error did not commit.
-- SubmitOrder makes at most `MAX_SUBMISSION_ATTEMPTS` (3) attempts for transient failures and then reports `unavailable`. Nothing was committed, so the key remains unused. Business rejections are returned at once and never retried. If a failure leaves the outcome unknown to the caller (for example a lost response or a failed `COMMIT`), repeating the same `submissionId` returns the Order if it was committed and otherwise evaluates the request again.
+- SubmitOrder makes at most `MAX_SUBMISSION_ATTEMPTS` (3) attempts for transient failures and then reports `unavailable`. A transient failure of an unlocked lookup (a read) also reports `unavailable`. No client-side query timeout is used: pg abandons a timed-out query without closing its connection, which could return a connection with an open transaction to the pool. Nothing was committed, so the key remains unused. Business rejections are returned at once and never retried. If a failure leaves the outcome unknown to the caller (for example a lost response or a failed `COMMIT`), repeating the same `submissionId` returns the Order if it was committed and otherwise evaluates the request again.
 
 ### Timestamps
 
@@ -170,11 +171,11 @@ All three application tables follow [ADR 0003](adr/0003-database-managed-timesta
 
 Run from the repository root with `DATABASE_URL` set to the target database. `./dev.sh` runs `db:seed` automatically for the worktree database.
 
-| Command                                                         | Effect                                                                                         |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `corepack pnpm db:migrate`                                      | Apply pending migrations (`prisma migrate deploy`)                                             |
-| `corepack pnpm db:seed`                                         | Apply pending migrations, then insert missing seed warehouses. Existing rows are never changed |
-| `SCOS_CONFIRM_DATABASE_RESET=<database> corepack pnpm db:reset` | Destructive: drop all data, reapply migrations, then seed                                      |
+| Command                                                | Effect                                                                                         |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `pnpm db:migrate`                                      | Apply pending migrations (`prisma migrate deploy`)                                             |
+| `pnpm db:seed`                                         | Apply pending migrations, then insert missing seed warehouses. Existing rows are never changed |
+| `SCOS_CONFIRM_DATABASE_RESET=<database> pnpm db:reset` | Destructive: drop all data, reapply migrations, then seed                                      |
 
 The seed uses `INSERT ... ON CONFLICT (id) DO NOTHING`. Rerunning it never replenishes consumed stock or overwrites existing warehouses. If a warehouse name exists under a different ID, the seed fails instead of overwriting it.
 
@@ -182,7 +183,7 @@ The seed uses `INSERT ... ON CONFLICT (id) DO NOTHING`. Rerunning it never reple
 
 ## Verification
 
-`corepack pnpm test:integration` (with `DATABASE_TEST_URL` set) runs `packages/persistence/test/*.integration.test.ts` against real PostgreSQL. Each test file creates a uniquely named database next to `scos_test` on the disposable test server, applies the migrations with `prisma migrate deploy`, and drops the database afterwards. The tests cover clean migration and drift, timestamp columns and triggers on every table, timestamp behavior through Prisma and raw SQL, UUIDv7 defaults, constraints and restricted deletes, the derived-amount range checks, decimal round-trips, derived totals matching PostgreSQL's arithmetic, seed reruns, and the inventory reader (`inventory-reader.integration.test.ts`): a complete snapshot in ID order, identical warehouse rows (including `updated_at`, `xmin`, and `ctid`) and empty order tables before and after a read, committed stock changes visible on the next read, and a read that completes while another transaction holds the warehouse row locks.
+`pnpm test:integration` (with `DATABASE_TEST_URL` set) runs `packages/persistence/test/*.integration.test.ts` against real PostgreSQL. Each test file creates a uniquely named database next to `scos_test` on the disposable test server, applies the migrations with `prisma migrate deploy`, and drops the database afterwards. The tests cover clean migration and drift, timestamp columns and triggers on every table, timestamp behavior through Prisma and raw SQL, UUIDv7 defaults, constraints and restricted deletes, the derived-amount range checks, decimal round-trips, derived totals matching PostgreSQL's arithmetic, seed reruns, and the inventory reader (`inventory-reader.integration.test.ts`): a complete snapshot in ID order, identical warehouse rows (including `updated_at`, `xmin`, and `ctid`) and empty order tables before and after a read, committed stock changes visible on the next read, and a read that completes while another transaction holds the warehouse row locks.
 
 VerifyOrder is tested by level, and each package tests only itself:
 
