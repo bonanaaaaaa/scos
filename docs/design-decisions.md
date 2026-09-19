@@ -59,10 +59,11 @@
 
 ## Distance calculation and precision
 
-- Use the Haversine formula for great-circle distance on a spherical Earth, with JavaScript number arithmetic for trigonometry. Use one documented Earth-radius constant in kilometres consistently for verification and submission; its exact value must be fixed alongside reference-distance tests during implementation.
+- Use the Haversine formula for great-circle distance on a spherical Earth, with JavaScript number arithmetic for trigonometry. Use one documented Earth-radius constant in kilometres consistently for verification and submission: `EARTH_RADIUS_KM = 6371.0088`, the IUGG mean radius, fixed alongside reference-distance tests in `packages/core/src/domain/shipping/distance.ts`.
 - Preserve the supplied warehouse coordinates and accepted client coordinates without deliberate decimal-place rounding. JavaScript number representation remains finite precision; do not claim arbitrary-precision coordinates or measurement accuracy from the number of supplied digits.
 - Keep computed distances in kilometres without rounding to whole metres, whole kilometres, or a fixed number of decimal places. Use those distances for allocation and convert each result via its decimal string representation into decimal.js for shipping arithmetic.
 - Multiply using decimal constants for unit weight and shipping rate, sum all warehouse shipping contributions, and round the combined charge once to cents using ROUND_HALF_UP. Do not round individual contributions or distance values first.
+- Monetary arithmetic uses an isolated decimal.js constructor with 40 significant digits and ROUND_HALF_UP (`packages/core/src/domain/shared/decimal.ts`, which documents why 40 digits suffice). Supported inputs are bounded by `MAX_QUANTITY` (66,666,666, floor(9999999999.99 / 150)) and inclusive coordinate limits of ±90 latitude and ±180 longitude (`LATITUDE_LIMIT`, `LONGITUDE_LIMIT`). The overflow analysis is in the [core package README](../packages/core/README.md#overflow-behaviour-of-estimateorder).
 - Clamp the Haversine intermediate to the mathematical range [0, 1] before calculating the central angle to avoid floating-point drift producing invalid results at geographic extremes.
 - Coordinate precision is distinct from measurement accuracy and spherical-model accuracy. The [OpenStreetMap coordinate precision reference](https://wiki.openstreetmap.org/wiki/Precision_of_coordinates) informs this distinction; its local distance approximation is not the algorithm for globally distributed warehouses.
 

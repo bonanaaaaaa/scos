@@ -118,9 +118,64 @@ needed):
 pnpm openapi:export   # write apps/api/dist/openapi.json
 ```
 
+## Stopping and removing local data
+
 Ctrl+C stops the API gracefully: it closes the listener, then its database
 connections. The shared PostgreSQL container and all databases remain
 available. The scripts never stop the shared container, reset databases, or
-remove volumes. Worktree
-removal does not delete its database; keep or remove that data separately when
-it is no longer needed.
+remove volumes. Worktree removal does not delete its database; keep or remove
+that data separately when it is no longer needed, as below.
+
+The shared container is used by every worktree. Before stopping it or deleting
+its volume, check that no other worktree's API or tests still need it.
+
+### This worktree's database
+
+Stop this worktree's API first (an open connection makes `DROP DATABASE`
+fail). Then, from the worktree root, compute the same name the launcher uses
+and drop it:
+
+```sh
+db="scos_wt_$(node -p 'require("node:crypto").createHash("sha256").update(process.cwd()).digest("hex").slice(0, 24)')"
+docker exec scos-local-postgres-1 psql -X -U scos -d postgres -c "DROP DATABASE IF EXISTS \"$db\""
+```
+
+`scos-local-postgres-1` and `scos` are the container and user when the
+launcher created the container. If it reused another container, use that
+container's name (or `SCOS_POSTGRES_CONTAINER`) and its `POSTGRES_USER`. The
+name depends on the worktree's absolute path, so run this before moving or
+removing the worktree; afterwards, list the worktree databases with
+`docker exec scos-local-postgres-1 psql -X -U scos -d postgres -c '\l scos_wt_*'`
+and drop the one you no longer need by name. The next
+`./dev.sh` recreates an empty, migrated and seeded database.
+
+### The shared container
+
+If the launcher created the container, it belongs to the Compose project
+`scos-local`:
+
+```sh
+docker compose --project-name scos-local -f compose.yaml down            # stop and remove; data kept
+docker compose --project-name scos-local -f compose.yaml down --volumes  # also delete the data volume
+```
+
+`down` keeps the `scos-local_scos-postgres-data` volume, and the next
+`./dev.sh` starts a new container over it. `down --volumes` deletes that
+volume: every worktree's database, all Orders and all stock changes are lost
+and cannot be recovered. If `./dev.sh` reused a container you started
+yourself, manage it the way you created it.
+
+### Compose services started by hand
+
+Services started with `docker compose up` (see the README's Local PostgreSQL
+section) belong to a project named after the checkout directory, so run these
+from the same checkout:
+
+```sh
+docker compose down             # keep the development volume
+docker compose down --volumes   # delete it and all local development data
+```
+
+The test database (`postgres-test`) keeps its data in memory only and never
+survives `down`. Both paths publish PostgreSQL on host port 5432, so stop one
+before starting the other.

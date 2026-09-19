@@ -19,7 +19,18 @@ import { expect } from "vitest";
 import { composeApplication } from "../../src/composition/node";
 import { parseHealthConfig } from "../../src/endpoints/health/config";
 import { startServer } from "../../src/entrypoints/node";
-import { createTelemetryRuntime } from "../../src/telemetry/node/sdk";
+import { createPinoLogger } from "../../src/telemetry/node/pino-logger";
+import {
+  type TelemetryRuntime,
+  createTelemetryRuntime,
+  registerLogCorrelation,
+} from "../../src/telemetry/node/sdk";
+import {
+  type LogCapture,
+  type TestTelemetry,
+  captureLogs,
+  testTelemetry,
+} from "../../src/testing/telemetry.test-support";
 
 // ---------------------------------------------------------------------------
 // Server
@@ -41,8 +52,20 @@ function quietTelemetry() {
   return parsed.config.telemetry;
 }
 
+export interface StartApiOptions {
+  /**
+   * The telemetry runtime `startServer` receives through its `startTelemetry`
+   * seam. When given, the app uses this runtime's telemetry and logger (see
+   * {@link testObservability}); otherwise telemetry is off and logs silent.
+   */
+  readonly observability?: TelemetryRuntime;
+}
+
 /** Starts the real Node.js listener on an ephemeral port. */
-export async function startApi(databaseUrl: string): Promise<RunningApi> {
+export async function startApi(
+  databaseUrl: string,
+  { observability }: StartApiOptions = {},
+): Promise<RunningApi> {
   let resolvePort: (port: number) => void = () => undefined;
   const listening = new Promise<number>((resolve) => {
     resolvePort = resolve;
@@ -55,12 +78,54 @@ export async function startApi(databaseUrl: string): Promise<RunningApi> {
           onListening(info);
           resolvePort(info.port);
         }),
-      compose: (options) => composeApplication({ ...options, logger: silentLogger }),
-      startTelemetry: (config) => createTelemetryRuntime(config),
+      compose: (options) =>
+        composeApplication(
+          observability === undefined ? { ...options, logger: silentLogger } : options,
+        ),
+      startTelemetry: (config) => observability ?? createTelemetryRuntime(config),
     },
   );
   const port = await listening;
   return { baseUrl: `http://127.0.0.1:${port}`, stop: () => running.shutdown() };
+}
+
+export interface TestObservability {
+  /** Pass as `startApi(url, { observability: runtime })`. */
+  readonly runtime: TelemetryRuntime;
+  /** In-memory spans and metrics (AlwaysOn sampling, synchronous span export). */
+  readonly harness: TestTelemetry;
+  /** Every Pino JSON line the app wrote. */
+  readonly logs: LogCapture;
+  shutdown(): Promise<void>;
+}
+
+/**
+ * An in-memory test sink for a real listener: the SDK providers of
+ * `testTelemetry` and the production Pino logger writing to a capture stream,
+ * with `PinoInstrumentation` registered first so records inside a request
+ * carry `trace_id`/`span_id`. `startServer`'s shutdown leaves the sink
+ * readable; call `shutdown()` when done.
+ */
+export function testObservability(): TestObservability {
+  registerLogCorrelation();
+  const harness = testTelemetry();
+  const logs = captureLogs();
+  const logger = createPinoLogger({
+    level: "info",
+    base: { "service.name": "scos-api" },
+    destination: logs.destination,
+  });
+  return {
+    runtime: {
+      telemetry: harness.telemetry,
+      logger,
+      forceFlush: async () => undefined,
+      shutdown: async () => undefined,
+    },
+    harness,
+    logs,
+    shutdown: () => harness.shutdown(),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -81,14 +146,16 @@ export interface RawRequest {
   readonly body?: string | Uint8Array<ArrayBuffer>;
   /** `null` sends no Content-Type header at all. Defaults to application/json. */
   readonly contentType?: string | null;
+  /** Extra request headers, for example a W3C `traceparent`. */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 export async function request(
   api: RunningApi,
   path: string,
-  { method = "POST", body, contentType = "application/json" }: RawRequest = {},
+  { method = "POST", body, contentType = "application/json", headers: extra = {} }: RawRequest = {},
 ): Promise<HttpResult> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...extra };
   if (contentType !== null) {
     headers["Content-Type"] = contentType;
   }
@@ -455,3 +522,99 @@ export function afterDeducting(
     return { ...w, stock: w.stock - taken };
   });
 }
+
+// ---------------------------------------------------------------------------
+// Shipping-limit destinations (1 unit: limit 15% x 150.00 = 22.50)
+// ---------------------------------------------------------------------------
+
+/** A destination whose 1-unit estimate ships from one warehouse for an exact charge. */
+export interface LimitDestination {
+  readonly latitude: number;
+  readonly longitude: number;
+  readonly warehouse: Warehouse;
+  readonly distanceKm: number;
+  readonly shippingCost: string;
+}
+
+/**
+ * The point `distanceKm` along the great circle from `from` at `bearing`
+ * degrees (spherical direct problem, same Earth radius as the oracle).
+ */
+function pointAt(
+  from: { latitude: number; longitude: number },
+  bearing: number,
+  distanceKm: number,
+): { latitude: number; longitude: number } {
+  const rad = (degrees: number) => (degrees * Math.PI) / 180;
+  const deg = (radians: number) => (radians * 180) / Math.PI;
+  const angular = distanceKm / EARTH_RADIUS_KM;
+  const lat1 = rad(from.latitude);
+  const theta = rad(bearing);
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angular) + Math.cos(lat1) * Math.sin(angular) * Math.cos(theta),
+  );
+  const lon2 =
+    rad(from.longitude) +
+    Math.atan2(
+      Math.sin(theta) * Math.sin(angular) * Math.cos(lat1),
+      Math.cos(angular) - Math.sin(lat1) * Math.sin(lat2),
+    );
+  const longitude = ((((deg(lon2) + 180) % 360) + 360) % 360) - 180;
+  // Six decimals (~0.1 m) keep request bodies readable; the oracle re-checks below.
+  return { latitude: Number(deg(lat2).toFixed(6)), longitude: Number(longitude.toFixed(6)) };
+}
+
+/** Minimum gap to the second-nearest warehouse, so the allocation is unambiguous. */
+const NEAREST_MARGIN_KM = 100;
+
+/**
+ * Finds a destination whose nearest warehouse is the only one used for 1 unit
+ * and whose rounded shipping is exactly `cents`. The charge window for `c`
+ * cents is [(c - 0.5) / 0.365, (c + 0.5) / 0.365) km; the target is its
+ * middle, about 1.37 km from either edge, far beyond any floating-point
+ * difference between this oracle and the implementation.
+ *
+ * The result is asserted against the independent oracle (distance, nearest
+ * warehouse by a clear margin, charge in cents), so a wrong point fails here
+ * rather than silently weakening a test.
+ */
+export function destinationWithShippingCents(cents: number): LimitDestination {
+  const targetKm = cents / 0.365;
+  for (const origin of WAREHOUSES) {
+    for (let bearing = 0; bearing < 360; bearing += 1) {
+      const point = pointAt(origin, bearing, targetKm);
+      const ranked = WAREHOUSES.map((w) => ({ w, km: greatCircleKm(w, point) })).sort(
+        (a, b) => a.km - b.km,
+      );
+      const [nearest, second] = ranked;
+      if (
+        nearest === undefined ||
+        second === undefined ||
+        nearest.w.id !== origin.id ||
+        second.km - nearest.km < NEAREST_MARGIN_KM
+      ) {
+        continue;
+      }
+      const charged = shippingCents([{ quantity: 1, distanceKm: nearest.km }]);
+      expect(charged, `oracle shipping for ${JSON.stringify(point)}`).toBe(BigInt(cents));
+      expect(Math.abs(nearest.km - targetKm)).toBeLessThan(0.01);
+      expect(allocate(1, point)).toStrictEqual([
+        { warehouseId: origin.id, quantity: 1, distanceKm: nearest.km },
+      ]);
+      return {
+        ...point,
+        warehouse: origin,
+        distanceKm: nearest.km,
+        shippingCost: formatCents(charged),
+      };
+    }
+  }
+  throw new Error(`No destination found with 1-unit shipping of ${cents} cents`);
+}
+
+/** 1 unit: shipping 22.49, one cent under the 22.50 limit. */
+export const BELOW_LIMIT = destinationWithShippingCents(2249);
+/** 1 unit: shipping exactly 22.50, the limit (equality is valid). */
+export const AT_LIMIT = destinationWithShippingCents(2250);
+/** 1 unit: shipping 22.51, one cent over the limit. */
+export const ABOVE_LIMIT = destinationWithShippingCents(2251);

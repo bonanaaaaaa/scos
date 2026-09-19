@@ -9,8 +9,12 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { type TestDatabase, createTestDatabase, readState } from "../support/database";
 import {
+  ABOVE_LIMIT,
+  AT_LIMIT,
   AT_PARIS,
+  BELOW_LIMIT,
   FAR_AWAY,
+  type LimitDestination,
   MANHATTAN,
   MAX_QUANTITY,
   type RunningApi,
@@ -260,5 +264,41 @@ describe("POST /api/v1/orders/verify: coordinate endpoints are accepted", () => 
       orderTotal: "165.36",
       allocations: [{ warehouseId: warehouse("Warsaw").id, quantity: 1 }],
     });
+  });
+});
+
+describe("POST /api/v1/orders/verify: shipping limit boundary (1 unit, limit 22.50)", () => {
+  // 15% of 150.00 = 22.50. Each destination is found and checked by the
+  // independent oracle in ./support.ts: one warehouse, a distance in the middle
+  // of the charge's rounding window, and every other warehouse >= 100 km farther.
+  const coordinates = ({ latitude, longitude }: LimitDestination) => ({ latitude, longitude });
+
+  test.each([
+    ["22.49 is below the limit: valid", BELOW_LIMIT, "22.49", "172.49", true],
+    ["22.50 equals the limit: valid", AT_LIMIT, "22.50", "172.50", true],
+    ["22.51 is above the limit: SHIPPING_EXCEEDS_LIMIT", ABOVE_LIMIT, "22.51", "172.51", false],
+  ] as const)("%s", async (_name, destination, shipping, total, valid) => {
+    expect(destination.shippingCost).toBe(shipping);
+    const body = expectJson(await verify({ quantity: 1, ...coordinates(destination) }), 200);
+    expect(body).toStrictEqual({
+      valid,
+      reason: valid ? null : "SHIPPING_EXCEEDS_LIMIT",
+      quantity: 1,
+      destination: coordinates(destination),
+      merchandiseSubtotal: "150.00",
+      discountRate: "0.00",
+      discountAmount: "0.00",
+      discountedMerchandiseTotal: "150.00",
+      shippingCost: shipping,
+      orderTotal: total,
+      allocations: [
+        {
+          warehouseId: destination.warehouse.id,
+          quantity: 1,
+          distanceKm: expect.closeTo(destination.distanceKm, 6),
+        },
+      ],
+    });
+    expect(body).toStrictEqual(expectedEstimate(1, coordinates(destination)));
   });
 });
