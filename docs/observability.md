@@ -147,7 +147,7 @@ no `LoggerProvider`, no OTLP log exporter and no `pino-opentelemetry-transport`.
 The JavaScript Logs SDK is still in Development, while traces and metrics are
 Stable.
 
-- **Lambda (#14/#15):** the runtime ships stdout to CloudWatch Logs. Parse
+- **Lambda (#14, deferred):** the runtime ships stdout to CloudWatch Logs. Parse
   the JSON (for example CloudWatch Logs Insights, a subscription filter, or
   the ADOT Lambda layer's Collector) and map fields with the table above.
 - **Containers or local:** send container stdout to an OpenTelemetry
@@ -401,9 +401,11 @@ For #14, package `dist/` together with production `node_modules` (for
 example `pnpm --filter @scos/api deploy --prod <dir>`; not yet verified), or
 install `pino@10.3.1` into the artifact.
 
-### Lambda (#14/#15)
+### Lambda (#14, deferred)
 
-A Lambda handler does not exist yet. Requirements for it:
+The AWS Lambda deployment follows the Cloudflare one
+([ADR 0005](adr/0005-cloudflare-first-deployment.md)). A Lambda handler does
+not exist yet. Requirements for it:
 
 - **Init once per execution environment.** Call `startTelemetry` in module
   scope (the init phase), before the first logger. Warm invocations reuse
@@ -1279,9 +1281,11 @@ URL `https://opentelemetry.io/schemas/1.43.0`, and a unit test keeps
   trace IDs have no exported spans.
 - **Pino must ship beside the bundle** (see "Runtime artifact").
 - **Lambda handler and flush wiring** are specified here but implemented in
-  #14; warm reuse and flush behaviour must be verified on AWS there (#15).
+  #14, which is deferred; warm reuse and flush behaviour must be verified on
+  AWS when that track resumes.
 - **Workers: see [its limitations](#workers-limitations)** (clock
   resolution, per-request export cost, no retries, local-only verification).
+  Hosted verification on Cloudflare happens in #33.
 - **The Collector container recipe was not run** in this change; OTLP export
   was verified against a local HTTP sink.
 - **Console exporter output is not JSON** and mixes with JSON logs on stdout;

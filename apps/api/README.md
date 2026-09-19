@@ -14,7 +14,8 @@ Start at a runtime's entry point and follow the wiring inward:
    SIGINT/SIGTERM. The Cloudflare Worker's entry point is
    `src/entrypoints/worker.ts`: its `fetch` handler validates `env` once per
    isolate, builds telemetry and the composition, and hands the telemetry
-   flush to `ctx.waitUntil`. Future runtimes add `entrypoints/lambda*.ts` (#14).
+   flush to `ctx.waitUntil`. Future runtimes add `entrypoints/lambda*.ts`
+   (#14, deferred).
 2. **Composition root** (`src/composition/node.ts`): opens the database
    (`composition/database.ts`), builds the persistence adapters and use cases,
    wraps them in the telemetry decorators, and calls `createApp`. It returns
@@ -88,7 +89,9 @@ can import them without deployment configuration. See
 ## Per-endpoint apps and compositions
 
 Each endpoint is a separately constructible Hono app, so each can be deployed
-as its own Lambda function (#14):
+as its own Lambda function (#14, deferred). The Cloudflare Worker (#28), which
+is the first hosted target, serves the combined app instead. The per-endpoint
+apps are:
 
 | Route                        | App factory                                      | Composition                              | Builds                         | Configuration              |
 | ---------------------------- | ------------------------------------------------ | ---------------------------------------- | ------------------------------ | -------------------------- |
@@ -129,7 +132,10 @@ as its own Lambda function (#14):
   and `renderOpenApiDocument()` (all generation is async), and `OPENAPI_PATH` and
   `DOCS_PATH`. `routes[*].servedBy` names the app that serves each route.
 
-### Notes for Lambda deployment (#14)
+### Notes for Lambda deployment (#14, deferred)
+
+The AWS Lambda deployment follows the Cloudflare one. These notes stay valid
+for when it resumes.
 
 - **Telemetry:** call `startTelemetry` once in module scope, pass its
   `logger` and `telemetry` to the composition, and call
@@ -156,9 +162,13 @@ as its own Lambda function (#14):
 
 ## Cloudflare Worker
 
-The same API runs as a Cloudflare Worker (`wrangler.jsonc`), an alternative
-target to Node/Lambda. Provisioning and deployment are #28; this package holds
-the runtime and runs it locally without a Cloudflare account.
+The same API runs as a Cloudflare Worker (`wrangler.jsonc`). It is the first
+hosted target, reaching PlanetScale Postgres through Hyperdrive; the AWS Lambda
+deployment is deferred
+([ADR 0005](../../docs/adr/0005-cloudflare-first-deployment.md)). The Hyperdrive
+design is #28, the deployment pipeline is #15, and the hosted demonstration is
+#33; this package holds the runtime and runs it locally without a Cloudflare
+account.
 
 - `src/entrypoints/worker.ts` validates the Worker's `env` once per isolate
   with `parseWorkerConfig`: the telemetry variables, and `DATABASE_URL` taken
@@ -175,6 +185,11 @@ the runtime and runs it locally without a Cloudflare account.
   over a Prisma client generated with `runtime = "workerd"`.
 - Telemetry: `src/telemetry/workers/` (see
   [docs/observability.md](../../docs/observability.md#cloudflare-workers-runtime)).
+- Hosted, Hyperdrive pools in transaction mode and resets a connection when
+  it returns to the pool. The submission transaction's
+  `set_config(..., true)` timeouts are transaction-local, so they should carry
+  over; #28 verifies that, and that nothing relies on session state.
+  Hyperdrive query caching stays disabled, so inventory reads are never stale.
 
 ```sh
 ./dev.sh             # once: database, migrations, seed (then Ctrl+C)

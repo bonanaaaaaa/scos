@@ -3,7 +3,7 @@
 SCOS uses hexagonal architecture (ports and adapters, Alistair Cockburn) for
 the structure, and domain-driven design (DDD) for the model inside it. The
 business rules sit in the middle. Everything technical, such as HTTP, the
-database and Lambda, is a replaceable attachment on the outside. The hexagon
+database and the hosting runtime, is a replaceable attachment on the outside. The hexagon
 shape has no meaning of its own; it is drawn with many sides because an
 application can have many plugs.
 
@@ -11,8 +11,8 @@ application can have many plugs.
 flowchart LR
     subgraph driving["Driving adapters (call in)"]
         api["Hono HTTP API<br/>apps/api"]
-        lambda["Lambda handler<br/>(planned)"]
         worker["Cloudflare Worker<br/>apps/api (workerd)"]
+        lambda["Lambda handler<br/>(deferred, #14)"]
     end
 
     subgraph core["packages/core"]
@@ -29,8 +29,8 @@ flowchart LR
     end
 
     api --> app
-    lambda --> app
     worker --> app
+    lambda --> app
     db -. implements .-> ports
 ```
 
@@ -66,9 +66,20 @@ flowchart LR
      (error envelope, JSON handling, shared schemas) are in `src/http/`, which
      never imports an endpoint, and endpoints never import each other.
      `createApp` (`src/app.ts`) mounts all three for the local server and the
-     API documentation. Lambda handlers (#14) are a second driving adapter
-     over the same per-endpoint apps.
-   - **Lambda connections (#14):** each Lambda execution environment has its
+     API documentation. The first hosted deployment is a Cloudflare Worker
+     (#28) that serves the combined app; see
+     [ADR 0005](adr/0005-cloudflare-first-deployment.md). Lambda handlers
+     (#14, deferred) are a further driving adapter over the same per-endpoint
+     apps.
+   - **Worker connections (#28):** the hosted Worker reaches PlanetScale
+     Postgres through Cloudflare Hyperdrive, which pools in transaction mode
+     (the per-request client is described under **Cloudflare Worker** below).
+     The submission transaction already sets its timeouts with
+     `set_config(..., true)`, which is transaction-local and so survives
+     Hyperdrive resetting pooled connections; #28 must confirm that, and that
+     nothing relies on session state. Hyperdrive query caching stays disabled
+     so inventory reads are never stale.
+   - **Lambda connections (#14, deferred):** each Lambda execution environment has its
      own in-process pg pool and serves one request at a time. Nothing sets the
      pool size yet (pg defaults to 10); the recommendation is for #14 to apply
      and verify `max: 1` per environment. RDS Proxy, the chosen connection
@@ -89,7 +100,8 @@ flowchart LR
      through a Hyperdrive binding and opens a pool and Prisma client per
      request (Workers forbid sharing sockets across requests). It uses
      `@scos/persistence`'s `workerd` build, which is the same adapters over a
-     Prisma client generated for workerd. Deployment is #28.
+     Prisma client generated for workerd. The Hyperdrive design is #28, the
+     deployment pipeline is #15, and the hosted demonstration is #33.
    - **Driven adapters** are called by the application. `packages/persistence`
      implements the ports with Prisma and SQL.
 
@@ -133,8 +145,8 @@ allocate and with which data; the domain decides how.
 - **Testing:** domain tests are plain unit tests without mocks or a database.
   Use cases can be tested with in-memory fake ports. Only adapters need a real
   PostgreSQL, which the integration tests provide.
-- **Swapping technology:** running on Lambda instead of a local server means
-  adding a driving adapter, not rewriting logic. Changing the database means
+- **Swapping technology:** running on a Cloudflare Worker or on Lambda instead
+  of a local server means adding a driving adapter, not rewriting logic. Changing the database means
   rewriting one adapter.
 - **Clear ownership:** rules in [design decisions](design-decisions.md) such as
   "Prisma types stay outside the domain" and "persist accepted Orders as
