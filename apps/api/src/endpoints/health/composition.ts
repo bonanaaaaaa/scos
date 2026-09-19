@@ -4,7 +4,7 @@
  * @module
  */
 
-import { type ComposedApplication, withHttpTelemetry } from "../../database";
+import { type ComposedApplication, withHttpTelemetry } from "../../composition/database";
 import type { Logger } from "../../http/logger";
 import type { Telemetry } from "../../telemetry/telemetry";
 import { createHealthApp } from "./app";

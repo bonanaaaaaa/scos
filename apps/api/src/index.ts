@@ -7,7 +7,8 @@
  * - the per-endpoint and combined compositions (they connect lazily, on the
  *   first query) and the per-runtime configuration parsers.
  *
- * The local listener lives in `server.ts`.
+ * The runtime entry points live in `entrypoints/` (the local Node server is
+ * `entrypoints/node.ts`).
  *
  * @module
  */
@@ -34,13 +35,13 @@ export {
 } from "./http/logger";
 
 // Compositions
-export { type CompositionOptions, composeApplication } from "./composition";
+export { type CompositionOptions, composeApplication } from "./composition/node";
 export {
   type ComposedApplication,
   type DatabaseCompositionOptions,
   DEFAULT_CONNECTION_TIMEOUT_MS,
   databasePoolTimeouts,
-} from "./database";
+} from "./composition/database";
 export { composeHealthApplication } from "./endpoints/health/composition";
 export {
   type SubmitOrderCompositionOptions,

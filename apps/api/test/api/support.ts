@@ -16,9 +16,9 @@
 import { serve } from "@hono/node-server";
 import { expect } from "vitest";
 
-import { composeApplication } from "../../src/composition";
+import { composeApplication } from "../../src/composition/node";
 import { parseHealthConfig } from "../../src/endpoints/health/config";
-import { startServer } from "../../src/server";
+import { startServer } from "../../src/entrypoints/node";
 import { createTelemetryRuntime } from "../../src/telemetry/node/sdk";
 
 // ---------------------------------------------------------------------------

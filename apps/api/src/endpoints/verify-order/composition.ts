@@ -13,8 +13,9 @@ import {
   type DatabaseCompositionOptions,
   composeOverDatabase,
   withLogger,
-} from "../../database";
-import { traceInventoryReader, traceVerifyOrder } from "../../telemetry/decorators";
+} from "../../composition/database";
+import { traceInventoryReader } from "../../telemetry/decorators/inventory-reader";
+import { traceVerifyOrder } from "../../telemetry/decorators/verify-order";
 import type { Telemetry } from "../../telemetry/telemetry";
 import { createVerifyOrderApp } from "./app";
 

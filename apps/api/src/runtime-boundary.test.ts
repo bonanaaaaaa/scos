@@ -3,7 +3,7 @@
  * telemetry ports, decorators and middleware) must not import anything
  * specific to one runtime, so a Workers composition (follow-up PR under #17)
  * can reuse them unchanged. Node/Lambda wiring lives in the compositions,
- * `database.ts`, `server.ts` and `telemetry/node/`.
+ * `composition/`, `entrypoints/` and `telemetry/node/`.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
@@ -27,10 +27,10 @@ function sources(directory: string): string[] {
 /** Module paths (relative to src/) that must stay runtime-neutral. */
 function isNeutral(path: string): boolean {
   return (
-    ["app.ts", "routes.ts", "config.ts", "composed-application.ts"].includes(path) ||
+    ["app.ts", "routes.ts", "config.ts", "composition/composed-application.ts"].includes(path) ||
     path.startsWith("http/") ||
     /^endpoints\/[^/]+\/(?:app|contract|messages|serializers|config)\.ts$/.test(path) ||
-    /^telemetry\/[^/]+\.ts$/.test(path)
+    /^telemetry\/(?:decorators\/)?[^/]+\.ts$/.test(path)
   );
 }
 
@@ -55,10 +55,14 @@ describe("runtime-neutral modules", () => {
     expect(neutral).toEqual(
       expect.arrayContaining([
         "app.ts",
-        "composed-application.ts",
+        "composition/composed-application.ts",
         "http/logger.ts",
         "endpoints/submit-order/app.ts",
-        "telemetry/decorators.ts",
+        "telemetry/decorators/inventory-reader.ts",
+        "telemetry/decorators/span.ts",
+        "telemetry/decorators/submission-store.ts",
+        "telemetry/decorators/submit-order.ts",
+        "telemetry/decorators/verify-order.ts",
         "telemetry/http.ts",
         "telemetry/log-record.ts",
         "telemetry/telemetry.ts",

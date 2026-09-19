@@ -37,16 +37,14 @@ import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { createApp } from "../app";
-import type { ComposedApplication } from "../composed-application";
+import type { ComposedApplication } from "../composition/composed-application";
 import { createHealthApp } from "../endpoints/health/app";
 import { createSubmitOrderApp } from "../endpoints/submit-order/app";
 import { createVerifyOrderApp } from "../endpoints/verify-order/app";
-import {
-  traceInventoryReader,
-  traceSubmissionStore,
-  traceSubmitOrder,
-  traceVerifyOrder,
-} from "../telemetry/decorators";
+import { traceInventoryReader } from "../telemetry/decorators/inventory-reader";
+import { traceSubmissionStore } from "../telemetry/decorators/submission-store";
+import { traceSubmitOrder } from "../telemetry/decorators/submit-order";
+import { traceVerifyOrder } from "../telemetry/decorators/verify-order";
 import type { Logger } from "../http/logger";
 import { instrumentApp } from "../telemetry/http";
 import type { Telemetry } from "../telemetry/telemetry";

@@ -17,8 +17,9 @@ import {
   type DatabaseCompositionOptions,
   composeOverDatabase,
   withLogger,
-} from "../../database";
-import { traceSubmissionStore, traceSubmitOrder } from "../../telemetry/decorators";
+} from "../../composition/database";
+import { traceSubmissionStore } from "../../telemetry/decorators/submission-store";
+import { traceSubmitOrder } from "../../telemetry/decorators/submit-order";
 import { createSubmitOrderApp } from "./app";
 
 export interface SubmitOrderCompositionOptions extends DatabaseCompositionOptions {

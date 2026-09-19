@@ -1,5 +1,5 @@
 /**
- * Guards the bundled load path: `dist/server.js` (esbuild output, with Pino
+ * Guards the bundled load path: `dist/node.js` (esbuild output, with Pino
  * loaded at runtime from node_modules) must still be patched by
  * PinoInstrumentation, so a request log carries the trace ID of the incoming
  * `traceparent`. `pnpm test` builds first (turbo `test` depends on `build`).
@@ -12,8 +12,8 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-const apiDirectory = fileURLToPath(new URL("..", import.meta.url));
-const bundle = fileURLToPath(new URL("../dist/server.js", import.meta.url));
+const apiDirectory = fileURLToPath(new URL("../..", import.meta.url));
+const bundle = fileURLToPath(new URL("../../dist/node.js", import.meta.url));
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
 
 const children: ChildProcess[] = [];
@@ -33,7 +33,7 @@ function records(stdout: string): Record<string, unknown>[] {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-describe("built bundle (dist/server.js)", { timeout: 30_000 }, () => {
+describe("built bundle (dist/node.js)", { timeout: 30_000 }, () => {
   test("PinoInstrumentation correlates the request log with the incoming traceparent", async () => {
     expect(existsSync(bundle), "run `pnpm --filter @scos/api build` first").toBe(true);
     const child = spawn(process.execPath, [bundle], {

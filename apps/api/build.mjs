@@ -9,7 +9,7 @@
 // Node.js, without DATABASE_URL. It builds the combined app over stub use
 // cases, so the file is the exact bytes GET /openapi.json serves; it is
 // deterministic and needs no server or database. The exporter is a separate
-// bundle, so none of it is added to dist/server.js.
+// bundle, so none of it is added to dist/node.js.
 import { execFileSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -17,8 +17,9 @@ import { join, resolve } from "node:path";
 
 import { build } from "esbuild";
 
-// Add a Lambda handler here alongside the local listener when one exists.
-const entryPoints = ["src/server.ts"];
+// One entry per runtime, named after it: src/entrypoints/node.ts is the local
+// Node server. Add the Lambda handlers (src/entrypoints/lambda*.ts, #14) here.
+const entryPoints = ["src/entrypoints/node.ts"];
 
 // - pg loads pg-native only when the native client is requested; it is an
 //   optional native addon that is not installed and cannot be bundled.

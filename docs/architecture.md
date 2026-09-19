@@ -96,9 +96,9 @@ Dependencies point inward only:
 The database is reached through dependency inversion. The use case needs
 persistence, but instead of importing it, core declares a port and
 `packages/persistence` implements it. The composition roots in `apps/api`
-(`src/endpoints/<name>/composition.ts` per endpoint, and `src/composition.ts`
+(`src/endpoints/<name>/composition.ts` per endpoint, and `src/composition/node.ts`
 for the combined app) wire the adapter into the use case at startup, after the
-runtime entrypoint (`src/server.ts` locally) has validated the environment.
+runtime entry point (`src/entrypoints/node.ts` locally) has validated the environment.
 
 ## Where does code go?
 

@@ -1,5 +1,5 @@
 /**
- * Builds the real composed application (the same wiring `server.ts` uses) over
+ * Builds the real composed application (the same wiring `entrypoints/node.ts` uses) over
  * a test database, and sends JSON requests through it.
  *
  * @module
@@ -11,7 +11,7 @@ import {
   type ComposedApplication,
   type CompositionOptions,
   composeApplication,
-} from "../../src/composition";
+} from "../../src/composition/node";
 
 // Seeded warehouse IDs (packages/persistence/src/seed.ts), in lock order.
 export const LOS_ANGELES = "01996000-0000-7000-8000-000000000001";
