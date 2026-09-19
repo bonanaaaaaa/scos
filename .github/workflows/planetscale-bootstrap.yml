@@ -8,8 +8,9 @@ name: PlanetScale bootstrap
 # (docs/deployment-pipeline.md#role-credentials-in-the-state). This workflow
 # does two things: a dry run (reports the database and both roles) and a
 # database-only repair (creates the database if missing, no roles). It never
-# deletes anything and never resets a password. The job is bound to the prod environment for its secrets and
-# its deployment-branch rule; prod has no required reviewers (the user's
+# deletes anything and never resets a password. The job is bound to the prod
+# environment for its secrets (and any deployment-branch rule added later);
+# prod has no required reviewers (the user's
 # decision), so dispatching this workflow on main is the authorization to
 # run it. See docs/planetscale-bootstrap.md.
 

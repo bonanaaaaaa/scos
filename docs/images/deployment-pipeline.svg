@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="680" height="850" viewBox="0 0 680 850" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
   <title>SCOS prod deployment on merge to main</title>
-  <desc>On a merge to main, the Deploy Prod caller's gate, which has no environment and no secrets, waits for CI to pass on the same commit and checks that the repository variable DEPLOY_ENABLED is true and main has not moved on; otherwise nothing runs. With no human approval, the shared deploy workflow runs in the prod environment and ensures the PlanetScale database exists, creating the database and its roles only if they are missing and keeping new role credentials in the Terraform state, then backs up the Terraform state, applies the saved Terraform plan for Hyperdrive, runs prisma migrate deploy directly against PlanetScale with the migration role, deploys the Worker bundle built once with its SHA-256 recorded, and checks GET /health. It checks again that main has not moved on before the database step, the apply and wrangler deploy. Any failing step stops the run and nothing is destroyed.</desc>
+  <desc>On a merge to main, the Deploy Prod caller's gate, which has no environment and no secrets, checks that main has not moved on; otherwise nothing runs. It does not wait for CI on the merge commit, because the pull request's CI already passed, and there is no enable flag: disabling the workflow stops deploys. With no human approval, the shared deploy workflow runs in the prod environment and ensures the PlanetScale database exists, creating the database and its roles only if they are missing and keeping new role credentials in the Terraform state, then backs up the Terraform state, applies the saved Terraform plan for Hyperdrive, runs prisma migrate deploy directly against PlanetScale with the migration role, deploys the Worker bundle built once with its SHA-256 recorded, and checks GET /health. It checks again that main has not moved on before the database step, the apply and wrangler deploy. Any failing step stops the run and nothing is destroyed.</desc>
   <style>
     .bg { fill: #ffffff; }
     .gray rect { fill: #F1EFE8; stroke: #5F5E5A; }
@@ -41,7 +41,7 @@
   <!-- 2. Gate -->
   <g class="gray gate"><rect x="40" y="120" width="380" height="60" rx="4" stroke-width="1"/>
     <text class="th" x="230" y="144" text-anchor="middle">Gate in Deploy Prod (no environment, no secrets)</text>
-    <text class="ts" x="230" y="163" text-anchor="middle">DEPLOY_ENABLED, CI passed for this commit, main unmoved?</text></g>
+    <text class="ts" x="230" y="163" text-anchor="middle">main still at this commit? (no CI wait, no enable flag)</text></g>
   <line class="arr" x1="420" y1="150" x2="458" y2="150" marker-end="url(#a)"/>
   <text class="lbl" x="439" y="143" text-anchor="middle">no</text>
   <g class="gray"><rect x="460" y="124" width="180" height="52" rx="4" stroke-width="1"/>
@@ -53,7 +53,7 @@
   <!-- 3. Shared workflow -->
   <g class="gray"><rect x="40" y="212" width="380" height="52" rx="4" stroke-width="1"/>
     <text class="th" x="230" y="234" text-anchor="middle">Shared deploy.yml, environment: prod</text>
-    <text class="ts" x="230" y="252" text-anchor="middle">no approval step; main-only branch policy</text></g>
+    <text class="ts" x="230" y="252" text-anchor="middle">no approval step; main-only checks in the workflows</text></g>
   <line class="arr" x1="230" y1="264" x2="230" y2="290" marker-end="url(#a)"/>
 
   <!-- 4. Ensure database -->
