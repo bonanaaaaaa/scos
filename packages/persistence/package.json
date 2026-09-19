@@ -11,10 +11,6 @@
     "./database": {
       "types": "./dist/database.d.ts",
       "import": "./dist/database.js"
-    },
-    "./testing": {
-      "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js"
     }
   },
   "scripts": {

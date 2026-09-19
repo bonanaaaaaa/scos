@@ -37,16 +37,3 @@ for (const [file, output] of outputs) {
   const imports = output.imports.filter((entry) => entry.external).map((entry) => entry.path);
   console.log(`${file}: external imports ${[...new Set(imports)].sort().join(", ")}`);
 }
-
-// @scos/persistence/testing is the integration-test harness (it shells out to
-// the Prisma CLI); runtime code must never import it.
-const testHarness = /persistence\/(?:dist|src)\/testing\.[jt]s$/;
-const bundledHarness = Object.keys(result.metafile.inputs).filter((input) =>
-  testHarness.test(input),
-);
-if (bundledHarness.length > 0) {
-  throw new Error(
-    `The API bundle includes the test harness (${bundledHarness.join(", ")}); ` +
-      "import @scos/persistence/testing only from tests.",
-  );
-}

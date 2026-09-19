@@ -9,9 +9,7 @@ export default defineConfig({
       reportOnFailure: true,
       reportsDirectory: "coverage",
       include: ["src/**/*.ts"],
-      // src/testing.ts is the integration-test harness: it needs a real
-      // PostgreSQL and is exercised by test:integration, not by unit tests.
-      exclude: ["src/**/*.test.ts", "src/generated/**", "src/testing.ts"],
+      exclude: ["src/**/*.test.ts", "src/generated/**"],
       thresholds: {
         statements: 80,
         branches: 80,

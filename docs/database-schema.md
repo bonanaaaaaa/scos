@@ -9,7 +9,6 @@ The Ordering persistence schema lives in `packages/persistence`:
 - `src/submission-store.ts`: the SubmitOrder transaction adapter (`createPrismaSubmissionStore`), which maps Prisma rows straight to the domain `Order`
 - `src/submission-errors.ts`: classification of PostgreSQL and Prisma errors raised during submission
 - `src/inventory-reader.ts`: `createPrismaInventoryReader`, the read-only adapter for core's `InventoryReader` port (see [Read pattern for verification](#read-pattern-for-verification-9))
-- `src/testing.ts`: the integration-test harness, exported as `@scos/persistence/testing` (see [Verification](#verification))
 
 Migrations are applied with `prisma migrate deploy`. The initial migration's table, index, and foreign-key DDL follows Prisma's generated output and was inspected; CHECK constraints and the timestamp defaults and triggers are hand-written SQL because Prisma cannot express them.
 
@@ -192,5 +191,3 @@ VerifyOrder is tested by level, and each package tests only itself:
 - The full composition (HTTP, use case, adapter, and PostgreSQL) is tested once, with the API in #11. There is no separate core-plus-persistence test for VerifyOrder.
 
 `test/submit-order.integration.test.ts` drives the real SubmitOrder use case through the Prisma adapter. Concurrent actors use separate pools and Prisma clients; a lock holder on its own connection keeps the warehouse rows locked until every actor is confirmed waiting in `pg_stat_activity`, so the overlap is controlled rather than timing-dependent. It covers acceptance (stored facts, allocations summing to the quantity, exact stock deductions), both business rejections writing nothing and leaving the key reusable, repeats after stock changes and after a restart with unchanged timestamps, conflicts, concurrent identical, competing, and conflicting submissions, the `submission_key` unique-index backstop, order-number collisions, rollback injected by test-only triggers at four stages (before the Order insert, after the allocation insert, before the stock update, and at `COMMIT`), recovery of a lost response, the retry bound, the allocation guards, and repeats returning stored amounts rather than recalculated ones.
-
-The harness is exported as `@scos/persistence/testing` (`createMigratedDatabase`, `readPersistedState`, and the `DATABASE_TEST_URL` isolation guards) so the #11 tests can reuse it. It is test support, excluded from unit coverage, and must never be imported by runtime code; the API build fails if it is bundled.
