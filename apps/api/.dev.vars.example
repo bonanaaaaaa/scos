@@ -1,0 +1,16 @@
+# Local Worker variables for `wrangler dev` (copy to apps/api/.dev.vars, which
+# Git ignores). Values here override wrangler.jsonc "vars". Secrets such as
+# collector credentials go here locally and in `wrangler secret put` when
+# deployed; never in wrangler.jsonc. Full reference: docs/observability.md.
+#
+# Export traces and metrics to a local OpenTelemetry Collector (OTLP/HTTP):
+# OTEL_TRACES_EXPORTER=otlp
+# OTEL_METRICS_EXPORTER=otlp
+# OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+# Bound of each OTLP request, 1-30000 ms (default 3000).
+# OTEL_EXPORTER_OTLP_TIMEOUT=3000
+# Collector credentials: comma-separated name=value pairs, values URL-encoded.
+# OTEL_EXPORTER_OTLP_HEADERS=authorization=Bearer%20local-dev-token
+# OTEL_TRACES_SAMPLER_ARG=1
+# SERVICE_VERSION=0.0.0
+# LOG_LEVEL=info

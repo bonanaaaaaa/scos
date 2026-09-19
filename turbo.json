@@ -28,6 +28,11 @@
       "inputs": ["$TURBO_DEFAULT$"],
       "outputs": ["coverage/**"]
     },
+    "test:workers": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": []
+    },
     "test:integration": {
       "dependsOn": ["build", "^build"],
       "cache": false,

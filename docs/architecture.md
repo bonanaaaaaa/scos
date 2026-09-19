@@ -12,6 +12,7 @@ flowchart LR
     subgraph driving["Driving adapters (call in)"]
         api["Hono HTTP API<br/>apps/api"]
         lambda["Lambda handler<br/>(planned)"]
+        worker["Cloudflare Worker<br/>apps/api (workerd)"]
     end
 
     subgraph core["packages/core"]
@@ -29,6 +30,7 @@ flowchart LR
 
     api --> app
     lambda --> app
+    worker --> app
     db -. implements .-> ports
 ```
 
@@ -78,7 +80,16 @@ flowchart LR
    - **Telemetry** is adapter code in `apps/api`: spans come from a Hono
      middleware and decorators around the use cases and ports, applied in the
      compositions, behind runtime-neutral ports. Core and persistence have no
-     OpenTelemetry dependency. See [observability.md](observability.md).
+     OpenTelemetry dependency. The Node/Lambda and Cloudflare Workers
+     compositions wire the same ports with their own SDK setup. See
+     [observability.md](observability.md).
+   - **Cloudflare Worker** (`src/entrypoints/worker.ts`,
+     `src/composition/worker.ts`): a third driving adapter over the same
+     `createApp`, use cases and persistence adapters. It reaches PostgreSQL
+     through a Hyperdrive binding and opens a pool and Prisma client per
+     request (Workers forbid sharing sockets across requests). It uses
+     `@scos/persistence`'s `workerd` build, which is the same adapters over a
+     Prisma client generated for workerd. Deployment is #28.
    - **Driven adapters** are called by the application. `packages/persistence`
      implements the ports with Prisma and SQL.
 

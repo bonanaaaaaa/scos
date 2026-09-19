@@ -1,0 +1,56 @@
+// Cloudflare Worker for the SCOS API (issue #17: runtime and telemetry;
+// issue #28: provisioning and deployment). See docs/observability.md,
+// "Cloudflare Workers runtime", and apps/api/README.md.
+//
+// Wrangler bundles src/entrypoints/worker.ts with esbuild. No secret belongs
+// in this file: OTEL_EXPORTER_OTLP_HEADERS (collector credentials) is a Worker
+// secret (`wrangler secret put`, or .dev.vars locally), and the database
+// credentials live in the Hyperdrive configuration, never here.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "scos-api",
+  "main": "src/entrypoints/worker.ts",
+  // Pinned; not later than the workerd release bundled with the pinned
+  // wrangler and @cloudflare/vitest-pool-workers (1.20260815.1).
+  "compatibility_date": "2026-08-15",
+  // AsyncLocalStorage (trace context and the per-request database), pg's
+  // cloudflare:sockets transport and the Node built-ins Prisma and pg use.
+  "compatibility_flags": ["nodejs_compat"],
+  // No usage metrics from Wrangler (local builds, tests, CI).
+  "send_metrics": false,
+  // hono-openapi's unused schema adapters would otherwise pull in `effect`
+  // (and `fast-check`); see src/entrypoints/worker.unused-module.ts.
+  "alias": { "effect": "./src/entrypoints/worker.unused-module.ts" },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      // Placeholder: #28 injects the Hyperdrive configuration ID Terraform
+      // outputs. Nothing here reaches Cloudflare in this repository.
+      "id": "00000000000000000000000000000000",
+      // `wrangler dev` and the Workers tests connect straight to this local
+      // PostgreSQL (the docker compose database; local-only credentials, the
+      // same as .env.example). Override it without editing this file with
+      // CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE.
+      "localConnectionString": "postgresql://scos:scos@localhost:5432/scos",
+    },
+  ],
+  "observability": {
+    "enabled": true,
+    // Workers Logs ingests the JSON lines the API writes with console.log.
+    "logs": { "enabled": true, "invocation_logs": true },
+    // Cloudflare's automatic tracing stays off: the application exports its own
+    // spans (the same SERVER, use-case and persistence spans as Node) over OTLP,
+    // and platform spans would duplicate the request and fetch spans.
+    "traces": { "enabled": false },
+  },
+  // Non-secret telemetry settings (docs/observability.md, "Configuration").
+  // Traces and metrics are off until an OTLP endpoint is configured; #28 sets
+  // the endpoint per environment.
+  "vars": {
+    "OTEL_SERVICE_NAME": "scos-api",
+    "DEPLOYMENT_ENVIRONMENT": "local",
+    "LOG_LEVEL": "info",
+    "OTEL_TRACES_EXPORTER": "none",
+    "OTEL_METRICS_EXPORTER": "none",
+  },
+}

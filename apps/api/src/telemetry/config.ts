@@ -239,3 +239,133 @@ export function toTelemetryConfig(data: z.output<z.ZodObject<TelemetryShape>>): 
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Cloudflare Workers
+//
+// The Worker reads the same variables from its `env` (Wrangler `vars` and
+// secrets), validated once per isolate (`entrypoints/worker.ts`). There is no
+// periodic metric reader on Workers, so the interval variables do not apply;
+// telemetry is exported once per request under `ctx.waitUntil`, so the OTLP
+// timeout is bounded by the 30 s `waitUntil` allowance. Collector credentials
+// cannot come from the process environment there: they are a Worker secret,
+// OTEL_EXPORTER_OTLP_HEADERS, parsed here and passed to the exporter.
+// ---------------------------------------------------------------------------
+
+/** Default and upper bound of one OTLP request from a Worker, in milliseconds. */
+export const DEFAULT_WORKERS_OTLP_TIMEOUT_MS = 3_000;
+export const MAX_WORKERS_OTLP_TIMEOUT_MS = 30_000;
+
+/** An HTTP header name (RFC 9110 token). */
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+const HEADERS_ERROR = "must be comma-separated name=value pairs with URL-encoded values";
+
+/**
+ * Parses OTEL_EXPORTER_OTLP_HEADERS (`name=value,name2=value2`, values
+ * URL-encoded, as the OpenTelemetry specification defines it). Returns
+ * `undefined` when malformed; the caller reports it without the value.
+ */
+export function parseOtlpHeaders(value: string): Record<string, string> | undefined {
+  const headers: Record<string, string> = {};
+  for (const pair of value.split(",")) {
+    if (pair.trim().length === 0) {
+      continue;
+    }
+    const separator = pair.indexOf("=");
+    if (separator <= 0) {
+      return undefined;
+    }
+    const name = pair.slice(0, separator).trim();
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(pair.slice(separator + 1).trim());
+    } catch {
+      return undefined;
+    }
+    if (!HEADER_NAME.test(name) || decoded.length === 0 || /[\r\n\0]/.test(decoded)) {
+      return undefined;
+    }
+    headers[name.toLowerCase()] = decoded;
+  }
+  return Object.keys(headers).length === 0 ? undefined : headers;
+}
+
+const headersSchema = z
+  .string()
+  .refine((value) => parseOtlpHeaders(value) !== undefined, { error: HEADERS_ERROR })
+  .optional();
+
+function workersMilliseconds(fallback: number) {
+  const error = `must be an integer number of milliseconds between 1 and ${MAX_WORKERS_OTLP_TIMEOUT_MS}`;
+  return z
+    .string()
+    .regex(/^\d{1,5}$/, { error })
+    .transform(Number)
+    .refine((value) => value >= 1 && value <= MAX_WORKERS_OTLP_TIMEOUT_MS, { error })
+    .optional()
+    .transform((value) => value ?? fallback);
+}
+
+const {
+  OTEL_METRIC_EXPORT_INTERVAL: _interval,
+  OTEL_METRIC_EXPORT_TIMEOUT: _timeout,
+  ...sharedTelemetryShape
+} = telemetryEnvironmentShape;
+
+/** The Worker's telemetry variables: the shared ones, adapted to per-request export. */
+export const workersTelemetryEnvironmentShape = {
+  ...sharedTelemetryShape,
+  OTEL_EXPORTER_OTLP_TIMEOUT: workersMilliseconds(DEFAULT_WORKERS_OTLP_TIMEOUT_MS),
+  /** A Worker secret; never a Wrangler `var`. */
+  OTEL_EXPORTER_OTLP_HEADERS: headersSchema,
+};
+
+type WorkersTelemetryShape = typeof workersTelemetryEnvironmentShape;
+
+export interface WorkersTelemetryConfig {
+  readonly enabled: boolean;
+  readonly resource: TelemetryResource;
+  readonly logLevel: LogLevel;
+  readonly otlp: {
+    readonly protocol: OtlpProtocol;
+    /** Bound of each OTLP request (one per signal per flush). */
+    readonly timeoutMs: number;
+    /** From the OTEL_EXPORTER_OTLP_HEADERS secret; empty when unset. */
+    readonly headers: Readonly<Record<string, string>>;
+  };
+  readonly traces: {
+    readonly exporter: TelemetryExporter;
+    readonly endpoint?: string;
+    readonly samplerRatio: number;
+  };
+  readonly metrics: {
+    readonly exporter: TelemetryExporter;
+    readonly endpoint?: string;
+  };
+}
+
+/** The typed Worker configuration from parsed variables. */
+export function toWorkersTelemetryConfig(
+  data: z.output<z.ZodObject<WorkersTelemetryShape>>,
+): WorkersTelemetryConfig {
+  const shared = toTelemetryConfig({
+    ...data,
+    OTEL_METRIC_EXPORT_INTERVAL: DEFAULT_METRIC_EXPORT_INTERVAL_MS,
+    OTEL_METRIC_EXPORT_TIMEOUT: DEFAULT_METRIC_EXPORT_TIMEOUT_MS,
+  });
+  const headers =
+    data.OTEL_EXPORTER_OTLP_HEADERS === undefined
+      ? {}
+      : (parseOtlpHeaders(data.OTEL_EXPORTER_OTLP_HEADERS) ?? {});
+  return {
+    enabled: shared.enabled,
+    resource: shared.resource,
+    logLevel: shared.logLevel,
+    otlp: { ...shared.otlp, headers },
+    traces: shared.traces,
+    metrics: {
+      exporter: shared.metrics.exporter,
+      ...(shared.metrics.endpoint === undefined ? {} : { endpoint: shared.metrics.endpoint }),
+    },
+  };
+}

@@ -5,7 +5,8 @@ import { ensureContextManager } from "../telemetry/node/sdk";
 import { createConsoleJsonLogger, defaultLogger } from "./logger";
 
 // The shared log record contract. Under Node the composition registers the
-// AsyncLocalStorage context manager; a Workers harness registers its own.
+// AsyncLocalStorage context manager; the Workers run of this suite
+// (telemetry/workers/logger-contract.workers.test.ts) registers its own.
 describeLoggerContract("createConsoleJsonLogger (runtime-neutral)", () => {
   ensureContextManager();
   return {

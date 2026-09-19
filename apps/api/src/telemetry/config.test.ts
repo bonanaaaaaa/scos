@@ -2,10 +2,15 @@ import { createRequire } from "node:module";
 
 import { describe, expect, test } from "vitest";
 
-import { parseConfig, parseDatabaseConfig } from "../config";
+import { parseConfig, parseDatabaseConfig, parseWorkerConfig } from "../config";
 import { parseHealthConfig } from "../endpoints/health/config";
 import { DEFAULT_TELEMETRY_CONFIG } from "../testing/telemetry.test-support";
-import { PACKAGE_VERSION, isOtlpEndpoint } from "./config";
+import {
+  DEFAULT_WORKERS_OTLP_TIMEOUT_MS,
+  PACKAGE_VERSION,
+  isOtlpEndpoint,
+  parseOtlpHeaders,
+} from "./config";
 import { SEMCONV_VERSION } from "./telemetry";
 
 const databaseUrl = "postgresql://scos:secret-password@localhost:5432/scos";
@@ -284,5 +289,122 @@ describe("isOtlpEndpoint", () => {
     ["", false],
   ])("%s -> %s", (value, expected) => {
     expect(isOtlpEndpoint(value)).toBe(expected);
+  });
+});
+
+describe("Cloudflare Workers telemetry configuration", () => {
+  const hyperdrive = "postgresql://scos:hyperdrive-password@hyperdrive.local:5432/scos";
+
+  function worker(environment: Record<string, string>) {
+    return parseWorkerConfig({ DATABASE_URL: hyperdrive, ...environment });
+  }
+
+  test("defaults: the shared settings, a 3 s OTLP bound and no headers", () => {
+    const result = worker({});
+    expect(result).toStrictEqual({
+      success: true,
+      config: {
+        databaseUrl: hyperdrive,
+        telemetry: {
+          enabled: true,
+          resource: DEFAULT_TELEMETRY_CONFIG.resource,
+          logLevel: "info",
+          otlp: {
+            protocol: "http/protobuf",
+            timeoutMs: DEFAULT_WORKERS_OTLP_TIMEOUT_MS,
+            headers: {},
+          },
+          traces: { exporter: "none", samplerRatio: 1 },
+          metrics: { exporter: "none" },
+        },
+      },
+    });
+    expect(DEFAULT_WORKERS_OTLP_TIMEOUT_MS).toBe(3_000);
+  });
+
+  test("OTLP export with collector headers from the secret", () => {
+    const result = worker({
+      OTEL_TRACES_EXPORTER: "otlp",
+      OTEL_METRICS_EXPORTER: "otlp",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "https://collector.example",
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "https://metrics.example/v1/metrics",
+      OTEL_EXPORTER_OTLP_TIMEOUT: "30000",
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Bearer%20abc,x-scope=scos%2Capi",
+      OTEL_TRACES_SAMPLER_ARG: "0.5",
+      OTEL_SERVICE_NAME: "scos-worker",
+      DEPLOYMENT_ENVIRONMENT: "production",
+    });
+    expect(result).toMatchObject({
+      success: true,
+      config: {
+        telemetry: {
+          resource: { serviceName: "scos-worker", deploymentEnvironment: "production" },
+          otlp: {
+            timeoutMs: 30_000,
+            headers: { authorization: "Bearer abc", "x-scope": "scos,api" },
+          },
+          traces: {
+            exporter: "otlp",
+            endpoint: "https://collector.example/v1/traces",
+            samplerRatio: 0.5,
+          },
+          metrics: { exporter: "otlp", endpoint: "https://metrics.example/v1/metrics" },
+        },
+      },
+    });
+  });
+
+  test("the periodic-reader variables do not apply to Workers and are ignored", () => {
+    const result = worker({ OTEL_METRIC_EXPORT_INTERVAL: "nope", OTEL_METRIC_EXPORT_TIMEOUT: "0" });
+    expect(result.success).toBe(true);
+  });
+
+  test("the OTLP timeout is bounded by the waitUntil allowance", () => {
+    for (const value of ["0", "30001", "99999", "1.5", "", "abc"]) {
+      expect(worker({ OTEL_EXPORTER_OTLP_TIMEOUT: value }), value).toStrictEqual({
+        success: false,
+        errors: [
+          "OTEL_EXPORTER_OTLP_TIMEOUT: must be an integer number of milliseconds between 1 and 30000",
+        ],
+      });
+    }
+  });
+
+  test("malformed headers are rejected without echoing the secret", () => {
+    for (const value of [
+      "token-without-name",
+      "=value",
+      "bad name=value",
+      "x-empty=",
+      "x-bad=%E0%A4%A",
+      "x-line=a%0Ab",
+      ",",
+    ]) {
+      const result = worker({ OTEL_EXPORTER_OTLP_HEADERS: value });
+      expect(result, value).toStrictEqual({
+        success: false,
+        errors: [
+          "OTEL_EXPORTER_OTLP_HEADERS: must be comma-separated name=value pairs with URL-encoded values",
+        ],
+      });
+    }
+  });
+
+  test("the database URL (the Hyperdrive connection string) is required and never echoed", () => {
+    const result = parseWorkerConfig({ DATABASE_URL: "mysql://u:leaky-password@h/d" });
+    expect(result).toStrictEqual({
+      success: false,
+      errors: ["DATABASE_URL: must be a postgres:// or postgresql:// URL with a host"],
+    });
+    expect(parseWorkerConfig({})).toStrictEqual({
+      success: false,
+      errors: ["DATABASE_URL: is required"],
+    });
+  });
+
+  test("parseOtlpHeaders", () => {
+    expect(parseOtlpHeaders("a=1, b = two%20words ,")).toStrictEqual({ a: "1", b: "two words" });
+    expect(parseOtlpHeaders("")).toBeUndefined();
+    expect(parseOtlpHeaders("a")).toBeUndefined();
   });
 });

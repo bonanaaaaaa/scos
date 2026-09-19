@@ -1,8 +1,8 @@
 /**
  * The runtime-neutral log record contract every logger adapter follows: the
  * Pino adapter on Node/Lambda (`telemetry/node/pino-logger.ts`), the console
- * JSON logger (`http/logger.ts`) and a future Workers adapter (follow-up PR
- * under #17). One JSON object per call, with these fields
+ * JSON logger (`http/logger.ts`), which is also the Cloudflare Workers logger
+ * (`telemetry/workers/sdk.ts`). One JSON object per call, with these fields
  * (docs/observability.md, "Log record contract"):
  *
  * | Field                                          | OTel LogRecord                         |

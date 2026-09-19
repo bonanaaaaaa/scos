@@ -12,7 +12,8 @@
  *
  * Node/Lambda runs it for `createPinoLogger` (telemetry/node/pino-logger.test.ts)
  * and the runtime-neutral `createConsoleJsonLogger` (http/logger.test.ts);
- * the Workers logger (follow-up PR under #17) must run it too.
+ * the Workers runtime runs it inside workerd for the same console JSON logger
+ * with its own context manager (telemetry/workers/logger-contract.workers.test.ts).
  */
 
 import {
