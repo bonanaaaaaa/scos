@@ -2,8 +2,8 @@
  * Public surface of the API adapter. Importing it reads no environment and
  * opens no connection:
  *
- * - app construction, per endpoint and combined, and the HTTP contract (for
- *   offline OpenAPI generation);
+ * - app construction, per endpoint and combined, the HTTP contract and the
+ *   OpenAPI document built from it (no server or database needed);
  * - the per-endpoint and combined compositions (they connect lazily, on the
  *   first query) and the per-runtime configuration parsers.
  *
@@ -101,6 +101,9 @@ export {
 export {
   API_PREFIX,
   type EndpointApp,
+  type ExampleContract,
+  type ExampleMap,
+  type HeaderContract,
   type ResponseContract,
   type RouteContract,
   notFoundResponse,
@@ -112,7 +115,20 @@ export {
   longitudeFieldSchema,
   moneySchema,
   quantityFieldSchema,
+  responseQuantitySchema,
+  warehouseIdSchema,
 } from "./http/schemas";
+
+// OpenAPI
+export {
+  DOCS_PATH,
+  OPENAPI_PATH,
+  type JsonObject,
+  type OpenApiDocument,
+  generateOpenApiDocument,
+  serializeOpenApiDocument,
+} from "./openapi/document";
+export { buildOpenApiDocument, renderOpenApiDocument } from "./openapi/offline";
 
 export function workspaceComposition(): readonly string[] {
   return [corePackage.name, persistencePackage.name];

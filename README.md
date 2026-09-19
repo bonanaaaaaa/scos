@@ -77,6 +77,8 @@ PORT=8080 pnpm api:start
 
 Check application liveness with `curl http://localhost:8080/health`. The endpoint returns HTTP 200 with `{"status":"ok"}` and does not require PostgreSQL to be reachable.
 
+Interactive API documentation is served at `http://localhost:8080/docs` and the OpenAPI 3.1 specification at `/openapi.json`. hono-openapi generates the specification from the route contracts; it is not committed. `pnpm build` writes it to `apps/api/dist/openapi.json` (the same bytes as `/openapi.json`) without a server or database, and `pnpm openapi:export` writes it on demand.
+
 ## Local PostgreSQL
 
 Copy `.env.example` to `.env` for local configuration. The committed values are local-only examples and contain no external credentials.

@@ -102,7 +102,21 @@ PORT=8080 ./dev.sh
 
 The selected URL is printed before Turbo starts the API in watch mode and builds
 its dependencies. Turbo's local development task uses loose environment mode
-so the generated database URL reaches the API. Check `/health` at the printed URL.
+so the generated database URL reaches the API. Check `/health` at the printed URL,
+and open `/docs` there for interactive API documentation (Swagger UI over
+`/openapi.json`).
+
+## API specification
+
+hono-openapi generates the OpenAPI document from the API's route contracts
+(attached to each route with `describeRoute`). It is not committed: `pnpm build`
+writes it to `apps/api/dist/openapi.json`, the same bytes the API serves at
+`/openapi.json`. To write it without a full build (no running server or database
+needed):
+
+```sh
+pnpm openapi:export   # write apps/api/dist/openapi.json
+```
 
 Ctrl+C stops the API gracefully: it closes the listener, then its database
 connections. The shared PostgreSQL container and all databases remain

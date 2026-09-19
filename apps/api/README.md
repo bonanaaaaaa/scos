@@ -9,15 +9,19 @@ responses. Business rules live in `packages/core`; SQL lives in
 src/
   endpoints/
     health/        contract, app, composition, config (+ tests)
-    verify-order/  contract, app, composition (+ tests)
-    submit-order/  contract, app, composition, messages, serializers (+ tests)
+    verify-order/  contract, examples, app, composition (+ tests)
+    submit-order/  contract, examples, app, composition, messages, serializers (+ tests)
   http/            shared only: error envelope and codes, messages, JSON guard and
                    validator hook, createEndpointApp, shared schemas, estimate shape,
-                   the Logger port and its console JSON default
+                   the example scenarios shared by verify and submit,
+                   describe-route (a contract as hono-openapi route documentation),
+                   and the Logger port and its console JSON default
   telemetry/       runtime-neutral telemetry: config schema, Telemetry port, log
                    record contract, HTTP middleware, use-case/port decorators
     node/          Node/Lambda only: OpenTelemetry SDK, exporters, Pino adapter
-  app.ts           createApp: mounts the three endpoint apps
+  openapi/         hono-openapi document options, offline generation and export,
+                   /openapi.json and /docs routes (+ tests)
+  app.ts           createApp: mounts the three endpoint apps and the docs routes
   composition.ts   composeApplication: all routes over one pool
   database.ts      bounded pool + Prisma shared by the database compositions
   config.ts        shared env parsing, DATABASE_URL config, local-server config
@@ -25,7 +29,9 @@ src/
   server.ts        Node.js entrypoint: validate config, start telemetry, listen,
                    graceful shutdown
   index.ts         public exports
-  testing/         unit-test support (fixtures, request cases, spies, black hole)
+  testing/         unit-test support (fixtures, request cases, spies, black hole,
+                   seeded in-memory use cases, Ajv over the generated document)
+scripts/openapi.ts CLI for `openapi:export`; the build bundles and runs it too
 ```
 
 Each endpoint folder owns its request and response schemas, route contract,
@@ -36,11 +42,9 @@ Estimate shape and serializer are in `http/estimate.ts` because both
 verification (200) and a rejected submission (422) return it.
 
 The app factories and contracts (`endpoints/*/contract.ts`, `routes.ts`) read
-no environment and open no connection, so tests and an offline OpenAPI export
-(#12) can import them without deployment configuration. The schemas convert with
-`z.toJSONSchema(schema, { target: "draft-07" })`; the submissionId refinements
-(no surrounding whitespace, no NUL, well-formed Unicode) are not expressible in
-JSON Schema and must be documented in prose.
+no environment and open no connection, so tests and the offline OpenAPI export
+can import them without deployment configuration. See
+[OpenAPI and documentation](#openapi-and-documentation).
 
 ## Per-endpoint apps and compositions
 
@@ -66,8 +70,9 @@ as its own Lambda function (#14):
   Hono's `app.route()`. Each mounted app keeps its own error handler for its
   route, and the combined app answers everything else with the same 404
   envelope, so its behaviour is identical to the standalone apps.
-  `composeApplication` builds it over one pool for the local server
-  (`src/server.ts`) and for the documentation routes (#12).
+  `createApp` also serves the documentation routes (`GET /openapi.json`,
+  `GET /docs`); the standalone apps do not. `composeApplication` builds it
+  over one pool for the local server (`src/server.ts`).
 - Configuration is validated per runtime: `parseHealthConfig` requires
   nothing, `parseDatabaseConfig` (for the verify and submit runtimes) requires
   `DATABASE_URL`, and the local server (`parseConfig`) requires `DATABASE_URL`
@@ -79,9 +84,11 @@ as its own Lambda function (#14):
   nothing is instrumented. `createApp` and the endpoint app factories never
   add the middleware themselves, so each request gets exactly one server span.
 - `src/index.ts` exports the app factories, the compositions, these
-  configuration parsers, the route contract (`routes`, `API_PREFIX`) and the
-  request/response schemas. `routes[*].servedBy` names the app that serves
-  each route.
+  configuration parsers, the route contract (`routes`, `API_PREFIX`), the
+  request/response schemas, and the OpenAPI functions: `generateOpenApiDocument(app)`
+  and `serializeOpenApiDocument(document)`, plus the offline `buildOpenApiDocument()`
+  and `renderOpenApiDocument()` (all generation is async), and `OPENAPI_PATH` and
+  `DOCS_PATH`. `routes[*].servedBy` names the app that serves each route.
 
 ### Notes for Lambda deployment (#14)
 
@@ -212,16 +219,17 @@ destination is `409`. Business rejections (`422`) are not stored, so the same
 
 ## Request validation
 
-Requests are validated with Zod through `sValidator` from
-`@hono/standard-validator` before any use case runs. A malformed request is
+Requests are validated with Zod through hono-openapi's `validator`, which wraps
+`sValidator` from `@hono/standard-validator` unchanged, before any use case
+runs. A malformed request is
 `400 INVALID_REQUEST`; it stores nothing and consumes no `submissionId`.
 
-| Field          | Rule                                                                                                                                               |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `quantity`     | JSON integer, 1 to 66,666,666 (`MAX_QUANTITY` in core: the largest subtotal that fits `NUMERIC(12, 2)`)                                            |
-| `latitude`     | JSON number, -90 to 90 inclusive                                                                                                                   |
-| `longitude`    | JSON number, -180 to 180 inclusive                                                                                                                 |
-| `submissionId` | JSON string, 1 to 255 UTF-16 code units, no leading or trailing whitespace (so blank, tab- or newline-only keys fail), no NUL, well-formed Unicode |
+| Field          | Rule                                                                                                                                                                                                  |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `quantity`     | JSON integer, 1 to 66,666,666 (`MAX_QUANTITY` in core: the largest subtotal that fits `NUMERIC(12, 2)`)                                                                                               |
+| `latitude`     | JSON number, -90 to 90 inclusive                                                                                                                                                                      |
+| `longitude`    | JSON number, -180 to 180 inclusive                                                                                                                                                                    |
+| `submissionId` | JSON string, 1 to 255 characters (Unicode code points), no leading or trailing whitespace (so blank, tab- or newline-only keys fail), no NUL, well-formed Unicode; any string, not necessarily a UUID |
 
 - **Content type:** the body must be sent with `Content-Type: application/json`
   (parameters such as `charset` and `+json` media types are accepted). A missing
@@ -235,7 +243,8 @@ Requests are validated with Zod through `sValidator` from
 
 ## Errors
 
-Every non-2xx response uses one envelope:
+Every non-2xx body has an `error` object. It is exactly this envelope, except
+that a `422` submission rejection also carries the `estimate` that caused it:
 
 ```json
 {
@@ -282,6 +291,82 @@ nothing was stored either (for example a failed or lost `COMMIT`). After a
 attempt was committed, the original Order is returned (`201`) and stock is not
 deducted again; otherwise the request is evaluated afresh. Use a new
 `submissionId` only for a new order.
+
+## OpenAPI and documentation
+
+The OpenAPI 3.1 document is generated by
+[hono-openapi](https://hono.dev/examples/hono-openapi) from the Hono app, not
+written by hand. Each endpoint app attaches its route contract to its route
+with `describeRoute` (`http/describe-route.ts`): summary, description, the
+request body and every response through hono-openapi's `resolver`, the named
+examples and the `Retry-After` header. The request body is validated with
+hono-openapi's `validator`, so the documented and the enforced schema are the
+same object. hono-openapi converts the Zod schemas with Zod's own
+`z.toJSONSchema` (draft 2020-12, the OpenAPI 3.1 dialect): request bodies as
+input, responses as output (`resolver(schema, { options: { io: "output" } })`).
+A schema's `.meta({ id, description })` publishes it under that name in
+`components.schemas` with its description. `src/openapi/document.ts` holds only
+the document-level options (`info`, relative `servers`, `tags`, the reusable
+`components.responses.NotFound`, the excluded documentation routes, and no
+default validation error, since every route documents its own 400). Each
+endpoint's named request and response examples live next to its contract
+(`endpoints/*/examples.ts`, `http/estimate-examples.ts`).
+
+| Route               | Served by   | Content                                                            |
+| ------------------- | ----------- | ------------------------------------------------------------------ |
+| `GET /openapi.json` | `createApp` | The document, byte-identical to the build's `dist/openapi.json`    |
+| `GET /docs`         | `createApp` | Swagger UI over `/openapi.json`; "Try it out" hits the same origin |
+
+Neither route is listed in the document, and the per-endpoint (Lambda) apps do
+not serve them. hono-openapi generates the served document at runtime, once, on
+the first request to `/openapi.json`, from the combined app; the offline export
+(`src/openapi/offline.ts`) generates it the same way from `createApp` over stub
+use cases. Swagger UI's scripts and styles load from the jsDelivr CDN, pinned
+to one swagger-ui-dist release (`SWAGGER_UI_VERSION`), so
+the browser viewing `/docs` needs internet access. The request examples produce
+the documented responses against a freshly seeded database (send the repeat and
+conflict examples after the acceptance example); after other orders, stock and
+therefore amounts can differ.
+
+The specification is a build artifact, not a committed file. The route
+contracts and their Zod schemas are the single source of truth: the same
+schemas validate requests and generate the document. A committed copy would
+be a second source that can drift from them, so the document is always
+generated, never stored. `pnpm build`
+writes `apps/api/dist/openapi.json` after bundling the server: `build.mjs`
+bundles the exporter CLI (`scripts/openapi.ts`) with the server's esbuild
+settings to a temporary file outside `dist/`, and runs it with Node.js without
+`DATABASE_URL`. It needs no server, environment or database, and none of it is
+added to `dist/server.js`. `dist/` is ignored by Git and is a Turbo output of
+`build`. To write it on demand:
+
+```sh
+pnpm openapi:export                                   # apps/api/dist/openapi.json (Turbo builds core first)
+pnpm --filter @scos/api openapi:export out.json       # another path, relative to apps/api
+```
+
+The package script runs the CLI with tsx and expects `@scos/core` to be built.
+The output is `JSON.stringify(document, null, 2)` plus a newline, with no
+timestamps; key and component order follow route registration, which is fixed,
+so two builds produce identical bytes. Unit tests check that the export is
+exactly what `GET /openapi.json` serves and that two renders are identical.
+
+**What JSON Schema cannot express.** The `SubmissionId` component documents
+these server-side rules in prose; they are the only differences between the
+published request schemas and runtime validation, and unit tests check both
+directions (Ajv on the generated schema, Zod, and the app):
+
+- no leading or trailing whitespace (the key is never trimmed);
+- no NUL character (U+0000);
+- well-formed Unicode (no lone surrogates).
+
+The Content-Type requirement, rejection of unknown fields (also expressed as
+`additionalProperties: false`) and the absence of coercion are stated in each
+request body's description. Unit tests also check that every example parses
+with its Zod schema, validates with Ajv against the generated JSON Schema, and
+equals, byte for byte, the response the app returns when the paired request is
+replayed through the real `VerifyOrder`/`SubmitOrder` use cases over the seed
+inventory; and that the document passes `@apidevtools/swagger-parser`.
 
 ## Configuration
 
@@ -383,8 +468,10 @@ pnpm api:start      # built bundle
 ```sh
 # Unit tests (no database): contracts, handlers with fake use cases, config,
 # composition, telemetry with in-memory exporters and captured logs, the
-# entrypoint spawned as a subprocess, and the built dist/server.js (log
-# correlation on the bundled load path; build first, as `pnpm test` does).
+# entrypoint spawned as a subprocess, the built dist/server.js (log
+# correlation on the bundled load path; build first, as `pnpm test` does), and
+# the OpenAPI document (validity, examples, schema/runtime agreement, export
+# equals the served bytes).
 pnpm --filter @scos/api test
 
 # Full-stack tests through the composed app against real PostgreSQL.
@@ -402,3 +489,7 @@ failure injection (rollback at each stage, `submission_key` unique violations,
 real `lock_timeout` retries ending in `503`, and a lost response after commit),
 and the persistence decorator spans and submission counter against the real
 database, including an unreachable collector.
+
+The OpenAPI integration test also compares the served `/openapi.json` with the
+build artifact `dist/openapi.json`, so run it through turbo (which builds
+first) or after `pnpm build`.

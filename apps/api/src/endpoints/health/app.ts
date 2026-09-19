@@ -6,6 +6,7 @@
 
 import type { Hono } from "hono";
 
+import { describeContract } from "../../http/describe-route";
 import { createEndpointApp } from "../../http/endpoint-app";
 import { type Logger, defaultLogger } from "../../http/logger";
 import { MESSAGES } from "../../http/messages";
@@ -17,6 +18,6 @@ export interface HealthAppOptions {
 
 export function createHealthApp(options: HealthAppOptions = {}): Hono {
   const app = createEndpointApp(options.logger ?? defaultLogger, () => MESSAGES.internal);
-  app.get(healthRoute.path, (c) => c.json({ status: "ok" }));
+  app.get(healthRoute.path, describeContract(healthRoute), (c) => c.json({ status: "ok" }));
   return app;
 }

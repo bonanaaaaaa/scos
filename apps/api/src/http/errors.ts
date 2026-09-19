@@ -23,25 +23,51 @@ export const ERROR_CODES = [
   "SERVICE_UNAVAILABLE",
 ] as const;
 
-export const errorCodeSchema = z.enum(ERROR_CODES);
+export const errorCodeSchema = z.enum(ERROR_CODES).meta({
+  id: "ErrorCode",
+  description: `Machine-readable error code: ${ERROR_CODES.map((code) => `\`${code}\``).join(", ")}.`,
+});
 export type ErrorCode = z.output<typeof errorCodeSchema>;
 
-export const errorIssueSchema = z.object({
-  /** Location of the problem in the request body; `[]` is the body itself. */
-  path: z.array(z.union([z.string(), z.number()])),
-  message: z.string(),
-});
+export const errorIssueSchema = z
+  .object({
+    /** Location of the problem in the request body; `[]` is the body itself. */
+    path: z.array(z.union([z.string(), z.number()])),
+    message: z.string(),
+  })
+  .meta({
+    id: "ErrorIssue",
+    description:
+      "One schema failure: `path` locates it in the request body (`[]` is the body itself, for example an unknown field).",
+  });
 
 export type ErrorIssue = z.output<typeof errorIssueSchema>;
 
-export const errorBodySchema = z.object({
+const errorBodyShape = {
   code: errorCodeSchema,
   message: z.string(),
   issues: z.array(errorIssueSchema).optional(),
+};
+
+export const errorBodySchema = z
+  .object(errorBodyShape)
+  .meta({ id: "ErrorBody", description: "What went wrong." });
+
+/** The error object of a 422 submission rejection: a business rejection code. */
+export const rejectionErrorBodySchema = z.object({
+  ...errorBodyShape,
+  code: z.enum(["INSUFFICIENT_STOCK", "SHIPPING_EXCEEDS_LIMIT"]),
 });
 
-/** The envelope of every non-2xx response. */
-export const errorResponseSchema = z.object({ error: errorBodySchema });
+/**
+ * The envelope of every non-2xx response, except a 422 submission rejection,
+ * which also carries the estimate (`rejectedSubmissionResponseSchema`).
+ */
+export const errorResponseSchema = z.object({ error: errorBodySchema }).meta({
+  id: "ErrorResponse",
+  description:
+    "The body of every non-2xx response except a `422` submission rejection, which is `RejectedSubmission`: the same `error` object plus the `estimate`.",
+});
 
 export type ErrorResponse = z.output<typeof errorResponseSchema>;
 

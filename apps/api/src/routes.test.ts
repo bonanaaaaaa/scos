@@ -25,7 +25,7 @@ describe("response contract", () => {
     expect(routes.submitOrder.requestBody).toBe(submitOrderRequestSchema);
   });
 
-  test("schemas convert to draft-07 JSON Schema for offline OpenAPI generation", () => {
+  test("schemas convert to draft-07 JSON Schema for OpenAPI generation", () => {
     for (const schema of [
       verifyOrderRequestSchema,
       submitOrderRequestSchema,
@@ -37,7 +37,11 @@ describe("response contract", () => {
     ]) {
       expect(() => z.toJSONSchema(schema, { target: "draft-07", io: "input" })).not.toThrow();
     }
-    const submit = z.toJSONSchema(submitOrderRequestSchema, { target: "draft-07" });
+    // An empty metadata registry inlines the named components (`.meta({ id })`).
+    const submit = z.toJSONSchema(submitOrderRequestSchema, {
+      target: "draft-07",
+      metadata: z.registry(),
+    });
     expect(submit).toMatchObject({
       additionalProperties: false,
       required: ["submissionId", "quantity", "latitude", "longitude"],

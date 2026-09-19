@@ -9,6 +9,7 @@
 import type { SubmitOrder } from "@scos/core";
 import type { Context, Hono } from "hono";
 
+import { describeContract } from "../../http/describe-route";
 import { createEndpointApp } from "../../http/endpoint-app";
 import { errorBody, invalidRequest, toIssues } from "../../http/errors";
 import { jsonBody, requireJson } from "../../http/json";
@@ -38,30 +39,36 @@ export function createSubmitOrderApp(dependencies: SubmitOrderAppDependencies): 
   const { submitOrder, logger = defaultLogger } = dependencies;
   const app = createEndpointApp(logger, () => SUBMIT_ORDER_MESSAGES.internal);
 
-  app.post(submitOrderRoute.path, requireJson, jsonBody(submitOrderRequestSchema), async (c) => {
-    const outcome = await submitOrder(c.req.valid("json"));
-    switch (outcome.kind) {
-      case "accepted":
-        return c.json(orderBody(outcome.order), 201);
-      case "rejected": {
-        const message =
-          outcome.reason === "INSUFFICIENT_STOCK"
-            ? SUBMIT_ORDER_MESSAGES.insufficientStock
-            : SUBMIT_ORDER_MESSAGES.shippingExceedsLimit;
-        const body: RejectedSubmissionResponse = {
-          error: { code: outcome.reason, message },
-          estimate: rejectedEstimateBody(outcome.estimate),
-        };
-        return c.json(body, 422);
+  app.post(
+    submitOrderRoute.path,
+    requireJson,
+    jsonBody(submitOrderRequestSchema),
+    describeContract(submitOrderRoute),
+    async (c) => {
+      const outcome = await submitOrder(c.req.valid("json"));
+      switch (outcome.kind) {
+        case "accepted":
+          return c.json(orderBody(outcome.order), 201);
+        case "rejected": {
+          const message =
+            outcome.reason === "INSUFFICIENT_STOCK"
+              ? SUBMIT_ORDER_MESSAGES.insufficientStock
+              : SUBMIT_ORDER_MESSAGES.shippingExceedsLimit;
+          const body: RejectedSubmissionResponse = {
+            error: { code: outcome.reason, message },
+            estimate: rejectedEstimateBody(outcome.estimate),
+          };
+          return c.json(body, 422);
+        }
+        case "conflict":
+          return c.json(errorBody("SUBMISSION_ID_CONFLICT", SUBMIT_ORDER_MESSAGES.conflict), 409);
+        case "invalid":
+          return invalidRequest(c, MESSAGES.invalidBody, toIssues(outcome.issues));
+        case "unavailable":
+          return unavailable(c);
       }
-      case "conflict":
-        return c.json(errorBody("SUBMISSION_ID_CONFLICT", SUBMIT_ORDER_MESSAGES.conflict), 409);
-      case "invalid":
-        return invalidRequest(c, MESSAGES.invalidBody, toIssues(outcome.issues));
-      case "unavailable":
-        return unavailable(c);
-    }
-  });
+    },
+  );
 
   return app;
 }
