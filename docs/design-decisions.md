@@ -71,7 +71,7 @@
 - Reuse the request schemas for OpenAPI generation through a compatible schema converter. Standard Schema validation alone does not generate OpenAPI. Verify that refinements and numeric limits are accurately represented or explicitly documented, and that generated schemas match runtime behavior.
 - Reference: [Hono Standard Schema request validation](https://hono.dev/docs/guides/validation#standard-schema-validator-middleware).
 - Unit tests cover discount boundaries, allocation, rounding, and the shipping limit. Distance tests cover identical locations, geographic boundaries, international date-line crossings, nearly antipodal points, and reference distances under the chosen Earth-radius constant.
-- Real PostgreSQL integration tests cover rollback, simultaneous submissions, and duplicate submissionId handling.
+- Real PostgreSQL tests of rollback, simultaneous submissions, and duplicate submissionId handling run at the full-stack level with the API (#11), not as a separate core-plus-persistence integration test.
 - Provide easy local start/test commands and documented API examples.
 
 ## OpenAPI deliverable
