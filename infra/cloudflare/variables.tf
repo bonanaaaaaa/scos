@@ -29,9 +29,15 @@ variable "planetscale_host" {
 }
 
 variable "hyperdrive_origin_database" {
-  description = "PostgreSQL database name on the branch, as PlanetScale reports it (GitHub environment variable HYPERDRIVE_ORIGIN_DATABASE, usually postgres). Not the PlanetScale database resource name (PLANETSCALE_DATABASE)."
+  description = "PostgreSQL database name on the branch (not the PlanetScale database resource name). Empty: taken from the stored migration URL, else postgres. The GitHub environment variable HYPERDRIVE_ORIGIN_DATABASE overrides it."
   type        = string
-  default     = "postgres"
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_-]*$", var.hyperdrive_origin_database))
+    error_message = "hyperdrive_origin_database must be a bare database name."
+  }
 }
 
 variable "origin_port" {
@@ -50,15 +56,27 @@ variable "hyperdrive_origin_user" {
   }
 }
 
-variable "hyperdrive_origin_password" {
-  description = "The runtime role's password (GitHub environment secret HYPERDRIVE_ORIGIN_PASSWORD). It is stored in the state, which is why the state is a secret."
+# Role credentials. PlanetScale shows a role's password only when the role is
+# created or reset, so the deploy passes it here once and Terraform keeps it
+# in the state (credentials.tf). Empty means "keep what is stored".
+variable "planetscale_runtime_password" {
+  description = "A fresh password of the runtime role, only in the run that created or reset the role (TF_VAR from the deploy's bootstrap step). Empty keeps the stored value."
   type        = string
   sensitive   = true
+  default     = ""
+  nullable    = false
+}
+
+variable "migration_database_url" {
+  description = "A fresh connection URL of the migration role (direct to the branch host, sslmode=require), only in the run that created or reset the role. Empty keeps the stored value."
+  type        = string
+  sensitive   = true
+  default     = ""
   nullable    = false
 
   validation {
-    condition     = length(var.hyperdrive_origin_password) > 0
-    error_message = "hyperdrive_origin_password must not be empty."
+    condition     = var.migration_database_url == "" || can(regex("^postgres(ql)?://[^@/]+@[^/]+/[^?]+\\?(.*&)?sslmode=(require|verify-ca|verify-full)(&|$)", var.migration_database_url))
+    error_message = "migration_database_url must be a postgresql:// URL with credentials, a database name and sslmode=require or stricter."
   }
 }
 

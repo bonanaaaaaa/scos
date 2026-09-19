@@ -1,40 +1,8 @@
 #!/usr/bin/env bash
-# Test stub for the GitHub CLI: records environment secrets written from stdin
-# and environment variables written with --body.
+# Tripwire: the bootstrap must never call the GitHub CLI (role credentials go
+# to the Terraform state, not to GitHub secrets or variables). Any call is
+# recorded and fails.
 set -euo pipefail
-
-state="${STUB_STATE:?}"
-mkdir -p "$state/secrets" "$state/variables"
-printf 'gh %s\n' "$*" >>"$state/calls.log"
-
-case "${1:-} ${2:-}" in
-"secret list")
-  exit "${STUB_GH_LIST_EXIT:-0}"
-  ;;
-"secret set")
-  cat >"$state/secrets/$3"
-  ;;
-"variable list")
-  [[ "${STUB_GH_LIST_EXIT:-0}" == 0 ]] || exit "$STUB_GH_LIST_EXIT"
-  printf '['
-  sep=""
-  for file in "$state"/variables/*; do
-    [[ -f "$file" ]] || continue
-    jq -nc --arg name "$(basename "$file")" --arg value "$(cat "$file")" '{name: $name, value: $value}' | tr -d '\n' | sed "s/^/$sep/"
-    sep=","
-  done
-  printf ']\n'
-  ;;
-"variable set")
-  name="$3"
-  shift 3
-  while (($#)); do
-    if [[ "$1" == "--body" ]]; then printf '%s' "$2" >"$state/variables/$name"; fi
-    shift
-  done
-  ;;
-*)
-  printf 'stub: unsupported gh command: %s\n' "$*" >&2
-  exit 2
-  ;;
-esac
+printf 'gh %s\n' "$*" >>"${STUB_STATE:?}/calls.log"
+printf 'stub: the bootstrap must not call gh: %s\n' "$*" >&2
+exit 2

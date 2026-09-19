@@ -7,21 +7,24 @@
 #   2. the runtime role used by Hyperdrive (pg_read_all_data,pg_write_all_data);
 #   3. the migration role used by `prisma migrate deploy` and the seed job.
 #
-# The deploy workflow runs it first in every deployment (EXPORT_GITHUB_ENV=true)
-# so a first deploy provisions the database; planetscale-bootstrap.yml runs it
-# by hand for repair and rotation.
+# The deploy workflow runs it first in every deployment (EXPORT_GITHUB_ENV=true),
+# so a first deploy provisions the database and the roles. Roles are created,
+# and rotated (ROTATE_ROLES), only there: a role's password is shown once, and
+# the deploy's Terraform step stores it in the Terraform state in the same run
+# (docs/deployment-pipeline.md#role-credentials-in-the-state). Anywhere else
+# (planetscale-bootstrap.yml, a local run) the script refuses to create a role
+# and only reports, or creates the database with MANAGE_ROLES=false.
 #
 # Anything that already exists is left alone: no database is recreated and no
-# role password is reset. Rotation is a separate, manual action (see
-# docs/planetscale-bootstrap.md).
+# role password is reset unless ROTATE_ROLES names that role.
 #
 # Secrets (the billing signature and the role passwords) are held in memory
-# only. They are never printed and never passed as a command-line argument. A
-# new role's password goes straight into GitHub environment secrets through
-# `gh secret set` (stdin), so a role is created only when that sink is
-# configured. The one file exception: with EXPORT_GITHUB_ENV=true, a password
-# created in this run is also appended, masked, to the job's $GITHUB_ENV file,
-# because the stored secret is not readable until the next run.
+# only. They are never printed, never passed as a command-line argument and
+# never written to GitHub secrets or variables. The one file exception: a
+# password created or reset in this run is appended, masked, to the job's
+# $GITHUB_ENV file for the Terraform plan step, which blanks it after use.
+# Non-secret connection values (branch host, runtime username, database name)
+# are read from PlanetScale and exported on every run.
 #
 # Inputs are environment variables; see docs/planetscale-bootstrap.md.
 
@@ -48,8 +51,12 @@ CREATE_DATABASE="${CREATE_DATABASE:-false}"
 MANAGE_ROLES="${MANAGE_ROLES:-true}"
 DRY_RUN="${DRY_RUN:-false}"
 EXPORT_GITHUB_ENV="${EXPORT_GITHUB_ENV:-false}"
-SECRETS_REPO="${SECRETS_REPO:-}"
-SECRETS_ENVIRONMENT="${SECRETS_ENVIRONMENT:-prod}"
+# none, runtime, migration or both: reset these roles' passwords (rotation).
+ROTATE_ROLES="${ROTATE_ROLES:-none}"
+# The PostgreSQL database name for a migration URL when `role reset` does not
+# report one (`role list` never does). The deploy passes, in order:
+# HYPERDRIVE_ORIGIN_DATABASE, the name in the currently stored URL, postgres.
+ORIGIN_DATABASE_FALLBACK="${ORIGIN_DATABASE_FALLBACK:-postgres}"
 # The lockfile-pinned Wrangler of @scos/api (after `pnpm install --frozen-lockfile`).
 WRANGLER_CMD="${WRANGLER_CMD:-$REPO_ROOT/apps/api/node_modules/.bin/wrangler}"
 BRANCH_READY_TIMEOUT_SECONDS="${BRANCH_READY_TIMEOUT_SECONDS:-900}"
@@ -109,7 +116,7 @@ ps_json() {
 
 # jq helper: require("field") yields a non-empty string field or raises an
 # error naming only the field. Used so a missing field can never become the
-# literal string "null" in a stored secret.
+# literal string "null" in a stored credential.
 # shellcheck disable=SC2016 # jq variables, not shell expansions.
 readonly JQ_REQUIRE='def require($k): if (.[$k] | type) == "string" and (.[$k] | length) > 0 then .[$k] else error("missing field \($k)") end;'
 readonly JQ_MIGRATION_URL=' "postgresql://\(require("username") | @uri):\(require("password") | @uri)@\(require("access_host_url")):5432/\(require("database_name"))?sslmode=require"'
@@ -137,6 +144,13 @@ validate_inputs() {
   done
   [[ "$RUNTIME_ROLE_NAME" != "$MIGRATION_ROLE_NAME" ]] || die "RUNTIME_ROLE_NAME and MIGRATION_ROLE_NAME must differ."
   [[ "$PLANETSCALE_REPLICAS" =~ ^[0-9]+$ ]] || die "PLANETSCALE_REPLICAS must be a number."
+  [[ "$ORIGIN_DATABASE_FALLBACK" =~ ^[A-Za-z0-9_-]+$ ]] ||
+    die "ORIGIN_DATABASE_FALLBACK must be a bare database name, got '$ORIGIN_DATABASE_FALLBACK'."
+  [[ "$ROTATE_ROLES" =~ ^(none|runtime|migration|both)$ ]] ||
+    die "ROTATE_ROLES must be none, runtime, migration or both, got '$ROTATE_ROLES'."
+  if [[ "$ROTATE_ROLES" != none ]] && ! is_true "$MANAGE_ROLES"; then
+    die "ROTATE_ROLES needs MANAGE_ROLES=true."
+  fi
   if is_true "$EXPORT_GITHUB_ENV"; then
     [[ "${GITHUB_ACTIONS:-}" == "true" && -n "${GITHUB_ENV:-}" ]] ||
       die "EXPORT_GITHUB_ENV=true works only inside GitHub Actions (GITHUB_ENV is unset)."
@@ -169,22 +183,12 @@ check_wrangler() {
   log "wrangler $version"
 }
 
-# Fails before anything is created when a new role's password would have
-# nowhere safe to go.
-check_secret_sink() {
-  [[ -n "$SECRETS_REPO" ]] ||
-    die "A role must be created, but SECRETS_REPO is empty, so its one-time password could not be stored. Set SECRETS_REPO (and a GitHub token that can write '$SECRETS_ENVIRONMENT' environment secrets), or set MANAGE_ROLES=false."
-  require_command gh
-  gh secret list --env "$SECRETS_ENVIRONMENT" --repo "$SECRETS_REPO" >/dev/null 2>&1 ||
-    die "Cannot read '$SECRETS_ENVIRONMENT' environment secrets of $SECRETS_REPO with the current gh credentials. The token needs the Environments repository permission (read and write)."
-}
-
-# Writes one environment secret from stdin. The value never reaches argv.
-store_secret() {
-  local name="$1"
-  gh secret set "$name" --env "$SECRETS_ENVIRONMENT" --repo "$SECRETS_REPO" >/dev/null ||
-    return 1
-  log "Stored $name in the '$SECRETS_ENVIRONMENT' environment of $SECRETS_REPO."
+# A new or reset password must reach the deploy's Terraform step, which stores
+# it in the state. Outside the deploy it would be lost, so nothing is created
+# or reset there.
+check_credential_sink() {
+  is_true "$EXPORT_GITHUB_ENV" ||
+    die "A role must be $1, but its one-time password would be lost here. Roles are created and rotated only by the deploy (Deploy Prod), which stores the credential in the Terraform state. Run the deploy, or set MANAGE_ROLES=false for a database-only run."
 }
 
 # Appends NAME=value to $GITHUB_ENV for the later steps of this job. Values
@@ -198,30 +202,8 @@ export_env() {
   printf '%s=%s\n' "$name" "$value" >>"$GITHUB_ENV"
 }
 
-# Stores a non-secret value as an environment variable when it is absent, so
-# the operator never has to copy it by hand. An existing, different value is
-# kept (with a warning): the operator may have set it on purpose.
-persist_variable() {
-  local name="$1" value="$2" current
-  [[ -n "$SECRETS_REPO" && -n "$value" ]] || return 0
-  if ! current="$(gh variable list --env "$SECRETS_ENVIRONMENT" --repo "$SECRETS_REPO" --json name,value 2>/dev/null)"; then
-    log "warning: could not read '$SECRETS_ENVIRONMENT' variables; set $name=$value by hand."
-    return 0
-  fi
-  current="$(jq -r --arg name "$name" '(map(select(.name == $name)) | first | .value) // empty' <<<"$current")"
-  if [[ -z "$current" ]]; then
-    if gh variable set "$name" --env "$SECRETS_ENVIRONMENT" --repo "$SECRETS_REPO" --body "$value" >/dev/null 2>&1; then
-      log "Set variable $name in the '$SECRETS_ENVIRONMENT' environment of $SECRETS_REPO."
-    else
-      log "warning: could not set variable $name; set $name=$value by hand."
-    fi
-  elif [[ "$current" != "$value" ]]; then
-    log "warning: variable $name is '$current' but PlanetScale reports '$value'; kept '$current'."
-  fi
-}
-
 # Non-secret values reported by pscale must look like a host or an identifier
-# before they reach $GITHUB_ENV or a variable.
+# before they reach $GITHUB_ENV.
 non_secret_field() {
   local json="$1" field="$2" pattern="$3" value
   value="$(jq -r --arg f "$field" '(.[$f] // empty) | strings' <<<"${json:-null}" 2>/dev/null || true)"
@@ -309,31 +291,46 @@ wait_for_branch() {
   done
 }
 
-# Creates a role and hands its credential to GitHub without printing it.
-# $1 role name, $2 inherited roles, $3 "runtime" or "migration".
-create_role() {
-  local name="$1" inherited="$2" kind="$3" out
-  log "Creating role $name (inherits $inherited) on $PLANETSCALE_DATABASE/$PLANETSCALE_BRANCH."
-  if ! out="$(ps_json role create "$PLANETSCALE_DATABASE" "$PLANETSCALE_BRANCH" "$name" --inherited-roles "$inherited" 2>/dev/null)"; then
-    die "pscale role create $name failed: $(json_error "$out")"
+# Creates or resets a role and hands its credential to the deploy's Terraform
+# step (masked, via $GITHUB_ENV) without printing it.
+# $1 "create" or "reset", $2 role name, $3 inherited roles (create) or the
+# role's `role list` JSON (reset), $4 "runtime" or "migration".
+issue_credential() {
+  local action="$1" name="$2" arg="$3" kind="$4" out listed=""
+  if [[ "$action" == create ]]; then
+    log "Creating role $name (inherits $arg) on $PLANETSCALE_DATABASE/$PLANETSCALE_BRANCH."
+    if ! out="$(ps_json role create "$PLANETSCALE_DATABASE" "$PLANETSCALE_BRANCH" "$name" --inherited-roles "$arg" 2>/dev/null)"; then
+      die "pscale role create $name failed: $(json_error "$out")"
+    fi
+  else
+    listed="$arg"
+    local id
+    id="$(jq -r '.id // empty' <<<"$listed")"
+    [[ "$id" =~ ^[A-Za-z0-9_-]+$ ]] || die "Role $name has no usable id in pscale role list."
+    log "Resetting the password of role $name on $PLANETSCALE_DATABASE/$PLANETSCALE_BRANCH (rotation)."
+    if ! out="$(ps_json role reset "$PLANETSCALE_DATABASE" "$PLANETSCALE_BRANCH" "$id" --force 2>/dev/null)"; then
+      die "pscale role reset $name failed: $(json_error "$out")"
+    fi
+    # Fields the reset output lacks come from the role list (never the
+    # password, which only the reset returns).
+    out="$(jq -c --argjson listed "$listed" '($listed | del(.password)) + with_entries(select(.value != null))' <<<"$out" 2>/dev/null)" ||
+      die "pscale role reset $name returned unparseable output. Rotate it again."
+    if [[ "$kind" == migration && -z "$(jq -r '.database_name // empty | strings' <<<"$out")" ]]; then
+      log "pscale role reset did not report database_name; using '$ORIGIN_DATABASE_FALLBACK' for the migration URL."
+      out="$(jq -c --arg db "$ORIGIN_DATABASE_FALLBACK" '.database_name = $db' <<<"$out")"
+    fi
   fi
   local password url
   # A missing field fails here; jq's error names the field, never a value.
   password="$(jq -r "$JQ_REQUIRE"' require("password")' <<<"$out" 2>/dev/null)" ||
-    die "pscale role create $name returned no password. Nothing was stored; rotate the role: docs/planetscale-bootstrap.md#rotation."
+    die "pscale role $action $name returned no password. Nothing was exported; rotate the role: docs/deployment-pipeline.md#role-credentials-in-the-state."
   mask "$password"
   if [[ "$kind" == "runtime" ]]; then
-    if ! printf '%s' "$password" | store_secret HYPERDRIVE_ORIGIN_PASSWORD; then
-      die "Role $name was created but HYPERDRIVE_ORIGIN_PASSWORD could not be stored. Rotate it: docs/planetscale-bootstrap.md#rotation."
-    fi
-    export_env BOOTSTRAP_HYPERDRIVE_ORIGIN_PASSWORD "$password"
+    export_env BOOTSTRAP_PLANETSCALE_RUNTIME_PASSWORD "$password"
   else
     url="$(jq -r "$JQ_REQUIRE$JQ_MIGRATION_URL" <<<"$out" 2>/dev/null)" ||
-      die "pscale role create $name lacks username, password, access_host_url or database_name. Nothing was stored; rotate the role: docs/planetscale-bootstrap.md#rotation."
+      die "pscale role $action $name lacks username, password, access_host_url or database_name. Nothing was exported; rotate the role: docs/deployment-pipeline.md#role-credentials-in-the-state."
     mask "$url"
-    if ! printf '%s' "$url" | store_secret MIGRATION_DATABASE_URL; then
-      die "Role $name was created but MIGRATION_DATABASE_URL could not be stored. Rotate it: docs/planetscale-bootstrap.md#rotation."
-    fi
     export_env BOOTSTRAP_MIGRATION_DATABASE_URL "$url"
     url=""
   fi
@@ -342,8 +339,9 @@ create_role() {
   jq -c '{name, username, access_host_url, database_name}' <<<"$out"
 }
 
-# Publishes the non-secret connection values: job summary, $GITHUB_ENV
-# (BOOTSTRAP_*) and, when absent, the environment's variables.
+# Publishes the non-secret connection values: job summary and $GITHUB_ENV
+# (BOOTSTRAP_*). Operator variables of the same names override them in the
+# deploy.
 publish_connection_values() {
   local runtime="$1" migration="$2"
   local host user dbname migration_user
@@ -355,9 +353,6 @@ publish_connection_values() {
   export_env BOOTSTRAP_PLANETSCALE_HOST "$host"
   export_env BOOTSTRAP_HYPERDRIVE_ORIGIN_USER "$user"
   export_env BOOTSTRAP_HYPERDRIVE_ORIGIN_DATABASE "$dbname"
-  persist_variable PLANETSCALE_HOST "$host"
-  persist_variable HYPERDRIVE_ORIGIN_USER "$user"
-  persist_variable HYPERDRIVE_ORIGIN_DATABASE "$dbname"
 
   local text
   text="$(
@@ -369,7 +364,7 @@ PlanetScale bootstrap result (non-secret values):
 | Database | $PLANETSCALE_DATABASE |
 | Branch | $PLANETSCALE_BRANCH |
 | PLANETSCALE_HOST (branch host) | ${host:-unknown} |
-| HYPERDRIVE_ORIGIN_DATABASE (PostgreSQL database name) | ${dbname:-reported only when the runtime role is created} |
+| HYPERDRIVE_ORIGIN_DATABASE (PostgreSQL database name) | ${dbname:-not reported by this run; Terraform keeps the stored one} |
 | HYPERDRIVE_ORIGIN_USER (runtime connection username) | ${user:-unknown} |
 | Migration connection username | ${migration_user:-unknown} |
 SUMMARY
@@ -385,11 +380,12 @@ main() {
   check_tools
 
   local db_state runtime="" migration="" need_runtime=false need_migration=false
+  local reset_runtime=false reset_migration=false
   db_state="$(database_state)"
   log "Database $PLANETSCALE_DATABASE: $db_state."
 
   if [[ "$db_state" == "missing" ]] && ! is_true "$CREATE_DATABASE"; then
-    die "Database $PLANETSCALE_DATABASE does not exist in $PLANETSCALE_ORG and CREATE_DATABASE is false. Creating it starts billing: rerun with CREATE_DATABASE=true after approval, or create it from the Cloudflare dashboard."
+    die "Database $PLANETSCALE_DATABASE does not exist in $PLANETSCALE_ORG and CREATE_DATABASE is false. Creating it starts billing: rerun with CREATE_DATABASE=true once that is intended, or create it from the Cloudflare dashboard."
   fi
 
   if is_true "$MANAGE_ROLES"; then
@@ -400,6 +396,13 @@ main() {
     fi
     [[ -n "$runtime" ]] || need_runtime=true
     [[ -n "$migration" ]] || need_migration=true
+    # Rotation resets an existing role; a missing one is created anyway.
+    if [[ "$ROTATE_ROLES" == runtime || "$ROTATE_ROLES" == both ]] && ! $need_runtime; then
+      reset_runtime=true
+    fi
+    if [[ "$ROTATE_ROLES" == migration || "$ROTATE_ROLES" == both ]] && ! $need_migration; then
+      reset_migration=true
+    fi
     local role status
     for role in "$runtime" "$migration"; do
       [[ -n "$role" ]] || continue
@@ -413,6 +416,8 @@ main() {
   [[ "$db_state" == "missing" ]] && plan_db=create
   $need_runtime && plan_runtime=create
   $need_migration && plan_migration=create
+  $reset_runtime && plan_runtime=reset
+  $reset_migration && plan_migration=reset
   if ! is_true "$MANAGE_ROLES"; then
     plan_runtime=skip
     plan_migration=skip
@@ -429,7 +434,10 @@ main() {
     check_wrangler
   fi
   if $need_runtime || $need_migration; then
-    check_secret_sink
+    check_credential_sink created
+  fi
+  if $reset_runtime || $reset_migration; then
+    check_credential_sink reset
   fi
 
   if [[ "$db_state" == "missing" ]]; then
@@ -440,10 +448,14 @@ main() {
   fi
 
   if $need_runtime; then
-    runtime="$(create_role "$RUNTIME_ROLE_NAME" "$RUNTIME_INHERITED_ROLES" runtime)"
+    runtime="$(issue_credential create "$RUNTIME_ROLE_NAME" "$RUNTIME_INHERITED_ROLES" runtime)"
+  elif $reset_runtime; then
+    runtime="$(issue_credential reset "$RUNTIME_ROLE_NAME" "$runtime" runtime)"
   fi
   if $need_migration; then
-    migration="$(create_role "$MIGRATION_ROLE_NAME" "$MIGRATION_INHERITED_ROLES" migration)"
+    migration="$(issue_credential create "$MIGRATION_ROLE_NAME" "$MIGRATION_INHERITED_ROLES" migration)"
+  elif $reset_migration; then
+    migration="$(issue_credential reset "$MIGRATION_ROLE_NAME" "$migration" migration)"
   fi
 
   if is_true "$MANAGE_ROLES"; then

@@ -3,10 +3,11 @@
 #
 # Usage: require-main-head.sh <sha> <before-what>
 #
-# The deploy job calls this at its start, before terraform apply and before
-# wrangler deploy. "Re-run failed jobs" reuses the gate's old commit, and an
-# approval can wait while main moves on, so the gate's own check is not
-# enough: an older commit must never overwrite a newer one. The newer
+# The deploy job calls this at its start, before the database bootstrap,
+# before terraform apply and before wrangler deploy. "Re-run failed jobs"
+# reuses the gate's old commit, and a run can wait in the concurrency groups
+# while main moves on, so the gate's own check is not enough: an older commit
+# must never overwrite a newer one. The newer
 # commit's own CI run deploys it. Needs GH_TOKEN (contents: read) and
 # GITHUB_REPOSITORY.
 set -euo pipefail

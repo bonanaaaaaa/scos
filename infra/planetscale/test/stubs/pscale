@@ -63,7 +63,19 @@ case "${1:-} ${2:-}" in
     --arg omit "${STUB_ROLE_OMIT:-}" \
     '{id: ("id-" + $name), name: $name, username: ($name + ".stubbranch"), password: $password, access_host_url: "ap-southeast.pg.psdb.cloud", database_name: "postgres", database_url: ("postgresql://" + $name + ":" + $password + "@ap-southeast.pg.psdb.cloud:5432/postgres")} | if $omit == "" then . else del(.[$omit]) end'
   ;;
-"role reset" | "role reset-default" | "role delete" | "database delete")
+"role reset")
+  # pscale role reset <db> <branch> <role-id> --force: a new password for an
+  # existing role. STUB_RESET_OMIT=<field> drops that field.
+  id="$5"
+  name="${id#id-}"
+  [[ -f "$state/roles/$name" ]] || not_found "role $id"
+  password="pw/${name}+RESET@:$RANDOM$RANDOM"
+  printf '%s\n' "$password" >>"$state/passwords"
+  jq -nc --arg name "$name" --arg password "$password" \
+    --arg omit "${STUB_RESET_OMIT:-}" \
+    '{id: ("id-" + $name), name: $name, username: ($name + ".stubbranch"), password: $password, access_host_url: "ap-southeast.pg.psdb.cloud", database_name: "postgres"} | if $omit == "" then . else del(.[$omit]) end'
+  ;;
+"role reset-default" | "role delete" | "database delete")
   printf '{"status":"ok"}\n'
   ;;
 *)

@@ -2,19 +2,35 @@ name: Deploy Prod
 
 # Thin caller for the prod environment (#15). A merge to main is the trigger:
 # the gate waits until CI has passed for the same commit, then the shared
-# workflow (deploy.yml) deploys it. The prod environment's required reviewers
-# pause the shared workflow's environment-bound jobs.
+# workflow (deploy.yml) deploys it. There is no human approval: by the
+# user's decision the prod environment has no required reviewers, so once
+# DEPLOY_ENABLED is `true` every merge to main deploys to prod, and the first
+# one creates the PlanetScale database (billing starts).
 #
 # Secondary: a manual run (workflow_dispatch) on main redeploys main's head,
-# gated exactly like a push.
+# gated exactly like a push. Its inputs are the operator actions:
+# - rotate_credentials: reset a PlanetScale role's password and replace the
+#   stored credential in the Terraform state in the same run;
+# - seed_demo_data: insert the demo warehouses once, after the migrations.
 #
-# Nothing deploys until the repository variable DEPLOY_ENABLED is `true`.
+# Nothing deploys until the repository variable DEPLOY_ENABLED is `true`; it
+# is the provisioning authorization and the kill switch.
 # docs/deployment-pipeline.md.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      rotate_credentials:
+        description: Rotate PlanetScale role credentials (pscale role reset, then replace the value stored in the Terraform state).
+        type: choice
+        options: [none, runtime, migration, both]
+        default: none
+      seed_demo_data:
+        description: After the migrations, insert the demo warehouses that are missing (one-time; never resets stock).
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -119,6 +135,10 @@ jobs:
     with:
       environment: prod
       sha: ${{ needs.gate.outputs.sha }}
+      # Operator actions exist only on a manual run; a push never rotates or
+      # seeds.
+      rotate_credentials: ${{ github.event_name == 'workflow_dispatch' && inputs.rotate_credentials || 'none' }}
+      seed_demo_data: ${{ github.event_name == 'workflow_dispatch' && inputs.seed_demo_data }}
     secrets:
       r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
       r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}

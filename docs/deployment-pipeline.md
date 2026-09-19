@@ -15,53 +15,62 @@ provisions nothing and deploys nothing:
 - `infra-check.yml` runs on pull requests with no secret and no environment.
 - `Deploy Prod` (`deploy-prod.yml`) runs on every merge to `main`, but no job
   runs until the repository variable `DEPLOY_ENABLED` is `true`. It is not
-  set, so nothing starts in the `prod` environment and nothing asks for
-  approval.
+  set, so nothing starts in the `prod` environment.
 
 **Hosted execution** waits on the user's account, budget and provisioning
 authorization. That covers every step that touches Cloudflare or PlanetScale:
-the PlanetScale database and roles (created by the first approved deploy,
-which starts billing), the first Terraform apply, migrations and the Worker
-deploy. #33 runs and verifies it.
+the PlanetScale database and roles (created by the first deploy, which starts
+billing), the first Terraform apply, migrations and the Worker deploy. #33
+runs and verifies it.
 
 **The deploy creates the database.** By the user's decision
 ([ADR 0005 amendment](adr/0005-cloudflare-first-deployment.md)), the deploy
 job runs the PlanetScale bootstrap first and creates the database and its
 roles when they are missing. This relaxes two #15 criteria: the PlanetScale
 service token is used by the deploy, not only by the bootstrap workflow, and
-a merge to `main` (through the approved deploy) can create the database.
-Setting `DEPLOY_ENABLED=true` and approving the first deploy is therefore the
-provisioning authorization.
+a merge to `main` can create the database.
+
+**No human approval.** Also by the user's decision, the `prod` environment
+has no required reviewers, and the pipeline does not ask for one. Setting the
+repository variable `DEPLOY_ENABLED=true` is, on its own, the provisioning
+authorization: from then on every merge to `main` whose CI passes deploys to
+`prod`, and the first merge after enabling creates the PlanetScale database
+and starts billing. `DEPLOY_ENABLED` is also the kill switch: any other value
+stops the next deploy at the gate. What still guards `prod` is the gate (CI
+green on the same commit, still the head of `main`), the deployment-branch
+rule, and the main-only checks.
 
 ### Operator checklist
 
 In this order. Nothing here is automated.
 
-1. **Protect `prod`.** Add a required reviewer to the `prod` environment
-   (Settings > Environments > prod), and consider turning off administrator
-   bypass. Every job that uses a `prod` secret waits for that approval.
-   Also restrict the `prod` environment's deployment branches to `main`
-   (Deployment branches and tags > Selected branches), so no other branch's
-   workflow can use its secrets.
+1. **Restrict `prod` to `main`.** Set the `prod` environment's deployment
+   branches to `main` (Settings > Environments > prod > Deployment branches
+   and tags > Selected branches), so no other branch's workflow can use its
+   secrets. This is a branch policy, not an approver: `prod` has no required
+   reviewers, by the user's decision.
 2. **Check the R2 state bucket** is private (see
    [the bucket](#the-state-bucket-one-time-bootstrap)).
 3. **Prepare PlanetScale** (no bootstrap run is needed; the first deploy
    creates the database and roles): set the repository variable
-   `PLANETSCALE_ORG`, give the service token its accesses, confirm the
-   cluster size SKU, and create the `prod` secret `ENVIRONMENT_SECRETS_TOKEN`,
-   which the deploy requires
+   `PLANETSCALE_ORG`, give the service token its accesses and confirm the
+   cluster size SKU
    ([PlanetScale bootstrap](planetscale-bootstrap.md#before-the-first-run)).
-4. **Create the Cloudflare API tokens** (Terraform, Workers, and the billing
-   signature `CLOUDFLARE_API_TOKEN`) and set the `prod` secrets and variables
+4. **Give the `prod` secret `CLOUDFLARE_API_TOKEN` its permissions** (the
+   one Cloudflare token; [Credentials](#credentials)) and set the `prod`
+   secrets and variables
    in [Credentials](#credentials) and [Configuration](#configuration-contract).
-   Do not set `PLANETSCALE_HOST`, `HYPERDRIVE_ORIGIN_USER`,
-   `HYPERDRIVE_ORIGIN_DATABASE`, `HYPERDRIVE_ORIGIN_PASSWORD` or
-   `MIGRATION_DATABASE_URL`: the first deploy's bootstrap step writes them.
-5. **Set the repository variable `DEPLOY_ENABLED=true`**. The next merge to `main`
-   (or a manual run of `Deploy Prod` on `main`) deploys, and its approval
-   starts PlanetScale billing when the database does not exist yet.
-6. **Seed once**, after the first deployment applied the migrations
-   ([seeding](planetscale-bootstrap.md#seeding-demonstration-data)).
+   Set no database credential or connection value: the deploy reads the
+   host, username and database name from PlanetScale on every run, and keeps
+   the role credentials in the Terraform state
+   ([role credentials](#role-credentials-in-the-state)).
+5. **Set the repository variable `DEPLOY_ENABLED=true`** only when ready to
+   pay. This is the provisioning authorization; nothing asks again. The next
+   merge to `main` (or a manual run of `Deploy Prod` on `main`) deploys
+   without approval, and creates the PlanetScale database, starting billing,
+   when it does not exist yet. Set it to anything else to stop deploys.
+6. **Seed once:** run `Deploy Prod` manually on `main` with `seed_demo_data`
+   checked ([seeding](planetscale-bootstrap.md#seeding-demonstration-data)).
 
 ## Resources and owners
 
@@ -76,23 +85,25 @@ In this order. Nothing here is automated.
 
 `infra/cloudflare/`:
 
-| File                          | Contents                                                                                    |
-| ----------------------------- | ------------------------------------------------------------------------------------------- |
-| `versions.tf`                 | Terraform `>= 1.11, < 2` (CI pins 1.16.3), `cloudflare/cloudflare` 5.25.0, the `s3` backend |
-| `main.tf`                     | The Hyperdrive configuration                                                                |
-| `variables.tf`, `outputs.tf`  | Inputs; the one output, `hyperdrive_id`                                                     |
-| `.terraform.lock.hcl`         | Provider hashes for linux_amd64, linux_arm64, darwin_arm64 and darwin_amd64                 |
-| `tests/hyperdrive.tftest.hcl` | `terraform test` with a mocked provider: caching, connection limit, origin, validations     |
-| `scripts/`                    | Backend init, state backup, main-head check, Worker bundle and deploy configuration         |
+| File                          | Contents                                                                                                                                        |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `versions.tf`                 | Terraform `>= 1.11, < 2` (CI pins 1.16.3), `cloudflare/cloudflare` 5.25.0, the `s3` backend                                                     |
+| `main.tf`                     | The Hyperdrive configuration                                                                                                                    |
+| `credentials.tf`              | The PlanetScale role credentials kept in the state ([below](#role-credentials-in-the-state))                                                    |
+| `variables.tf`, `outputs.tf`  | Inputs; the outputs `hyperdrive_id` and `migration_database_url` (both sensitive)                                                               |
+| `.terraform.lock.hcl`         | Provider hashes for linux_amd64, linux_arm64, darwin_arm64 and darwin_amd64                                                                     |
+| `tests/hyperdrive.tftest.hcl` | `terraform test` with a mocked provider: caching, connection limit, origin, validations, and storing, keeping, rotating and missing credentials |
+| `scripts/`                    | Backend init, state backup, main-head check, Worker bundle and deploy configuration                                                             |
 
 The Hyperdrive configuration follows #28:
 
-- **Origin** from non-secret inputs: `PLANETSCALE_HOST`, port 5432, scheme
-  `postgres`, the database `HYPERDRIVE_ORIGIN_DATABASE` (default `postgres`,
-  the PostgreSQL name PlanetScale reports, not the PlanetScale database
-  name) and the username `HYPERDRIVE_ORIGIN_USER` (exactly as PlanetScale
-  reports it). The password is the `sensitive` variable
-  `hyperdrive_origin_password`.
+- **Origin** from non-secret inputs read from PlanetScale on every deploy:
+  the branch host, port 5432, scheme `postgres`, the runtime username
+  (exactly as PlanetScale reports it) and the PostgreSQL database name (from
+  the stored migration URL, usually `postgres`; not the PlanetScale database
+  name). The operator variables `PLANETSCALE_HOST`, `HYPERDRIVE_ORIGIN_USER`
+  and `HYPERDRIVE_ORIGIN_DATABASE` override them. The password is the runtime
+  role's, stored in the state (`credentials.tf`).
 - **Caching** `caching = { disabled = true }`, set explicitly.
 - **`origin_connection_limit = 5`**, validated to 5-20. Raise it only within
   the [budget rule](cloudflare-deployment-design.md#connection-budget).
@@ -197,16 +208,102 @@ API lists as supported, so a second run against the same key fails with
 - Every plan and apply waits up to 5 minutes for the lock
   (`-lock-timeout=5m`), then fails. Never pass `-lock=false`.
 
+### Role credentials in the state
+
+By the user's decision, the PlanetScale role credentials are kept in the
+Terraform state instead of GitHub environment secrets. The deploy writes no
+GitHub secret or variable, and needs no token that could
+(`ENVIRONMENT_SECRETS_TOKEN` is gone).
+
+- **How they get there.** A role's password is shown only when the role is
+  created or reset. In that run, the bootstrap step exports it, masked, to
+  `$GITHUB_ENV`, and the very next step, "Store fresh role credentials in the
+  state", writes it to the state with a **targeted** plan and apply of only
+  the affected `terraform_data.planetscale_runtime_password` or
+  `terraform_data.migration_database_url` (`-target` and `-replace`, a 5-minute
+  lock timeout, nothing printed, the saved plan deleted), then clears the
+  `$GITHUB_ENV` values. Each resource keeps what it stored
+  (`ignore_changes = [input]`), so the full plan later in the run, and every
+  later run, needs no credential input. A new value is taken only with
+  `-replace`.
+- **Why a separate, targeted apply.** The full plan and apply come later,
+  after the settings check and with a `main`-head check right before the
+  apply. Anything failing in between (a transient plan error, a second merge
+  that makes the head check stop this run, a cancellation or a timeout) would
+  otherwise discard the only copy of a credential PlanetScale will not show
+  again. The store step runs even when the bootstrap step failed after
+  creating one role, and on cancellation (`if: always()` plus a credential to
+  store), and it has no head check: storing a credential is always correct,
+  whichever commit deploys next. Terraform prints its usual warning about
+  `-target`; that is expected here. The state is backed up before it
+  ([below](#backups-and-recovery)).
+- **Where the fresh values are visible.** Only in the bootstrap step, which
+  issues them, and the store step, which clears them. The earlier steps
+  ("Check required settings", backend init, backup) run before they exist,
+  and every later step ("Check the database settings", plan, apply,
+  migrations, Worker) runs after they are cleared.
+- **Consumers.** Hyperdrive's origin password reads the stored runtime
+  password. The migration step reads `terraform output -raw
+migration_database_url`, registers the URL, its password part and, when
+  different, the decoded password with `::add-mask::`, and passes the URL
+  only to `prisma migrate deploy` (and the seed).
+- **Nothing to use fails the plan.** If the state holds no credential, the
+  full plan fails, before anything is applied, with "No runtime role
+  password" or "No migration role URL" (both checked on the Hyperdrive
+  resource, so a targeted store of one credential never trips over the
+  other).
+- **The state backup is the credential backup.** The pre-apply backups
+  ([below](#backups-and-recovery)) are the only other copies. There is no
+  GitHub copy to fall back on.
+
+**Rotation:** run `Deploy Prod` manually on `main` with `rotate_credentials`
+set to `runtime`, `migration` or `both`. The bootstrap step resets the role
+(`pscale role reset`), the store step replaces the stored value at once, and
+the full apply then updates Hyperdrive's origin password in place. The old
+password stops working at the reset, so the Worker fails database calls for
+the minute or two until that apply. For the migration role, the URL's
+database name comes from the reset output; if PlanetScale does not report
+it, from `HYPERDRIVE_ORIGIN_DATABASE`, then the name in the currently stored
+URL, then `postgres`. A reset done by hand outside the deploy leaves the state
+holding a dead password: rotate through the deploy instead.
+
+**A failed rotation.** If the run fails after the store step, the new
+credential is already stored: rerun the deploy (no rotation needed) and
+Hyperdrive gets the new password. If it fails between the reset and the
+store (the store step itself failing), the role's password in PlanetScale is
+one nothing holds, and **restoring a state backup does not help**: every
+backup holds the old, already dead password. Rotating that role again is the
+only fix.
+
+**A lost or unusable state** (the next plan fails with "No runtime role
+password" or "No migration role URL", or Hyperdrive fails to connect).
+Recover in this order:
+
+1. Restore the newest state backup
+   ([backups and recovery](#backups-and-recovery)) and run `Deploy Prod`
+   again. This restores the credentials with it, when the backup holds them
+   and no rotation happened since that backup.
+2. Otherwise rotate: run `Deploy Prod` with `rotate_credentials: both` (or the
+   one role that is missing). Its credential is reset and stored again.
+3. If the whole state is gone, Hyperdrive also exists in Cloudflare without
+   a state entry. Import it first, then rotate both roles:
+   `terraform -chdir=infra/cloudflare import cloudflare_hyperdrive_config.scos '<account_id>/<hyperdrive_id>'`
+   (after `backend-init.sh`, with the non-secret `TF_VAR_*` inputs of the
+   plan step), or delete the orphaned Hyperdrive configuration in the
+   dashboard and let the deploy create a new one.
+
 ### The state is a secret
 
-The state holds the Hyperdrive origin password.
+The state holds both PlanetScale role credentials: the runtime role's
+password (Hyperdrive's origin password) and the migration role's URL.
 
 - `*.tfstate*`, `*.tfplan` and `.terraform/` are ignored by Git.
-- The one output, `hyperdrive_id`, is `sensitive`; the workflow reads it with
-  `terraform output -raw` and masks it.
+- Both outputs, `hyperdrive_id` and `migration_database_url`, are
+  `sensitive`; the workflow reads each with `terraform output -raw` and masks
+  it.
 - **The saved plan never leaves the job.** Plan and apply run in the same job
-  on the same runner, so no artifact is needed. The plan file holds the
-  password in clear text; it is written with `umask 077` and deleted at the
+  on the same runner, so no artifact is needed. The plan file holds both
+  credentials in clear text; it is written with `umask 077` and deleted at the
   end of the job, whatever the outcome. The plan is never printed: the log
   and the job summary show only `actions address` lines from
   `terraform show -json`. No plan or state reaches a pull request comment.
@@ -267,26 +364,35 @@ Cloudflare has no GitHub OIDC federation for API tokens (checked
 pipeline uses **scoped, long-lived tokens**, the downgrade ADR 0005 accepts.
 Give each token an expiry and rotate it.
 
-| Credential                                                              | Kind                                    | Scope                                                                                             | Used by                                                                                                                |
-| ----------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`                              | Repository secrets                      | R2 Object Read & Write on the state bucket                                                        | Passed by `deploy-prod.yml` to `deploy.yml` only (the bootstrap does not need them)                                    |
-| `PLANETSCALE_SERVICE_TOKEN` (+ variable `PLANETSCALE_SERVICE_TOKEN_ID`) | Repository secret                       | Create the database, manage its roles ([accesses](planetscale-bootstrap.md#before-the-first-run)) | Passed by `deploy-prod.yml` to `deploy.yml` (`planetscale_service_token`), bootstrap step; `planetscale-bootstrap.yml` |
-| `CLOUDFLARE_API_TOKEN`                                                  | `prod` secret                           | The billing signature for the database                                                            | `deploy.yml` bootstrap step (used only while the database is missing); `planetscale-bootstrap.yml`                     |
-| `ENVIRONMENT_SECRETS_TOKEN` (required)                                  | `prod` secret                           | Fine-grained token: this repository's Environments, read and write (secrets and variables)        | `deploy.yml` bootstrap step; `planetscale-bootstrap.yml`                                                               |
-| `CLOUDFLARE_TERRAFORM_API_TOKEN`                                        | `prod` secret                           | Account: Hyperdrive Edit (add Zone: DNS Edit on one zone only if a custom host is added)          | `deploy.yml` (read in its `prod` jobs), Terraform steps                                                                |
-| `CLOUDFLARE_WORKERS_API_TOKEN`                                          | `prod` secret                           | Account: Workers Scripts Edit (the "Edit Cloudflare Workers" template, trimmed to this account)   | `deploy.yml`, Wrangler step                                                                                            |
-| `HYPERDRIVE_ORIGIN_PASSWORD`                                            | `prod` secret, written by the bootstrap | The runtime role's password; becomes `TF_VAR_hyperdrive_origin_password`                          | `deploy.yml`, Terraform plan                                                                                           |
-| `MIGRATION_DATABASE_URL`                                                | `prod` secret, written by the bootstrap | The migration role, direct to the branch host on 5432, `sslmode=require`                          | `deploy.yml` migrations; `seed-demo-data.yml`                                                                          |
-| `OTEL_EXPORTER_OTLP_HEADERS` (optional)                                 | `prod` secret                           | Collector credentials, uploaded as a Worker secret                                                | `deploy.yml`, Wrangler step                                                                                            |
+**One Cloudflare token.** By the user's decision, the existing `prod` secret
+`CLOUDFLARE_API_TOKEN` serves Terraform, Wrangler and the billing signature.
+This replaces #15's two separately scoped tokens (one for Terraform, one for
+Wrangler). The trade-off: a leak of this one token exposes Hyperdrive, DNS,
+the Worker and the ability to create a Cloudflare-billed database at once.
+Its permissions are the union of what the three uses need:
+
+- Account: **Hyperdrive Edit** (Terraform's Hyperdrive configuration);
+- Zone: **DNS Edit** on one zone, only if a custom hostname is added;
+- Account: **Workers Scripts Edit** (`wrangler deploy`, rollback, delete);
+- whatever `wrangler hyperdrive planetscale signature` needs, which is
+  unverified until the first real run (Hyperdrive Edit is the likely one).
+
+| Credential                                                              | Kind                               | Scope                                                                                                                          | Used by                                                                                                                        |
+| ----------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`                              | Repository secrets                 | R2 Object Read & Write on the state bucket                                                                                     | Passed by `deploy-prod.yml` to `deploy.yml` only (the bootstrap does not need them)                                            |
+| `PLANETSCALE_SERVICE_TOKEN` (+ variable `PLANETSCALE_SERVICE_TOKEN_ID`) | Repository secret                  | Create the database, manage its roles ([accesses](planetscale-bootstrap.md#before-the-first-run))                              | Passed by `deploy-prod.yml` to `deploy.yml` (`planetscale_service_token`), bootstrap step; `planetscale-bootstrap.yml`         |
+| `CLOUDFLARE_API_TOKEN`                                                  | `prod` secret                      | The one Cloudflare token: Hyperdrive Edit, Workers Scripts Edit, DNS Edit if a custom host is added, and the billing signature | `deploy.yml`: bootstrap step (only while the database is missing), Terraform steps, Wrangler step; `planetscale-bootstrap.yml` |
+| Runtime role password                                                   | Terraform state                    | Hyperdrive's origin credential ([role credentials](#role-credentials-in-the-state))                                            | Terraform (Hyperdrive origin)                                                                                                  |
+| Migration role URL                                                      | Terraform state (sensitive output) | The migration role, direct to the branch host on 5432, `sslmode=require`                                                       | `deploy.yml` migration step (migrations and the optional seed)                                                                 |
+| `OTEL_EXPORTER_OTLP_HEADERS` (optional)                                 | `prod` secret                      | Collector credentials, uploaded as a Worker secret                                                                             | `deploy.yml`, Wrangler step                                                                                                    |
 
 - Each stored secret is mapped into the environment of the steps that need it,
-  never the whole job. Terraform sees only `CLOUDFLARE_TERRAFORM_API_TOKEN` (as
-  `CLOUDFLARE_API_TOKEN`) of the Cloudflare tokens; Wrangler only
-  `CLOUDFLARE_WORKERS_API_TOKEN`. The exception is the first deploy: role
-  credentials created in that run go through `$GITHUB_ENV`, so every later
-  step sees them, masked, until they are blanked after their last use (the
-  origin password after the Terraform plan, the migration URL after the
-  migrations, which also puts it in the Terraform apply steps' environment).
+  never the whole job. `CLOUDFLARE_API_TOKEN` is mapped into the bootstrap,
+  Terraform and Wrangler steps only. The exception is a run that creates or
+  resets a role: its fresh credential goes through `$GITHUB_ENV` from the
+  bootstrap step to the store step right after it, which clears it; no
+  other step sees it. The migration URL read from the state is used only
+  inside the migration step.
 - `infra-check.yml` references no secret and no environment, and pull
   requests from forks never reach the deploy workflows: `Deploy Prod` runs on
   a **push** to `main` in this repository (or a manual run on `main`), and
@@ -300,20 +406,20 @@ Give each token an expiry and rotate it.
   artifact: CI builds and tests the same commit separately.
 
 **One-time order**, with no circular dependency: R2 bucket and key pair (by
-hand) → Cloudflare tokens, `ENVIRONMENT_SECRETS_TOKEN` and `prod` variables →
+hand) → the Cloudflare API token and `prod` variables →
 `DEPLOY_ENABLED=true` → first deploy (the bootstrap step creates the
-database, roles, role secrets and connection variables; then Terraform
-creates Hyperdrive, migrations run, the Worker deploys) → seed. The manual
+database and roles; Terraform stores the role credentials and creates
+Hyperdrive; migrations run; the Worker deploys) → a manual deploy with
+`seed_demo_data`. The manual
 `planetscale-bootstrap.yml` can still create the database first, for example
 as a dry run, but is not required.
 
-**Rotation.** Role passwords: follow
-[PlanetScale rotation](planetscale-bootstrap.md#rotation). For the runtime
-role, the hook is to re-apply Terraform after updating
-`HYPERDRIVE_ORIGIN_PASSWORD`: run `Deploy Prod` on `main` (manual run). The new
-password changes the planned origin, so the plan updates Hyperdrive in place;
-the Worker keeps the same ID. Cloudflare tokens: create the new token, update
-the secret, delete the old token.
+**Rotation.** Role passwords: run `Deploy Prod` manually with
+`rotate_credentials` ([role credentials](#role-credentials-in-the-state)).
+The runtime password change updates Hyperdrive in place; the Worker keeps the
+same Hyperdrive ID. The Cloudflare API token: create the new token
+with the same permissions, update `CLOUDFLARE_API_TOKEN`, delete the old
+token. One rotation covers Terraform, Wrangler and the billing signature.
 
 ## Pipeline
 
@@ -331,13 +437,13 @@ Actionlint (`actionlint.yml`, configured by `.github/actionlint.yaml`) checks th
 
 ### Deploy workflows: a shared workflow and one caller per environment
 
-| Workflow                          | Role                                                                                                                                                                                                                                                                          |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deploy.yml` ("Deploy (shared)")  | Reusable (`on: workflow_call` only). Inputs `environment`, `sha`, `terraform_working_dir` (default `infra/cloudflare`); secrets `r2_access_key_id`, `r2_secret_access_key`, `planetscale_service_token`. One job, `deploy`, bound to `environment: ${{ inputs.environment }}` |
-| `deploy-prod.yml` ("Deploy Prod") | Thin caller for `prod`: triggers, the `deploy-prod` concurrency group, the gate, and one call with `environment: prod`                                                                                                                                                        |
+| Workflow                          | Role                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deploy.yml` ("Deploy (shared)")  | Reusable (`on: workflow_call` only). Inputs `environment`, `sha`, `terraform_working_dir` (default `infra/cloudflare`), `rotate_credentials`, `seed_demo_data`; secrets `r2_access_key_id`, `r2_secret_access_key`, `planetscale_service_token`. One job, `deploy`, bound to `environment: ${{ inputs.environment }}` |
+| `deploy-prod.yml` ("Deploy Prod") | Thin caller for `prod`: triggers, the `deploy-prod` concurrency group, the gate, and one call with `environment: prod`                                                                                                                                                                                                |
 
-The environment's required reviewers pause the shared workflow's
-environment-bound jobs. A caller passes only repository secrets: GitHub does
+Nothing pauses for an approval: `prod` has no required reviewers. A caller
+passes only repository secrets: GitHub does
 not let a caller pass environment secrets, and a job with `environment:` reads
 that environment's secrets and variables itself. actionlint only knows the
 declared `workflow_call` secrets, so `.github/actionlint.yaml` ignores exactly
@@ -347,8 +453,14 @@ those seven environment secret names in `deploy.yml`.
 
 **Primary trigger: a merge to `main`** (`on: push: branches: [main]`).
 Secondary: a manual run (`workflow_dispatch`, on `main` only) redeploys
-`main`'s head, gated exactly like a push (for example after rotating the
-origin password).
+`main`'s head, gated exactly like a push. Its two inputs are the operator
+actions, never taken by a push:
+
+- `rotate_credentials` (`none`, `runtime`, `migration`, `both`): reset those
+  roles and replace their stored credentials
+  ([role credentials](#role-credentials-in-the-state));
+- `seed_demo_data`: after the migrations, insert the demo warehouses that are
+  missing ([seeding](planetscale-bootstrap.md#seeding-demonstration-data)).
 
 1. **Gate** (`deploy-prod.yml`; no environment, no secret, `actions: read`).
    Runs only when `DEPLOY_ENABLED` is `true` and the ref is `main`. It waits
@@ -358,8 +470,8 @@ origin password).
    result within 30 minutes fails the gate, and nothing deploys. On every
    poll and once more after CI passed it checks that `main` is still at this
    commit, and skips with a notice when it has moved on.
-2. **Deploy** (`deploy.yml`'s `deploy` job, `environment: prod`, waits for
-   the required reviewer), checking out exactly the gated commit:
+2. **Deploy** (`deploy.yml`'s `deploy` job, `environment: prod`, starts
+   without an approval), checking out exactly the gated commit:
    1. `main` must still be at that commit (checked again, below), and every
       required variable and secret must be set; otherwise nothing runs.
    2. Build the Worker bundle once, in this job, from the commit CI tested
@@ -367,31 +479,37 @@ origin password).
       check the size budget, and record the SHA-256 of `worker.js` and the
       `.wasm` module in the job summary. Every install (pnpm, pscale with a
       pinned checksum, Terraform) runs before any step holds a secret.
-   3. **Ensure the PlanetScale database:** check `main` again, then run
+   3. **Terraform state:** initialize against R2 and back up the state
+      (every run, before anything can write to it), and read the non-secret
+      database name from the stored migration URL.
+   4. **Ensure the PlanetScale database:** check `main` again, then run
       `infra/planetscale/bootstrap.sh` with creation enabled. It creates the
       database (with the Cloudflare billing signature), the runtime role and
-      the migration role only when missing, and never resets anything. A new
-      role's credential is stored as a `prod` secret and, in this run only,
-      exported masked to `$GITHUB_ENV`; the connection variables are set when
-      absent ([same-run values](planetscale-bootstrap.md#same-run-values-in-the-deploy)).
-      A check then fails the deploy if the host, username, origin password or
-      migration URL is still missing.
-   4. **Terraform:** state backup (every apply), `terraform plan -out`, then
-      `terraform apply` of exactly that saved plan (after checking `main`
-      again), then read `hyperdrive_id`.
-   5. **Migrations:** `prisma migrate deploy` with `MIGRATION_DATABASE_URL`,
-      after checking it points at `PLANETSCALE_HOST` on 5432 with
-      `sslmode=require` or stricter: directly to PlanetScale, never through
-      Hyperdrive.
-   6. **Worker:** generate the deploy configuration (with
+      the migration role only when missing, and resets a role only when
+      `rotate_credentials` names it. A new or reset role's credential is
+      exported masked to `$GITHUB_ENV`
+      ([same-run values](planetscale-bootstrap.md#same-run-values-in-the-deploy)),
+      and the next step stores it in the state at once with a targeted apply
+      and clears it ([role credentials](#role-credentials-in-the-state)). The
+      branch host and runtime username are read from PlanetScale on every
+      run; a check then fails the deploy if either is missing.
+   5. **Terraform:** `terraform plan -out` (no credential input; it fails if
+      the state holds no credential), then `terraform apply` of exactly that
+      saved plan (after checking `main` again), then read `hyperdrive_id`.
+   6. **Migrations:** `prisma migrate deploy` with the migration URL from
+      `terraform output`, masked, after checking it points at the branch host
+      on 5432 with `sslmode=require` or stricter: directly to PlanetScale,
+      never through Hyperdrive. With `seed_demo_data` (manual runs only), the
+      seed follows with the same URL.
+   7. **Worker:** generate the deploy configuration (with
       `DEPLOYMENT_ENVIRONMENT` set to the environment name), check `main`
       again, re-verify the checksums, and `wrangler deploy` the built files
       (`no_bundle`), with `OTEL_EXPORTER_OTLP_HEADERS` uploaded as a Worker
       secret (`--secrets-file`, a private file removed at once). The dry run
       of this configuration uploads byte-identical modules (checked in CI).
-   7. **Health check:** `GET /health` must return `{"status":"ok"}` within 12
+   8. **Health check:** `GET /health` must return `{"status":"ok"}` within 12
       tries, 10 s apart.
-   8. Delete the plan and generated files, always.
+   9. Delete the plan and generated files, always.
 
 Any failing step fails the run, and later steps do not run: a failed
 migration never deploys the Worker. Nothing is destroyed automatically, on
@@ -407,10 +525,11 @@ merge or on failure.
 - **Never an older commit over a newer one.** The gate skips a commit that
   is no longer the head of `main`. `CI` cancels an older run on `main` when a
   newer push arrives; the gate then sees `main` moved on and skips instead of
-  failing. The deploy job checks again as its first step, before
-  `terraform apply` and before `wrangler deploy`, because "Re-run failed
-  jobs" reruns only the deploy job with the gate's old commit, and a pending
-  approval can wait while `main` moves on. When `main` has moved, the step
+  failing. The deploy job checks again as its first step, before the
+  database bootstrap, before `terraform apply` and before `wrangler deploy`,
+  because "Re-run failed jobs" reruns only the deploy job with the gate's old
+  commit, and a run can wait in the concurrency groups (`deploy-prod`,
+  `planetscale-prod`) while `main` moves on. When `main` has moved, the step
   fails with "Stale deploy stopped"; the newer commit's own run deploys it. A
   stop before `terraform apply` changes nothing; a stop before
   `wrangler deploy` can leave Hyperdrive and migrations from the older commit
@@ -421,40 +540,35 @@ merge or on failure.
 - **Serialization.** Caller concurrency group `deploy-prod`,
   `cancel-in-progress: false`, which also holds a gate waiting for CI. A newer push replaces a pending run, which shows as
   cancelled; the newer commit deploys instead. The shared `deploy` job also
-  joins `seed-demo-data-<environment>` (`seed-demo-data-prod`), the seed
-  workflow's group, so a seed never runs during a deploy. GitHub keeps at
-  most one running and one pending run per group, and that holds across
-  workflows: a deploy job and a seed run both queue in
-  `seed-demo-data-prod`. A newer pending entry replaces the older one, which
-  shows as cancelled. So a seed waiting behind a running deploy is cancelled
-  if another deploy queues after it, and a pending deploy is cancelled if a
-  seed is started behind it. The seed workflow refuses to start while a
-  `Deploy Prod` run is active
-  ([seeding](planetscale-bootstrap.md#seeding-demonstration-data)); rerun
-  whichever was cancelled once the group is idle.
+  joins `planetscale-<environment>` (`planetscale-prod`), the group of
+  the manual `planetscale-bootstrap.yml`, so a manual bootstrap never runs
+  during a deploy. GitHub keeps at most one running and one pending run per
+  group, across workflows: a newer pending entry replaces the older one,
+  which shows as cancelled. The manual bootstrap refuses to start while a
+  `Deploy Prod` run is active; rerun whichever was cancelled once the group
+  is idle. Seeding is now a `Deploy Prod` input, so it is serialized with
+  deploys by `deploy-prod` itself.
 
 ### Adding another environment
 
 1. Create the GitHub environment (for example `staging`) with its own
-   required reviewers, deployment branch rule, variables (`TF_STATE_*` with
+   deployment branch rule, variables (`TF_STATE_*` with
    its own key, `scos/staging/terraform.tfstate`, and workspace prefix;
    `CLOUDFLARE_ACCOUNT_ID`, `PLANETSCALE_DATABASE`, ...) and secrets
-   (Cloudflare tokens, `ENVIRONMENT_SECRETS_TOKEN`). Its own PlanetScale
-   database, roles, role secrets and connection variables come from the
-   deploy's bootstrap step; give it its own `PLANETSCALE_DATABASE`.
+   (`CLOUDFLARE_API_TOKEN`). Its own PlanetScale database and roles come
+   from the deploy's bootstrap step, and its role credentials live in its
+   own state key; give it its own `PLANETSCALE_DATABASE`.
 2. Add a thin caller, `deploy-staging.yml`, modelled on `deploy-prod.yml`:
    its own trigger and gate, its own concurrency group (`deploy-staging`),
    and `uses: ./.github/workflows/deploy.yml` with `environment: staging`,
    passing the R2 key pair and the PlanetScale service token. Note that the shared job's main-head checks
    deploy only `main`'s head; an environment fed from another branch needs
    that check parameterized first.
-3. Add the caller to the seed workflow's active-deploy check, and give the
-   seed a matching `seed-demo-data-staging` group if that environment is
-   seeded.
+3. Add the caller to `planetscale-bootstrap.yml`'s active-deploy check if
+   that workflow is extended to the new environment.
 
 - **Stale plans.** Terraform refuses a saved plan when the state changed after
-  it was made, and the step fails. Rerun the failed job: it replans, and the
-  environment's approval is asked again.
+  it was made, and the step fails. Rerun the failed job: it replans.
 - **What the health check proves.** A Worker with invalid configuration
   answers `500` to every request, `/health` included
   (`src/entrypoints/worker.workers.test.ts`, "invalid: nothing is served").
@@ -512,7 +626,7 @@ precedence. `DEPLOY_ENABLED`, `PLANETSCALE_ORG` and
 These are separate.
 
 - **Worker rollback** (code or configuration): `wrangler rollback
-<version-id> --name scos-api -m "<reason>"` with the Workers token, or the
+<version-id> --name scos-api -m "<reason>"` with `CLOUDFLARE_API_TOKEN`, or the
   dashboard's Deployments tab. List versions with
   `wrangler deployments list --name scos-api`. It does not touch the database
   or Hyperdrive, and the next deploy from `main` replaces it, so revert the
@@ -522,16 +636,20 @@ These are separate.
   a rolled-back Worker must still work with the newer schema, or the database
   must be restored with it. A restore loses Orders taken since the backup.
 - **Hyperdrive or state:** re-apply from `main`, or restore the state
-  ([above](#backups-and-recovery)).
+  ([above](#backups-and-recovery)). Restoring the state also restores the
+  role credentials; without a usable backup, rotate both roles
+  ([role credentials](#role-credentials-in-the-state)).
 
 ## Teardown
 
 Explicit, ordered and never automated. Each step loses data:
 
-1. `wrangler delete --name scos-api` (Workers token): the API stops serving.
+1. `wrangler delete --name scos-api` (with `CLOUDFLARE_API_TOKEN`): the API stops serving.
    Its versions and Worker secrets are gone.
 2. `terraform -chdir=infra/cloudflare destroy` (after `backend-init.sh`, with
-   the same `TF_VAR_*` inputs): the Hyperdrive configuration is gone. The
+   the same non-secret `TF_VAR_*` inputs; the credential variables can stay
+   empty): the Hyperdrive configuration and the stored role credentials are
+   gone. The
    state object and its backups stay in R2; delete them by hand if the stack
    is gone for good.
 3. `pscale database delete <db> --org <org>`: **this is what stops
@@ -545,8 +663,12 @@ step 3 would provision a new, empty database and start billing again.
 ## Verification (offline, 2026-09-19)
 
 - `terraform fmt -check -recursive`, `init -backend=false -lockfile=readonly`,
-  `validate` and `terraform test` (4 passed) with Terraform 1.16.3; a mutation
-  to `disabled = false` fails the test.
+  `validate` and `terraform test` (10 passed) with Terraform 1.16.3; a
+  mutation to `disabled = false` fails the test. The credential runs show a
+  first run without credentials fails the plan before any apply, the first
+  value is stored and kept on later runs, a new value without `-replace` is
+  ignored, `-replace` with a value rotates it, and `-replace` without one
+  fails the plan.
 - A concurrent Terraform run against MinIO was rejected by the lock file
   (Terraform 1.11.2 and 1.16.3); not repeated in CI and not proven on R2
   ([Locking](#locking)).

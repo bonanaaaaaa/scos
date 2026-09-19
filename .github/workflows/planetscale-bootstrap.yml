@@ -1,13 +1,17 @@
 name: PlanetScale bootstrap
 
 # Manual tool for the PlanetScale Postgres database (billed through the
-# Cloudflare account) and its runtime and migration roles. The deploy
-# (deploy.yml) now runs the same script first in every deployment and creates
-# whatever is missing (ADR 0005 amendment), so this workflow is for repair,
-# a dry run, or a first run by hand before deploys are enabled. It never
-# deletes anything and never resets a password; rotation is a documented
-# manual step. The job is bound to the prod environment, so its required
-# reviewers approve every run. See docs/planetscale-bootstrap.md.
+# Cloudflare account). The deploy (deploy.yml) runs the same script first in
+# every deployment and creates whatever is missing, roles included (ADR 0005
+# amendment). Roles are created and rotated only there, because their
+# one-time passwords go straight into the Terraform state
+# (docs/deployment-pipeline.md#role-credentials-in-the-state). This workflow
+# does two things: a dry run (reports the database and both roles) and a
+# database-only repair (creates the database if missing, no roles). It never
+# deletes anything and never resets a password. The job is bound to the prod environment for its secrets and
+# its deployment-branch rule; prod has no required reviewers (the user's
+# decision), so dispatching this workflow on main is the authorization to
+# run it. See docs/planetscale-bootstrap.md.
 
 on:
   workflow_dispatch:
@@ -16,12 +20,8 @@ on:
         description: Create the database if it is missing. This starts billing through the Cloudflare account.
         type: boolean
         default: false
-      manage_roles:
-        description: Create the runtime and migration roles if they are missing (needs ENVIRONMENT_SECRETS_TOKEN).
-        type: boolean
-        default: true
       dry_run:
-        description: Only report what would be created.
+        description: Only report what would be created (the database and both roles).
         type: boolean
         default: false
 
@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   preflight:
-    name: Check ref, prod protection and running deploys
+    name: Check ref and running deploys
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
@@ -46,25 +46,10 @@ jobs:
             echo "::error::The bootstrap runs only from main, not ${REF}."
             exit 1
           fi
-      - name: Require reviewers on the prod environment
-        # Without required reviewers, triggering this workflow would be the
-        # only gate in front of a billed resource. Fails closed if the
-        # environment cannot be read.
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          reviewers="$(gh api "repos/${REPOSITORY}/environments/prod" \
-            --jq '[.protection_rules[]? | select(.type == "required_reviewers") | (.reviewers | length)] | add // 0')"
-          if [ "${reviewers}" -lt 1 ]; then
-            echo "::error::The prod environment has no required reviewers. Add at least one (Settings > Environments > prod) before running the bootstrap."
-            exit 1
-          fi
-          echo "prod environment requires review (${reviewers} reviewer entries)."
       - name: Refuse while a deploy is active
         # The deploy job runs this same bootstrap, and it and this job share
-        # the seed-demo-data-prod group. GitHub keeps one pending job per
-        # group, so entering it could cancel a pending, approved deploy. This
+        # the planetscale-prod group. GitHub keeps one pending job per
+        # group, so entering it could cancel a deploy job waiting there. This
         # job holds no group, so it checks before the next job claims it.
         # Runs of the shared deploy.yml are recorded under its caller.
         env:
@@ -94,7 +79,7 @@ jobs:
     # Shared with the deploy job and the seed: never two bootstraps, or a
     # bootstrap and a migration, at once.
     concurrency:
-      group: seed-demo-data-prod
+      group: planetscale-prod
       cancel-in-progress: false
     env:
       PSCALE_VERSION: 0.337.0
@@ -154,16 +139,12 @@ jobs:
           PLANETSCALE_CLUSTER_SIZE: ${{ vars.PLANETSCALE_CLUSTER_SIZE || 'PS-5' }}
           MIGRATION_ROLE_NAME: ${{ vars.MIGRATION_ROLE_NAME || 'scos_migrator' }}
           CREATE_DATABASE: ${{ inputs.create_database }}
-          MANAGE_ROLES: ${{ inputs.manage_roles }}
+          # Roles are only reported (dry run); creating or rotating them is the
+          # deploy's job.
+          MANAGE_ROLES: ${{ inputs.dry_run }}
           DRY_RUN: ${{ inputs.dry_run }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           # Only the database-creating run sees the Cloudflare token; it is
           # used for `wrangler hyperdrive planetscale signature` only.
           CLOUDFLARE_API_TOKEN: ${{ inputs.create_database && !inputs.dry_run && secrets.CLOUDFLARE_API_TOKEN || '' }}
-          # Optional fine-grained token (Environments: read and write on this
-          # repository) that stores new role passwords as prod secrets. Without
-          # it, missing roles are not created; run the script locally instead.
-          GH_TOKEN: ${{ secrets.ENVIRONMENT_SECRETS_TOKEN }}
-          SECRETS_REPO: ${{ secrets.ENVIRONMENT_SECRETS_TOKEN != '' && github.repository || '' }}
-          SECRETS_ENVIRONMENT: prod
         run: infra/planetscale/bootstrap.sh

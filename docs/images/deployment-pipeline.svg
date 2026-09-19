@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="680" height="850" viewBox="0 0 680 850" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
   <title>SCOS prod deployment on merge to main</title>
-  <desc>On a merge to main, the Deploy Prod caller's gate, which has no environment and no secrets, waits for CI to pass on the same commit and checks that the repository variable DEPLOY_ENABLED is true and main has not moved on; otherwise nothing runs. With the prod environment approval, the shared deploy workflow ensures the PlanetScale database exists, creating the database and its roles only if they are missing, then backs up the Terraform state, applies the saved Terraform plan for Hyperdrive, runs prisma migrate deploy directly against PlanetScale with the migration role, deploys the Worker bundle built once with its SHA-256 recorded, and checks GET /health. It checks again that main has not moved on before the database step, the apply and wrangler deploy. Any failing step stops the run and nothing is destroyed.</desc>
+  <desc>On a merge to main, the Deploy Prod caller's gate, which has no environment and no secrets, waits for CI to pass on the same commit and checks that the repository variable DEPLOY_ENABLED is true and main has not moved on; otherwise nothing runs. With no human approval, the shared deploy workflow runs in the prod environment and ensures the PlanetScale database exists, creating the database and its roles only if they are missing and keeping new role credentials in the Terraform state, then backs up the Terraform state, applies the saved Terraform plan for Hyperdrive, runs prisma migrate deploy directly against PlanetScale with the migration role, deploys the Worker bundle built once with its SHA-256 recorded, and checks GET /health. It checks again that main has not moved on before the database step, the apply and wrangler deploy. Any failing step stops the run and nothing is destroyed.</desc>
   <style>
     .bg { fill: #ffffff; }
     .gray rect { fill: #F1EFE8; stroke: #5F5E5A; }
@@ -46,14 +46,14 @@
   <text class="lbl" x="439" y="143" text-anchor="middle">no</text>
   <g class="gray"><rect x="460" y="124" width="180" height="52" rx="4" stroke-width="1"/>
     <text class="th" x="550" y="146" text-anchor="middle">Nothing runs</text>
-    <text class="ts" x="550" y="164" text-anchor="middle">no prod job or approval</text></g>
+    <text class="ts" x="550" y="164" text-anchor="middle">no prod job starts</text></g>
   <line class="arr" x1="230" y1="180" x2="230" y2="210" marker-end="url(#a)"/>
   <text class="lbl" x="240" y="199">yes</text>
 
-  <!-- 3. Approval -->
+  <!-- 3. Shared workflow -->
   <g class="gray"><rect x="40" y="212" width="380" height="52" rx="4" stroke-width="1"/>
-    <text class="th" x="230" y="234" text-anchor="middle">prod environment approval</text>
-    <text class="ts" x="230" y="252" text-anchor="middle">shared deploy.yml with environment: prod; required reviewer</text></g>
+    <text class="th" x="230" y="234" text-anchor="middle">Shared deploy.yml, environment: prod</text>
+    <text class="ts" x="230" y="252" text-anchor="middle">no approval step; main-only branch policy</text></g>
   <line class="arr" x1="230" y1="264" x2="230" y2="290" marker-end="url(#a)"/>
 
   <!-- 4. Ensure database -->
@@ -61,8 +61,8 @@
     <text class="th" x="230" y="314" text-anchor="middle">Ensure PlanetScale database</text>
     <text class="ts" x="230" y="332" text-anchor="middle">create database and roles only if missing</text></g>
   <line class="check" x1="420" y1="318" x2="452" y2="318"/>
-  <text class="note" x="458" y="314">first run: stores role secrets,</text>
-  <text class="note" x="458" y="330">sets connection variables</text>
+  <text class="note" x="458" y="314">first run: role credentials</text>
+  <text class="note" x="458" y="330">go into the Terraform state</text>
   <line class="arr" x1="230" y1="344" x2="230" y2="370" marker-end="url(#a)"/>
 
   <!-- 5. State backup -->

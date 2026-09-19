@@ -8,4 +8,4 @@ paths:
   # ignored, only in this file.
   .github/workflows/deploy.yml:
     ignore:
-      - 'property "(cloudflare_api_token|cloudflare_terraform_api_token|cloudflare_workers_api_token|environment_secrets_token|hyperdrive_origin_password|migration_database_url|otel_exporter_otlp_headers)" is not defined in object type'
+      - 'property "(cloudflare_api_token|otel_exporter_otlp_headers)" is not defined in object type'
