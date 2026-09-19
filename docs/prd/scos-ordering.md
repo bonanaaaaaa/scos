@@ -175,7 +175,7 @@ The implementation must establish its workspace, runtime, local database, and ve
 
 ### Open choices, not new product requirements
 
-- The intermediate decimal.js significant-digit precision and exact Earth-radius constant must be fixed and verified during implementation; the distance representation and final rounding policy are settled.
+- The intermediate decimal.js significant-digit precision and exact Earth-radius constant are now fixed and verified in the implementation; see [Distance calculation and precision](../design-decisions.md#distance-calculation-and-precision). The distance representation and final rounding policy are settled.
 - PostgreSQL hosting is decided for the first hosted target: PlanetScale Postgres, reached from a Cloudflare Worker through Hyperdrive. Its region and sizing, deployment access controls, and the monthly demo budget are unresolved. They block hosted provisioning, not the local core.
 - Monetary storage precision is settled in the linked design decisions. Operational input limits and handling amounts beyond the storage range remain implementation design details; no unagreed maximum order quantity or latency target is introduced here.
 

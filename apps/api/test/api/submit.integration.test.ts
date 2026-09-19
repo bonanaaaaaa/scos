@@ -7,6 +7,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 
 import { type TestDatabase, createTestDatabase, readState, stockById } from "../support/database";
 import {
+  ABOVE_LIMIT,
+  AT_LIMIT,
   AT_PARIS,
   FAR_AWAY,
   MANHATTAN,
@@ -268,6 +270,81 @@ describe("422 business rejections", () => {
     // Once accepted, the earlier rejected inputs now conflict.
     expectErrorEnvelope(await submit(shortRequest), 409, "SUBMISSION_ID_CONFLICT", {
       issues: "absent",
+    });
+  });
+});
+
+describe("shipping limit boundary (1 unit, limit 22.50)", () => {
+  // Destinations from the independent oracle in ./support.ts (one warehouse,
+  // rounded shipping exactly 22.50 or 22.51).
+  test("shipping equal to the limit (22.50) is accepted: 201 and stock deducted", async () => {
+    const destination = { latitude: AT_LIMIT.latitude, longitude: AT_LIMIT.longitude };
+    const body = expectJson(
+      await submit({ submissionId: "qa-at-limit", quantity: 1, ...destination }),
+      201,
+    );
+    expect(body).toStrictEqual(expectedOrder("qa-at-limit", 1, destination));
+    expect(body).toMatchObject({
+      shippingCost: "22.50",
+      orderTotal: "172.50",
+      allocations: [{ warehouseId: AT_LIMIT.warehouse.id, quantity: 1 }],
+    });
+    expect(await stockById(db.pool)).toStrictEqual({
+      ...seededStock(),
+      [AT_LIMIT.warehouse.id]: AT_LIMIT.warehouse.stock - 1,
+    });
+  });
+
+  test("shipping one cent over the limit (22.51) is 422 SHIPPING_EXCEEDS_LIMIT, nothing stored", async () => {
+    const destination = { latitude: ABOVE_LIMIT.latitude, longitude: ABOVE_LIMIT.longitude };
+    const before = await readState(db.pool);
+    const body = expectJson(
+      await submit({ submissionId: "qa-above-limit", quantity: 1, ...destination }),
+      422,
+    ) as Record<string, Record<string, unknown>>;
+    expect(Object.keys(body).sort()).toStrictEqual(["error", "estimate"]);
+    expect(body.error?.code).toBe("SHIPPING_EXCEEDS_LIMIT");
+    expect(body.estimate).toStrictEqual(expectedEstimate(1, destination));
+    expect(body.estimate).toMatchObject({
+      valid: false,
+      reason: "SHIPPING_EXCEEDS_LIMIT",
+      shippingCost: "22.51",
+      orderTotal: "172.51",
+    });
+    expect(await readState(db.pool)).toStrictEqual(before);
+  });
+});
+
+describe("restart recovery", () => {
+  test("a repeat on a new listener over the same database returns the original Order byte for byte", async () => {
+    const request = { submissionId: "qa-restart", quantity: 40, ...MANHATTAN };
+
+    const first = await startApi(db.url);
+    let original;
+    try {
+      original = await postJson(first, "/api/v1/orders", request);
+    } finally {
+      await first.stop();
+    }
+    expect(expectJson(original, 201)).toStrictEqual(expectedOrder("qa-restart", 40, MANHATTAN));
+    const before = await readState(db.pool);
+    expect(before.orders).toHaveLength(1);
+
+    // The first listener is closed: its pool and Prisma client are gone.
+    await expect(fetch(`${first.baseUrl}/health`)).rejects.toThrow();
+
+    const second = await startApi(db.url);
+    try {
+      const repeat = await postJson(second, "/api/v1/orders", request);
+      expectJson(repeat, 201);
+      expect(repeat.text).toBe(original.text);
+    } finally {
+      await second.stop();
+    }
+    expect(await readState(db.pool)).toStrictEqual(before);
+    expect(await stockById(db.pool)).toStrictEqual({
+      ...seededStock(),
+      [warehouse("New York").id]: 578 - 40,
     });
   });
 });

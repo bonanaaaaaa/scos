@@ -107,6 +107,63 @@ describe("acceptance", () => {
     }
     expect(await stockById(db.pool)).toStrictEqual(expected);
   });
+
+  test("the stored monetary facts of a split Order with shipping equal the 201 response", async () => {
+    await setStock(db.pool, { [PARIS]: 5 });
+
+    // 30 units at Paris: 5 from Paris and 25 shipped from elsewhere, so shipping is nonzero;
+    // 30 units also earn the 5% Volume Discount.
+    const response = await submit({ submissionId: "split-money-1", quantity: 30, ...AT_PARIS });
+
+    expect(response.status, response.text).toBe(201);
+    const order = orderResponseSchema.strict().parse(response.json());
+    expect(order.allocations.length).toBeGreaterThan(1);
+    expect(order.shippingCost).not.toBe("0.00");
+
+    // Stored facts, and the totals derived from them with exact NUMERIC arithmetic in PostgreSQL.
+    const stored = await db.pool.query<{
+      quantity: number;
+      unit_price: string;
+      discount_rate: string;
+      discount_amount: string;
+      shipping_cost: string;
+      merchandise_subtotal: string;
+      discounted_merchandise_total: string;
+      order_total: string;
+    }>(
+      `SELECT quantity,
+              unit_price::text AS unit_price,
+              discount_rate::text AS discount_rate,
+              discount_amount::text AS discount_amount,
+              shipping_cost::text AS shipping_cost,
+              (unit_price * quantity)::text AS merchandise_subtotal,
+              (unit_price * quantity - discount_amount)::text AS discounted_merchandise_total,
+              (unit_price * quantity - discount_amount + shipping_cost)::text AS order_total
+       FROM orders WHERE order_number = $1`,
+      [order.orderNumber],
+    );
+    expect(stored.rows).toHaveLength(1);
+    expect(stored.rows[0]).toStrictEqual({
+      quantity: order.quantity,
+      unit_price: order.unitPrice,
+      discount_rate: order.discountRate,
+      discount_amount: order.discountAmount,
+      shipping_cost: order.shippingCost,
+      merchandise_subtotal: order.merchandiseSubtotal,
+      discounted_merchandise_total: order.discountedMerchandiseTotal,
+      order_total: order.orderTotal,
+    });
+    expect(order).toMatchObject({
+      quantity: 30,
+      unitPrice: "150.00",
+      merchandiseSubtotal: "4500.00",
+      discountRate: "0.05",
+      discountAmount: "225.00",
+      discountedMerchandiseTotal: "4275.00",
+      shippingCost: "122.53",
+      orderTotal: "4397.53",
+    });
+  });
 });
 
 describe("business rejections write nothing and leave the submissionId reusable", () => {

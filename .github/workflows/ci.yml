@@ -132,5 +132,44 @@ jobs:
           cache: pnpm
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Run PostgreSQL connectivity and integration smoke
+      - name: Reject skipped or focused integration tests
+        # Real-database tests must fail, never skip. Vitest modifiers that
+        # skip, defer or focus tests (describe/it/test .skip, .skipIf, .runIf,
+        # .todo, .only, and ctx.skip()) are not allowed in the integration
+        # suites. The match is textual, so a comment or string naming one of
+        # them also fails; reword it. grep exits 1 only when nothing matched;
+        # any other status (a match, or a missing directory) fails the step.
+        run: |
+          set +e
+          grep -rnE --include='*.ts' '\.(skip|skipIf|runIf|todo|only)\b' \
+            apps/api/test packages/persistence/test
+          status=$?
+          set -e
+          if [ "$status" -ne 1 ]; then
+            echo "::error::Integration tests must not use .skip, .skipIf, .runIf, .todo or .only (grep exit $status)."
+            exit 1
+          fi
+      - name: Run persistence integration, API acceptance, OpenAPI conformance and Worker (workerd) tests
         run: pnpm exec turbo run test:integration
+      - name: Check the generated OpenAPI specification is not committed
+        # test:integration depends on build, which writes the specification.
+        # It is a build artifact; the served /openapi.json equality, document
+        # validity and response conformance are checked by
+        # apps/api/test/api/openapi.integration.test.ts above. dist/ is
+        # ignored, so the tracking check guards against a forced `git add -f`.
+        run: |
+          test -s apps/api/dist/openapi.json || {
+            echo "::error::apps/api/dist/openapi.json was not generated."
+            exit 1
+          }
+          if git ls-files --error-unmatch apps/api/dist/openapi.json >/dev/null 2>&1; then
+            echo "::error::apps/api/dist/openapi.json is committed; the specification must only be generated."
+            exit 1
+          fi
+      - name: Upload OpenAPI specification
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: openapi-specification
+          path: apps/api/dist/openapi.json
+          retention-days: 7
+          if-no-files-found: error
