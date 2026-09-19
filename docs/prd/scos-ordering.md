@@ -119,7 +119,7 @@ These rules apply to estimation and submission:
 
 #### Reproduce and verify
 
-- **Given** missing or invalid required environment configuration, **when** the server or Lambda runtime initializes, **then** Zod validation prevents it from accepting requests and reports safe variable names/reasons without revealing values. Required variables and safe defaults are documented; offline specification export remains independent of deployment secrets.
+- **Given** missing or invalid required environment configuration, **when** the server, Cloudflare Worker, or Lambda runtime initializes, **then** Zod validation prevents it from accepting requests and reports safe variable names/reasons without revealing values. Required variables and safe defaults are documented; offline specification export remains independent of deployment secrets.
 - **Given** a fresh checkout and documented prerequisites, **when** an evaluator follows setup instructions, **then** they can start the local application and database, initialize starting data, access documentation, and run the checks.
 - **Given** a newly initialized development dataset, **when** inventory is inspected, **then** it contains the following warehouses with the supplied coordinates and unit counts:
   - Los Angeles: 33.9425, -118.408056; 355 units.
@@ -144,7 +144,7 @@ These rules apply to estimation and submission:
 
 ### Optional: hosted demonstration (P2)
 
-- **Given** an agreed deployment budget, hosting configuration, and authorization to provision, **when** the demonstration is deployed, **then** the core flows and served documentation are verified against that environment.
+- **Given** an agreed deployment budget, hosting configuration, and authorization to provision, **when** the demonstration is deployed, **then** the core flows and served documentation are verified against that environment. The first hosted target is Cloudflare Workers with PlanetScale Postgres through Hyperdrive; the AWS Lambda deployment follows later ([ADR 0005](../adr/0005-cloudflare-first-deployment.md)).
 - **Given** the demonstration is no longer needed, **when** its teardown instructions are followed, **then** the created resources can be identified and removed with data-loss implications made clear.
 
 ## 5. Assumptions and open questions
@@ -176,7 +176,7 @@ The implementation must establish its workspace, runtime, local database, and ve
 ### Open choices, not new product requirements
 
 - The intermediate decimal.js significant-digit precision and exact Earth-radius constant must be fixed and verified during implementation; the distance representation and final rounding policy are settled.
-- PostgreSQL hosting, connection configuration, deployment access controls, and the monthly demo budget are unresolved. They block hosted provisioning, not the local core.
+- PostgreSQL hosting is decided for the first hosted target: PlanetScale Postgres, reached from a Cloudflare Worker through Hyperdrive. Its region and sizing, deployment access controls, and the monthly demo budget are unresolved. They block hosted provisioning, not the local core.
 - Monetary storage precision is settled in the linked design decisions. Operational input limits and handling amounts beyond the storage range remain implementation design details; no unagreed maximum order quantity or latency target is introduced here.
 
 ## 6. Success metrics
