@@ -37,7 +37,7 @@ corepack pnpm test
 
 The compiler command must report `Version 7.0.2`. The separate quality commands build every package, type-check, lint with Oxlint, check formatting with Oxfmt, and run the current Vitest suites through Turbo. Each unit suite enforces at least 80% statement, branch, function, and line coverage. Coverage summaries are written to `coverage/` at the repository root and in each tested package.
 
-Installing dependencies also enables the tracked `pre-commit` hook in `.githooks` (the `prepare` script sets `core.hooksPath`). Before each commit it runs the Turbo typecheck, Oxlint, and Oxfmt checks exactly as CI does; fix formatting failures with `corepack pnpm format`. Use `git commit --no-verify` to skip it for a single commit.
+Installing dependencies also enables the [husky](https://typicode.github.io/husky/) `pre-commit` hook in `.husky` (the `prepare` script runs `husky`). Before each commit, [lint-staged](https://github.com/lint-staged/lint-staged) formats the staged files with Oxfmt, re-stages them, and lints the staged JavaScript and TypeScript with Oxlint (configured under `lint-staged` in `package.json`); the hook then runs the Turbo typecheck for the whole workspace as CI does. Use `git commit --no-verify` to skip it for a single commit, or `HUSKY=0` to disable hooks.
 
 The workspace contains:
 

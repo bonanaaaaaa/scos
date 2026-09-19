@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "prepare": "git config core.hooksPath .githooks || true",
+    "prepare": "husky",
     "api:dev": "turbo run dev --filter=@scos/api",
     "api:start": "turbo run start --filter=@scos/api",
     "build": "turbo run build",
@@ -24,12 +24,21 @@
   "devDependencies": {
     "@types/node": "24.13.5",
     "@vitest/coverage-v8": "5.0.1",
+    "husky": "9.1.7",
+    "lint-staged": "17.5.1",
     "oxfmt": "0.68.0",
     "oxlint": "1.83.0",
     "tsx": "4.23.13",
     "turbo": "2.10.13",
     "typescript": "7.0.2",
     "vitest": "5.0.1"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs,ts,mts,cts}": [
+      "oxfmt --no-error-on-unmatched-pattern",
+      "oxlint --deny-warnings"
+    ],
+    "!(*.{js,mjs,cjs,ts,mts,cts})": "oxfmt --no-error-on-unmatched-pattern"
   },
   "engines": {
     "node": ">=24.0.0 <25",
