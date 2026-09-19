@@ -5,7 +5,9 @@ The Ordering persistence schema lives in `packages/persistence`:
 - `prisma/schema.prisma`: singular Prisma models mapped to plural snake_case tables, with camelCase fields mapped to snake_case columns (see [Identifiers and keys](#identifiers-and-keys))
 - `prisma/migrations/`: versioned SQL migrations, the source of truth for the database
 - `src/seed.ts`: the six PRD warehouses and the non-destructive seed
-- `src/records.ts`: typed mappings from Prisma rows to plain persistence records
+- `src/records.ts`: typed mappings from Prisma rows to plain persistence records, and the exact decimal formatting helpers
+- `src/submission-store.ts`: the SubmitOrder transaction adapter (`createPrismaSubmissionStore`), which maps Prisma rows straight to the domain `Order`
+- `src/submission-errors.ts`: classification of PostgreSQL and Prisma errors raised during submission
 
 Migrations are applied with `prisma migrate deploy`. The initial migration's table, index, and foreign-key DDL follows Prisma's generated output and was inspected; CHECK constraints and the timestamp defaults and triggers are hand-written SQL because Prisma cannot express them.
 
@@ -71,7 +73,7 @@ erDiagram
 - The Order Request (quantity and destination) lives on the accepted Order, together with the client's `submission_key`. Every column of `orders` depends on the Order itself. Rejected requests are not stored at all: a request whose key has no accepted Order is evaluated fresh, so there is no separate attempt entity to normalize into.
 - `orders` stores only independent commercial facts: `unit_price`, `discount_rate`, `discount_amount`, and `shipping_cost`, next to the request's `quantity`. No column is computable from the others, so no non-key column depends on another non-key column.
 - All four are stored because they are historical facts about the accepted Order, as required by the design decisions: the price, discount, and shipping that were applied are preserved rather than recalculated from current commercial rules. `discount_rate` and `discount_amount` are both kept because the amount is not a function of the rate in the schema: rounding the discount to cents is a domain rule, so the rate records which tier applied and the amount records what was actually deducted.
-- The merchandise subtotal (`unit_price * quantity`), the discounted merchandise total (subtotal minus `discount_amount`), and the order total (discounted total plus `shipping_cost`) are not stored. `toOrderRecord` in `src/records.ts` derives them on read with exact decimal arithmetic (Prisma `Decimal`, never a JavaScript number). The inputs are exact `NUMERIC(12,2)` values and the operations are a multiplication by an integer, a subtraction, and an addition, so the amounts returned always equal what was charged; there is no stored copy that could disagree.
+- The merchandise subtotal (`unit_price * quantity`), the discounted merchandise total (subtotal minus `discount_amount`), and the order total (discounted total plus `shipping_cost`) are not stored. `toOrderRecord` in `src/records.ts` and the domain `restoreOrder` used by the submission adapter derive them on read with exact decimal arithmetic (Prisma `Decimal`, never a JavaScript number). The inputs are exact `NUMERIC(12,2)` values and the operations are a multiplication by an integer, a subtraction, and an addition, so the amounts returned always equal what was charged; there is no stored copy that could disagree.
 - CHECKs keep every derived amount valid and storable as `NUMERIC(12,2)`, so a row whose totals could not be returned cannot be stored:
   - `orders_discount_amount_check`: `discount_amount >= 0 AND discount_amount <= unit_price * quantity`. The discount cannot exceed the subtotal, so the discounted total and the order total are never negative.
   - `orders_merchandise_subtotal_range_check`: `unit_price * quantity <= 9999999999.99`. The discounted total is bounded by the subtotal, so it needs no check of its own.
@@ -84,7 +86,13 @@ erDiagram
 - Generated entity IDs are PostgreSQL `uuid` values with a `uuidv7()` default (PostgreSQL 18 built-in). Referencing foreign keys use `uuid`. Prisma declares them as `@default(dbgenerated("uuidv7()")) @db.Uuid`, so PostgreSQL generates them.
 - Seeded warehouse IDs are fixed UUIDv7 values (`01996000-0000-7000-8000-00000000000N`), ordered in PRD list order. They never change, so row-lock order and equal-distance tie-breaking stay stable. UUIDv7 ordering is not a commit-order guarantee; queries use explicit `ORDER BY`.
 - `orders.submission_key` stores the client's `submissionId` as a unique duplicate-request key: one accepted Order per key. The schema requires it to be non-blank (`btrim(submission_key) <> ''`, matching `order_number` and warehouse `name`) and at most 255 characters (`char_length(submission_key) <= 255`). PostgreSQL's single-argument `btrim` removes spaces only, so a key made only of tabs or newlines passes this check; #11 validates the key format at the API boundary. Any stricter format belongs to the API contract, which must stay within this limit.
-- `orders.order_number` is unique and non-empty; its format is decided when submission is implemented.
+- `orders.order_number` is unique and non-empty. SubmitOrder generates it as `SO-` followed by 12 Crockford base32 characters (60 random bits), for example `SO-7K3QX9MDR2WA`, matching `ORDER_NUMBER_PATTERN` (`/^SO-[0-9A-HJKMNP-TV-Z]{12}$/`) exported by `@scos/core`. Reasons:
+  - The `SO-` prefix makes the value recognizable in logs and support conversations and keeps it distinct from the UUID `id` and the client's `submissionId`.
+  - Crockford base32 omits I, L, O, and U, so a number read aloud or retyped is unambiguous, and accidental words are avoided.
+  - Random rather than sequential: the number reveals no order volume or rate, and it needs no database sequence, migration, or extra round trip; core generates it with Web Crypto and no I/O.
+  - It is not derived from the UUIDv7 `id`, which would expose the creation time and is generated by the database, so it is unknown before the insert.
+  - 60 bits give roughly a one-in-two-million chance of any collision after a million Orders. The unique `orders_order_number_key` index is the backstop: its violation is classified as a transient failure and the submission is retried in a new transaction with a new number, within the retry bound.
+  - Rejected alternatives: a plain sequence (needs a migration, reveals volume, leaves gaps after rollbacks), a date plus daily sequence (needs a counter, reveals volume), and a UUIDv7-derived number (long, reveals creation time).
 - Naming convention:
   - SQL tables are plural snake_case (`warehouses`, `orders`); join and child tables are plural too (`order_allocations`). The plural `orders` also avoids the reserved keyword `order`, so raw SQL, including the planned row-locking queries, needs no quoting.
   - Columns are singular snake_case (`warehouse_id`, `submission_key`).
@@ -115,7 +123,24 @@ Within one transaction, SubmitOrder locks the warehouse rows in ascending `id` o
 
 The `submission_key` is the duplicate-request guard. After the warehouse rows are locked, SubmitOrder looks up the Order for that key: if one exists with the same quantity and destination, it is returned as-is and stock is untouched; if the stored request differs, the attempt is a conflict. Otherwise the transaction proceeds, with `orders_submission_key_key` as the backstop against a concurrent attempt (unique violation `23505`). Because rejections are not stored, a rejected request leaves its key unused and a retry is evaluated fresh.
 
-Issue #10's tests must cover allocations summing to the requested quantity and stock never going negative, which the schema does not enforce.
+As implemented by `createPrismaSubmissionStore` in `src/submission-store.ts`:
+
+- Each attempt is one Prisma interactive transaction at READ COMMITTED. Its first statement sets transaction-local `lock_timeout` (10 s) and `statement_timeout` (15 s); Prisma's `maxWait` is 5 s and `timeout` 15 s. The database-side timeouts are needed because Prisma's timeout does not interrupt a statement already waiting on a lock. All four are options of `createPrismaSubmissionStore`.
+- The warehouse rows are locked with `SELECT ... FROM warehouses ORDER BY id FOR UPDATE`. All rows are locked, not only the ones that will be allocated, so every submission queues in the same order and cannot deadlock with another.
+- An unlocked lookup by `submission_key` before the transaction may short-circuit a repeat or conflict. The lookup under the locks is authoritative. Lookups are reads only, so returning an existing Order never changes its timestamps.
+- On acceptance the adapter checks that the allocations sum to the Order quantity, inserts the Order with its allocations, and deducts each allocation with `UPDATE warehouses SET stock = stock - $q WHERE id = $id AND stock >= $q`, requiring exactly one updated row. Either check failing throws and rolls back. It then rereads the Order and returns it through `restoreOrder`, so the first response equals any later repeat. Allocations are read in `id` order, which is insertion order.
+- Errors reach the adapter as Prisma errors (`P2002`, `P2010`, `P2034`, `P2028`) whose `meta.driverAdapterError.cause` carries the PostgreSQL SQLSTATE and constraint. `src/submission-errors.ts` classifies them:
+
+  | Error                                                                                                                                     | Classified as                                          |
+  | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+  | `23505` on `orders_submission_key_key`                                                                                                    | `SubmissionKeyTakenError`: resolved as repeat/conflict |
+  | `23505` on `orders_order_number_key`                                                                                                      | `TransientSubmissionError`                             |
+  | `40001`, `40P01`, `55P03`, `57014`, `P2034`                                                                                               | `TransientSubmissionError`                             |
+  | `P2028` for an expired transaction or one that could not start (no commit was sent)                                                       | `TransientSubmissionError`                             |
+  | anything else, including a `COMMIT` failure without one of the SQLSTATEs above (such as a deferred-trigger error) or a dropped connection | propagated unchanged                                   |
+
+- The classifier does not distinguish the statement that failed: a `COMMIT` that fails with a transient SQLSTATE is retried like any other statement. This is safe because a `COMMIT` that returns an error did not commit.
+- SubmitOrder makes at most `MAX_SUBMISSION_ATTEMPTS` (3) attempts for transient failures and then reports `unavailable`. Nothing was committed, so the key remains unused. Business rejections are returned at once and never retried. If a failure leaves the outcome unknown to the caller (for example a lost response or a failed `COMMIT`), repeating the same `submissionId` returns the Order if it was committed and otherwise evaluates the request again.
 
 ### Timestamps
 
@@ -149,3 +174,5 @@ The seed uses `INSERT ... ON CONFLICT (id) DO NOTHING`. Rerunning it never reple
 ## Verification
 
 `corepack pnpm test:integration` (with `DATABASE_TEST_URL` set) runs `packages/persistence/test/*.integration.test.ts` against real PostgreSQL. Each test file creates a uniquely named database next to `scos_test` on the disposable test server, applies the migrations with `prisma migrate deploy`, and drops the database afterwards. The tests cover clean migration and drift, timestamp columns and triggers on every table, timestamp behavior through Prisma and raw SQL, UUIDv7 defaults, constraints and restricted deletes, the derived-amount range checks, decimal round-trips, derived totals matching PostgreSQL's arithmetic, and seed reruns.
+
+`test/submit-order.integration.test.ts` drives the real SubmitOrder use case through the Prisma adapter. Concurrent actors use separate pools and Prisma clients; a lock holder on its own connection keeps the warehouse rows locked until every actor is confirmed waiting in `pg_stat_activity`, so the overlap is controlled rather than timing-dependent. It covers acceptance (stored facts, allocations summing to the quantity, exact stock deductions), both business rejections writing nothing and leaving the key reusable, repeats after stock changes and after a restart with unchanged timestamps, conflicts, concurrent identical, competing, and conflicting submissions, the `submission_key` unique-index backstop, order-number collisions, rollback injected by test-only triggers at four stages (before the Order insert, after the allocation insert, before the stock update, and at `COMMIT`), recovery of a lost response, the retry bound, the allocation guards, and repeats returning stored amounts rather than recalculated ones.

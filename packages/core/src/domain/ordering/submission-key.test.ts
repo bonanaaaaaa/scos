@@ -44,6 +44,34 @@ describe("submissionKeySchema", () => {
     },
   );
 
+  test.each(["\u0000", "key\u0000", "a\u0000b"])(
+    "rejects %j containing NUL, which PostgreSQL text cannot store",
+    (key) => {
+      const result = submissionKeySchema.safeParse(key);
+      expect(issuesOf(result)).toStrictEqual([{ path: [], code: "custom" }]);
+      expect(result.error?.issues[0]?.message).toBe(
+        "Submission key must not contain the NUL character (U+0000).",
+      );
+    },
+  );
+
+  test.each(["\ud800", "key\udfff", "\udc00\ud800"])(
+    "rejects %j with a lone surrogate, which would be stored as U+FFFD",
+    (key) => {
+      const result = submissionKeySchema.safeParse(key);
+      expect(issuesOf(result)).toStrictEqual([{ path: [], code: "custom" }]);
+      expect(result.error?.issues[0]?.message).toBe(
+        "Submission key must be well-formed Unicode (no lone surrogates).",
+      );
+    },
+  );
+
+  test("accepts non-ASCII keys, including surrogate pairs", () => {
+    for (const key of ["clé-€", "key-\u{1f600}", "\ufffd"]) {
+      expect(submissionKeySchema.safeParse(key).success).toBe(true);
+    }
+  });
+
   test("rejects a key longer than 255 characters", () => {
     expect(
       issuesOf(submissionKeySchema.safeParse("x".repeat(SUBMISSION_KEY_MAX_LENGTH + 1))),

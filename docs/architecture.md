@@ -17,7 +17,7 @@ flowchart LR
     subgraph core["packages/core"]
         direction TB
         app["application/<br/>VerifyOrder, SubmitOrder<br/>(orchestration)"]
-        ports["application/ports<br/>InventoryReader, OrderTransaction<br/>(interfaces)"]
+        ports["application/ports<br/>SubmissionStore, SubmissionTransaction,<br/>inventory read port (with VerifyOrder)<br/>(interfaces)"]
         domain["domain/<br/>Money, Quantity, Destination, pricing,<br/>distance, allocation, estimate, Order<br/>(pure rules)"]
         app --> domain
         app --> ports
@@ -127,17 +127,24 @@ classDiagram
         +submissionKey SubmissionKey
         +quantity Quantity
         +destination Destination
+        +unitPrice Money
         +merchandiseSubtotal Money
         +discountRate DiscountRate
         +discountAmount Money
         +discountedMerchandiseTotal Money
         +shippingCost Money
         +orderTotal Money
-        +allocations ShippingPlan
+        +allocations OrderAllocation[]
+    }
+    class OrderAllocation {
+        <<ValueObject>>
+        +warehouseId string
+        +quantity number
     }
     class CreateOrder {
         <<Factory>>
-        +createOrder(id, orderNumber, submissionKey, estimate) Order
+        +createOrder(orderNumber, submissionKey, estimate) NewOrder
+        +restoreOrder(stored) Order
     }
 
     class SubmissionKey {
@@ -217,7 +224,7 @@ classDiagram
     Order *-- Destination
     Order *-- Money
     Order *-- DiscountRate
-    Order "1" *-- "1..*" WarehouseAllocation : allocations
+    Order "1" *-- "1..*" OrderAllocation : allocations
     ShippingPlan "1" *-- "1..*" WarehouseAllocation
     OrderRequest *-- Quantity
     OrderRequest *-- Destination
@@ -244,15 +251,22 @@ classDiagram
     CreateOrder ..> Pricing : re-verifies with
     CreateOrder ..> Shipping : re-verifies with
     CreateOrder ..> Order : returns
+    CreateOrder ..> OrderAllocation : drops distance into
 ```
 
 - **Aggregate root: `Order`.** An accepted order with its identity (`id`,
-  `orderNumber`), the client's `submissionKey`, amounts and allocations. The only way to build one is the
-  `createOrder` factory, which accepts only a valid `OrderEstimate` and
-  re-verifies every invariant (quantity range, allocations summing to the
-  quantity, subtotal, discount tier and amount, shipping cost and the 15% limit,
-  order total) before returning a frozen value; a violation throws
-  `DomainError`.
+  `orderNumber`), the client's `submissionKey`, amounts and allocations. A new
+  Order is built only by the `createOrder` factory, which accepts only a valid
+  `OrderEstimate` and re-verifies every invariant (quantity range, allocations
+  summing to the quantity, subtotal, discount tier and amount, shipping cost and
+  the 15% limit, order total) before returning a frozen `NewOrder`; a violation
+  throws `DomainError`. The database assigns the `id` on insert. A stored Order
+  is rebuilt with `restoreOrder`, which checks structure and derived totals but
+  not current commercial rules, because accepted amounts are historical facts.
+  An Order's allocations (`OrderAllocation`) keep only the warehouse and
+  quantity, the facts that are stored, so a rebuilt Order equals the one
+  returned at acceptance. The order number is `SO-` plus 12 random Crockford
+  base32 characters (see [database schema](database-schema.md#identifiers-and-keys)).
 - **Value objects** have no identity and are immutable: `Quantity`,
   `Destination` and `SubmissionKey` (branded, produced by the Zod input
   schemas), `Money`,
