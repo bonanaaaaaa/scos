@@ -26,12 +26,17 @@ separately.
   `ENVIRONMENT_SECRETS_TOKEN`. See
   [role credentials in the state](deployment-pipeline.md#role-credentials-in-the-state).
 - **Creating the database starts billing, with no approval.** By the
-  user's decision the `prod` environment has no required reviewers. Setting
-  the repository variable `DEPLOY_ENABLED=true` is the provisioning
-  authorization: the first merge to `main` after that creates the database
-  and starts billing, and every later merge deploys to `prod` without a
-  human in the loop. `DEPLOY_ENABLED` is the kill switch. Dispatching the
-  manual workflow on `main` with `create_database` on also creates it.
+  user's decisions the `prod` environment has no required reviewers and
+  there is no enable flag: every merge to `main` deploys to `prod`, and
+  merging with complete settings is the provisioning authorization. The
+  first deploy whose settings are complete creates the database and starts
+  billing. As of 2026-09-20 every required setting is present, so the next
+  merge to `main` does this. The kill switch is disabling
+  the `Deploy Prod` workflow (`gh workflow disable deploy-prod.yml`, or
+  Actions > Deploy Prod > Disable workflow). The settings are already
+  complete, so keep the workflow disabled until ready to pay. Dispatching the
+  manual workflow on `main` with `create_database` on also creates the
+  database.
 - **Ownership.** The script owns the database, its `main` branch settings, the
   runtime and migration roles, and the backup settings. It never deletes
   anything.
@@ -345,9 +350,10 @@ Terraform state, which only the deploy reads.
 ## Teardown
 
 Deleting the database is what stops PlanetScale billing, and it is never
-automated. First set the repository variable `DEPLOY_ENABLED` to anything but
-`true`: the deploy creates a missing database, so the next merge would
-otherwise provision a new, empty one and start billing again. Then, after the
+automated. First disable the `Deploy Prod` workflow
+(`gh workflow disable deploy-prod.yml`) and keep it disabled: the deploy
+creates a missing database, so the next merge would otherwise provision a
+new, empty one and start billing again. Then, after the
 Worker and Terraform resources are removed, an operator runs
 `pscale database delete <db> --org <org>`. All data, and probably its
 backups, are lost. The role credentials go with the Terraform state

@@ -27,11 +27,11 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: GitHub environment to deploy to (its variables, secrets and deployment-branch rule apply).
+        description: GitHub environment to deploy to (its variables, secrets and any deployment-branch rule apply).
         type: string
         required: true
       sha:
-        description: The commit to deploy, already checked by the caller (CI passed, still the head of main).
+        description: The commit to deploy, already checked by the caller (still the head of main).
         type: string
         required: true
       terraform_working_dir:
@@ -148,7 +148,7 @@ jobs:
             exit 1
           fi
 
-      - name: Check out the commit CI tested
+      - name: Check out the merge commit
         uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.sha }}
@@ -440,7 +440,7 @@ jobs:
           fi
           url=""
 
-      # 3. The Worker: exactly the bundle built above from the commit CI tested.
+      # 3. The Worker: exactly the bundle built above from the merge commit.
       - name: Generate the deploy configuration
         working-directory: apps/api
         env:

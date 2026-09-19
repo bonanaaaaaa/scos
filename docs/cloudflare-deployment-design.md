@@ -315,9 +315,9 @@ Approvals, all the user's:
 
 - The monthly budget (see [estimated monthly cost](#estimated-monthly-cost)).
 - The Cloudflare account and the PlanetScale organization.
-- Explicit provisioning authorization: setting the repository variable
-  `DEPLOY_ENABLED` to `true`. Deploys need no approval, so the next merge to
-  `main` creates the database and starts billing
+- Explicit provisioning authorization: completing the deploy settings. Every
+  merge to `main` deploys with no approval or enable flag, so the next merge
+  after that creates the database and starts billing
   ([ADR 0005 amendment](adr/0005-cloudflare-first-deployment.md#amendment-2026-09-19-the-deploy-creates-the-database)).
 
 Verification, hosted:

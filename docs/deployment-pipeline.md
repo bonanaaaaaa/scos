@@ -9,15 +9,17 @@ and [ADR 0005](adr/0005-cloudflare-first-deployment.md).
 
 ## Offline preparation and hosted execution
 
-Everything in this repository is **offline preparation**. Merging it
-provisions nothing and deploys nothing:
+The pipeline is committed, but nothing is provisioned yet:
 
 - `infra-check.yml` runs on pull requests with no secret and no environment.
-- `Deploy Prod` (`deploy-prod.yml`) runs on every merge to `main`, but no job
-  runs until the repository variable `DEPLOY_ENABLED` is `true`. It is not
-  set, so nothing starts in the `prod` environment.
+- `Deploy Prod` (`deploy-prod.yml`) runs on every merge to `main` and deploys
+  to `prod`. While the settings are incomplete it stops at "Check required
+  settings" before creating anything. As of 2026-09-20 every required
+  setting is present, so the next merge deploys and, on the first run,
+  creates the database and starts billing. Disable the workflow first if
+  that is not wanted yet.
 
-**Hosted execution** waits on the user's account, budget and provisioning
+**Hosted execution** depends on the user's account, budget and provisioning
 authorization. That covers every step that touches Cloudflare or PlanetScale:
 the PlanetScale database and roles (created by the first deploy, which starts
 billing), the first Terraform apply, migrations and the Worker deploy. #33
@@ -30,15 +32,35 @@ roles when they are missing. This relaxes two #15 criteria: the PlanetScale
 service token is used by the deploy, not only by the bootstrap workflow, and
 a merge to `main` can create the database.
 
-**No human approval.** Also by the user's decision, the `prod` environment
-has no required reviewers, and the pipeline does not ask for one. Setting the
-repository variable `DEPLOY_ENABLED=true` is, on its own, the provisioning
-authorization: from then on every merge to `main` whose CI passes deploys to
-`prod`, and the first merge after enabling creates the PlanetScale database
-and starts billing. `DEPLOY_ENABLED` is also the kill switch: any other value
-stops the next deploy at the gate. What still guards `prod` is the gate (CI
-green on the same commit, still the head of `main`), the deployment-branch
-rule, and the main-only checks.
+**No human approval, no enable flag, no wait for CI.** By the user's
+decisions:
+
+- The `prod` environment has no required reviewers, and the pipeline asks
+  for none.
+- There is no enable flag. **Merging to `main` with complete settings is the
+  provisioning authorization:** every merge deploys to `prod`, and the first
+  deploy whose settings are complete creates the PlanetScale database and
+  starts billing.
+- **The kill switch is disabling the `Deploy Prod` workflow**
+  (`gh workflow disable deploy-prod.yml`, or Actions > Deploy Prod > Disable
+  workflow). While it is disabled, merges deploy nothing;
+  `gh workflow enable deploy-prod.yml` turns deploys back on.
+- The deploy does not wait for CI on the merge commit: the pull request's CI
+  vouches for the change, and CI and the deploy run in parallel on `main`.
+  This relaxes #15's criterion "after main CI succeeds for the same commit".
+
+What still guards `prod`: the gate (the commit is still the head of `main`)
+and the main-only checks in the workflows. The `prod` environment has no
+deployment-branch rule yet (see the checklist's first step).
+
+**Risk: nothing forces green CI before a merge.** `main`'s branch protection
+currently requires no status checks: "require status checks" is on, in strict
+mode, but its list of required checks is empty, so it has no effect. It does
+not require pull requests either. So a pull request with failing CI can be
+merged, and a direct push to `main` deploys without any CI having run. The
+fix is to add required status checks (for example "Workspace checks" and
+"PostgreSQL integration") and to require pull requests before merging. That
+is the user's call; until then, only merge pull requests whose CI passed.
 
 ### Operator checklist
 
@@ -48,7 +70,7 @@ In this order. Nothing here is automated.
    branches to `main` (Settings > Environments > prod > Deployment branches
    and tags > Selected branches), so no other branch's workflow can use its
    secrets. This is a branch policy, not an approver: `prod` has no required
-   reviewers, by the user's decision.
+   reviewers, by the user's decision. It is not set as of 2026-09-20.
 2. **Check the R2 state bucket** is private (see
    [the bucket](#the-state-bucket-one-time-bootstrap)).
 3. **Prepare PlanetScale** (no bootstrap run is needed; the first deploy
@@ -64,11 +86,12 @@ In this order. Nothing here is automated.
    host, username and database name from PlanetScale on every run, and keeps
    the role credentials in the Terraform state
    ([role credentials](#role-credentials-in-the-state)).
-5. **Set the repository variable `DEPLOY_ENABLED=true`** only when ready to
-   pay. This is the provisioning authorization; nothing asks again. The next
-   merge to `main` (or a manual run of `Deploy Prod` on `main`) deploys
-   without approval, and creates the PlanetScale database, starting billing,
-   when it does not exist yet. Set it to anything else to stop deploys.
+5. **Complete the settings only when ready to pay**, or disable the
+   `Deploy Prod` workflow until then. Completing them is the provisioning
+   authorization; nothing asks again. The next merge to `main` (or a manual
+   run of `Deploy Prod` on `main`) deploys without approval, and creates the
+   PlanetScale database, starting billing, when it does not exist yet. To
+   stop deploys, disable the workflow (`gh workflow disable deploy-prod.yml`).
 6. **Seed once:** run `Deploy Prod` manually on `main` with `seed_demo_data`
    checked ([seeding](planetscale-bootstrap.md#seeding-demonstration-data)).
 
@@ -402,12 +425,13 @@ Its permissions are the union of what the three uses need:
   are read by the shared workflow's `prod`-bound jobs, never passed. The Worker never sees a PlanetScale credential; it only has the
   Hyperdrive binding.
 - The deploy job does not use the Turbo remote cache, so the uploaded bundle
-  is always built from source, from the commit CI tested. It is not CI's
-  artifact: CI builds and tests the same commit separately.
+  is always built from source, from the merge commit being deployed. It is
+  not CI's artifact: CI builds and tests the same commit separately, in
+  parallel.
 
 **One-time order**, with no circular dependency: R2 bucket and key pair (by
-hand) → the Cloudflare API token and `prod` variables →
-`DEPLOY_ENABLED=true` → first deploy (the bootstrap step creates the
+hand) → the Cloudflare API token and `prod` variables → the last missing
+setting (the first merge after it deploys) → first deploy (the bootstrap step creates the
 database and roles; Terraform stores the role credentials and creates
 Hyperdrive; migrations run; the Worker deploys) → a manual deploy with
 `seed_demo_data`. The manual
@@ -453,7 +477,7 @@ those seven environment secret names in `deploy.yml`.
 
 **Primary trigger: a merge to `main`** (`on: push: branches: [main]`).
 Secondary: a manual run (`workflow_dispatch`, on `main` only) redeploys
-`main`'s head, gated exactly like a push. Its two inputs are the operator
+`main`'s head, through the same gate as a push. Its two inputs are the operator
 actions, never taken by a push:
 
 - `rotate_credentials` (`none`, `runtime`, `migration`, `both`): reset those
@@ -462,19 +486,15 @@ actions, never taken by a push:
 - `seed_demo_data`: after the migrations, insert the demo warehouses that are
   missing ([seeding](planetscale-bootstrap.md#seeding-demonstration-data)).
 
-1. **Gate** (`deploy-prod.yml`; no environment, no secret, `actions: read`).
-   Runs only when `DEPLOY_ENABLED` is `true` and the ref is `main`. It waits
-   for CI on the same commit: it polls the `CI` (`ci.yml`) push runs on
-   `main` for `head_sha == github.sha` every 25 s. Success continues; a run
-   that ends in failure or cancellation, no run within 5 minutes, or no
-   result within 30 minutes fails the gate, and nothing deploys. On every
-   poll and once more after CI passed it checks that `main` is still at this
-   commit, and skips with a notice when it has moved on.
+1. **Check main** (the gate, in `deploy-prod.yml`; no environment, no
+   secret, `contents: read`). Runs only on `main`. It checks that `main` is
+   still at this commit and skips, with a notice, when it has moved on; an
+   API error fails it. It does not wait for CI, which runs in parallel.
 2. **Deploy** (`deploy.yml`'s `deploy` job, `environment: prod`, starts
    without an approval), checking out exactly the gated commit:
    1. `main` must still be at that commit (checked again, below), and every
       required variable and secret must be set; otherwise nothing runs.
-   2. Build the Worker bundle once, in this job, from the commit CI tested
+   2. Build the Worker bundle once, in this job, from the merge commit
       (`wrangler deploy --dry-run --outdir`; CI's own build is not reused),
       check the size budget, and record the SHA-256 of `worker.js` and the
       `.wasm` module in the job summary. Every install (pnpm, pscale with a
@@ -515,17 +535,9 @@ Any failing step fails the run, and later steps do not run: a failed
 migration never deploys the Worker. Nothing is destroyed automatically, on
 merge or on failure.
 
-- **Why the gate waits for CI.** #15 requires deploying only after CI passed
-  on `main` for the same commit. A merge is the trigger, so the deploy starts
-  on the push and waits for the CI run that the same push started. The
-  alternatives were rejected: `workflow_run` makes the CI completion, not the
-  merge, the trigger (and runs from a separate event); calling CI through
-  `workflow_call` would run CI a second time for every merge. `ci.yml`'s
-  triggers are unchanged.
 - **Never an older commit over a newer one.** The gate skips a commit that
-  is no longer the head of `main`. `CI` cancels an older run on `main` when a
-  newer push arrives; the gate then sees `main` moved on and skips instead of
-  failing. The deploy job checks again as its first step, before the
+  is no longer the head of `main` (for example after waiting in the
+  `deploy-prod` group). The deploy job checks again as its first step, before the
   database bootstrap, before `terraform apply` and before `wrangler deploy`,
   because "Re-run failed jobs" reruns only the deploy job with the gate's old
   commit, and a run can wait in the concurrency groups (`deploy-prod`,
@@ -533,12 +545,9 @@ merge or on failure.
   fails with "Stale deploy stopped"; the newer commit's own run deploys it. A
   stop before `terraform apply` changes nothing; a stop before
   `wrangler deploy` can leave Hyperdrive and migrations from the older commit
-  in place, which the newer commit's deploy then brings forward. If the
-  newer commit's CI fails, the previous Worker keeps serving with those
-  (backward-compatible) migrations until a green push, or a manual
-  `Deploy Prod` run on `main` once CI is green.
+  in place, which the newer commit's deploy then brings forward.
 - **Serialization.** Caller concurrency group `deploy-prod`,
-  `cancel-in-progress: false`, which also holds a gate waiting for CI. A newer push replaces a pending run, which shows as
+  `cancel-in-progress: false`. A newer push replaces a pending run, which shows as
   cancelled; the newer commit deploys instead. The shared `deploy` job also
   joins `planetscale-<environment>` (`planetscale-prod`), the group of
   the manual `planetscale-bootstrap.yml`, so a manual bootstrap never runs
@@ -601,10 +610,12 @@ Other `prod` variables the pipeline reads: `CLOUDFLARE_ACCOUNT_ID`,
 `TF_STATE_*`, the PlanetScale inputs (`PLANETSCALE_DATABASE`, `_BRANCH`,
 `_REGION`, `_CLUSTER_SIZE`, `MIGRATION_ROLE_NAME`, all with defaults), and the
 optional `WORKER_BASE_URL` and `WORKER_PLACEMENT_REGION`. `PLANETSCALE_HOST`,
-`HYPERDRIVE_ORIGIN_USER` and `HYPERDRIVE_ORIGIN_DATABASE` (default `postgres`)
-are written by the bootstrap step when unset; the same run's values take
-precedence. `DEPLOY_ENABLED`, `PLANETSCALE_ORG` and
-`PLANETSCALE_SERVICE_TOKEN_ID` are repository variables.
+`HYPERDRIVE_ORIGIN_USER` and `HYPERDRIVE_ORIGIN_DATABASE` are optional
+overrides: the deploy reads the branch host and runtime username from
+PlanetScale on every run and the database name from the stored migration URL
+(else `postgres`), and writes no GitHub variable. A variable that is set takes
+precedence. `PLANETSCALE_ORG` and `PLANETSCALE_SERVICE_TOKEN_ID` are
+repository variables.
 
 - An invalid value fails the deploy before upload (the generator runs the
   same schema) and, if one got through, the Worker would serve nothing.
@@ -656,9 +667,10 @@ Explicit, ordered and never automated. Each step loses data:
    PlanetScale billing.** All Orders, stock and, probably, its backups are
    lost for good ([teardown](planetscale-bootstrap.md#teardown)).
 
-Set the repository variable `DEPLOY_ENABLED` to anything but `true` first.
-This matters more now: the deploy creates a missing database, so a merge after
-step 3 would provision a new, empty database and start billing again.
+Disable the `Deploy Prod` workflow first
+(`gh workflow disable deploy-prod.yml`), and keep it disabled. This matters
+more now: the deploy creates a missing database, so a merge after step 3
+would provision a new, empty database and start billing again.
 
 ## Verification (offline, 2026-09-19)
 
