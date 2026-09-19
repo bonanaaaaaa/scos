@@ -786,9 +786,29 @@ once per request, handed to `ctx.waitUntil`.
   (4xx unset, 5xx error) or sanitized `exception` events, and it records no
   `http.server.request.duration` or `scos.order.submissions`. Running it
   beside our spans would add a second SERVER-like span per request and a span
-  for every OTLP export. So `wrangler.jsonc` sets
-  `observability.traces.enabled: false`, and Workers Logs stays on for logs
-  only.
+  for every OTLP export. So exactly one tracer records each request: while
+  the application exports no traces (`OTEL_TRACES_EXPORTER` is `none`, the
+  default until an OTLP backend is chosen), Cloudflare's automatic tracing is
+  on (`observability.traces.enabled: true` in `wrangler.jsonc`), so the
+  deployed Worker is traced at all; once OTLP trace export is on, the
+  deploy's generated configuration
+  (`infra/cloudflare/scripts/worker-deploy-config.mjs`) turns Cloudflare's
+  tracing off. Set in the committed file, not the dashboard: `wrangler deploy`
+  applies the file's setting on every deploy.
+  - OTLP export with no endpoint fails the deploy configuration: the SDK would
+    fall back to `localhost`, unreachable from a deployed Worker, and drop
+    every span while Cloudflare's tracing is off. `OTEL_TRACES_SAMPLER_ARG=0`
+    with OTLP also records nothing; that is an explicit choice.
+  - With `OTEL_TRACES_EXPORTER=console` the application's spans are log lines
+    in Workers Logs, so Cloudflare's tracing deliberately stays on beside
+    them; they do not collide in a trace backend.
+  - Cloudflare's tracing counts toward Workers Observability events (checked
+    2026-09-20: free during the beta; from 1 October 2026 the Free plan
+    includes 200,000 events a day with 3 days' retention, Paid 20 million a
+    month with 7 days). `head_sampling_rate` defaults to 1, every request;
+    set it in `wrangler.jsonc` if the volume matters. Exporting these traces
+    to an OTLP destination is Paid only
+    ([Cloudflare docs](https://developers.cloudflare.com/workers/observability/exporting-opentelemetry-data/)).
 - **Not `@microlabs/otel-cf-workers`.** It wraps the handler and globals
   (`fetch`, bindings) to create its own spans, brings its own SDK setup,
   exporter and flush, and would duplicate our SERVER span and add spans for
@@ -1240,7 +1260,7 @@ and 31 ms), and each request logged one failure per signal:
 - **The `workerd` persistence build** is a second generated Prisma client;
   both are generated from the same schema by `prisma generate`.
 - **Local observability store:** `wrangler dev` records Cloudflare's own
-  request and `fetch` spans locally even with `traces.enabled: false`; that
+  request and `fetch` spans locally whatever `traces.enabled` says; that
   setting governs the deployed Worker.
 
 ## Versions

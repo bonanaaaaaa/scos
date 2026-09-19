@@ -42,10 +42,12 @@
     "enabled": true,
     // Workers Logs ingests the JSON lines the API writes with console.log.
     "logs": { "enabled": true, "invocation_logs": true },
-    // Cloudflare's automatic tracing stays off: the application exports its own
-    // spans (the same SERVER, use-case and persistence spans as Node) over OTLP,
-    // and platform spans would duplicate the request and fetch spans.
-    "traces": { "enabled": false },
+    // Cloudflare's automatic tracing is on while the application exports no
+    // traces of its own (OTEL_TRACES_EXPORTER is `none` below). Once OTLP trace
+    // export is enabled, the two would duplicate the request and fetch spans,
+    // so the deploy's generated configuration turns this off then
+    // (infra/cloudflare/scripts/worker-deploy-config.mjs).
+    "traces": { "enabled": true },
   },
   // Non-secret telemetry settings (docs/observability.md, "Configuration").
   // Traces and metrics are off until an OTLP endpoint is configured; #15 sets
