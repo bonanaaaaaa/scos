@@ -1,5 +1,32 @@
 {
   "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "pg",
+            "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+          },
+          {
+            "name": "hono",
+            "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+          },
+          {
+            "name": "@scos/persistence",
+            "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+          }
+        ],
+        "patterns": [
+          {
+            "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
+            "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+          }
+        ]
+      }
+    ]
+  },
   "overrides": [
     {
       "files": ["src/application/**"],
@@ -36,7 +63,25 @@
         "no-restricted-imports": [
           "error",
           {
+            "paths": [
+              {
+                "name": "pg",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
+              {
+                "name": "hono",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
+              {
+                "name": "@scos/persistence",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              }
+            ],
             "patterns": [
+              {
+                "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
               {
                 "group": ["**/application", "**/application/**"],
                 "message": "Hexagonal layering: domain must not depend on the application layer."
@@ -52,7 +97,25 @@
         "no-restricted-imports": [
           "error",
           {
+            "paths": [
+              {
+                "name": "pg",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
+              {
+                "name": "hono",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
+              {
+                "name": "@scos/persistence",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              }
+            ],
             "patterns": [
+              {
+                "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
               {
                 "group": ["**/application", "**/application/**"],
                 "message": "Hexagonal layering: domain must not depend on the application layer."
@@ -79,7 +142,25 @@
         "no-restricted-imports": [
           "error",
           {
+            "paths": [
+              {
+                "name": "pg",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
+              {
+                "name": "hono",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
+              {
+                "name": "@scos/persistence",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              }
+            ],
             "patterns": [
+              {
+                "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
               {
                 "group": ["**/application", "**/application/**"],
                 "message": "Hexagonal layering: domain must not depend on the application layer."
@@ -99,7 +180,25 @@
         "no-restricted-imports": [
           "error",
           {
+            "paths": [
+              {
+                "name": "pg",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
+              {
+                "name": "hono",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
+              {
+                "name": "@scos/persistence",
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              }
+            ],
             "patterns": [
+              {
+                "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
+                "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
+              },
               {
                 "group": ["**/application", "**/application/**"],
                 "message": "Hexagonal layering: domain must not depend on the application layer."

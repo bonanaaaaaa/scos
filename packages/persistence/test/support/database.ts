@@ -134,6 +134,46 @@ export async function createMigratedDatabase(): Promise<MigratedDatabase> {
   };
 }
 
+export interface PersistedWarehouseState {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  stock: number;
+  created_at: Date;
+  updated_at: Date;
+  xmin: string;
+  ctid: string;
+}
+
+export interface PersistedState {
+  warehouses: PersistedWarehouseState[];
+  counts: { orders: number; order_allocations: number };
+}
+
+/**
+ * Everything a read-only operation must leave alone: every warehouse row and
+ * the Order tables' row counts. `xmin` and `ctid` change whenever a row version
+ * is rewritten, so comparing two results exposes even an UPDATE that sets the
+ * same values (which the update trigger would also show in `updated_at`).
+ */
+export async function readPersistedState(pool: Pool): Promise<PersistedState> {
+  const warehouses = await pool.query<PersistedWarehouseState>(
+    `SELECT id, name, latitude, longitude, stock, created_at, updated_at,
+            xmin::text AS xmin, ctid::text AS ctid
+     FROM warehouses ORDER BY id`,
+  );
+  const counts = await pool.query<PersistedState["counts"]>(
+    `SELECT (SELECT count(*)::int FROM orders) AS orders,
+            (SELECT count(*)::int FROM order_allocations) AS order_allocations`,
+  );
+  const [count] = counts.rows;
+  if (count === undefined) {
+    throw new Error("Row counts query returned no row");
+  }
+  return { warehouses: warehouses.rows, counts: count };
+}
+
 /** Asserts that a query fails with the given SQLSTATE and constraint name. */
 export async function assertDatabaseError(
   operation: Promise<unknown>,

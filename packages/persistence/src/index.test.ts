@@ -1,8 +1,18 @@
 import { describe, expect, test } from "vitest";
 
-import { createDatabasePool, persistencePackage, readDatabaseUrl } from "./index";
+import {
+  createDatabasePool,
+  createPrismaInventoryReader,
+  persistencePackage,
+  readDatabaseUrl,
+} from "./index";
+import { createPrismaInventoryReader as inventoryReaderFactory } from "./inventory-reader";
 
 describe("@scos/persistence", () => {
+  test("the package root exposes the inventory reader adapter", () => {
+    expect(createPrismaInventoryReader).toBe(inventoryReaderFactory);
+  });
+
   test("the persistence adapter points inward to core", () => {
     expect(persistencePackage).toStrictEqual({ name: "persistence", supports: "core" });
   });

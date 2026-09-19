@@ -8,6 +8,7 @@ The Ordering persistence schema lives in `packages/persistence`:
 - `src/records.ts`: typed mappings from Prisma rows to plain persistence records, and the exact decimal formatting helpers
 - `src/submission-store.ts`: the SubmitOrder transaction adapter (`createPrismaSubmissionStore`), which maps Prisma rows straight to the domain `Order`
 - `src/submission-errors.ts`: classification of PostgreSQL and Prisma errors raised during submission
+- `src/inventory-reader.ts`: `createPrismaInventoryReader`, the read-only adapter for core's `InventoryReader` port (see [Read pattern for verification](#read-pattern-for-verification-9))
 
 Migrations are applied with `prisma migrate deploy`. The initial migration's table, index, and foreign-key DDL follows Prisma's generated output and was inspected; CHECK constraints and the timestamp defaults and triggers are hand-written SQL because Prisma cannot express them.
 
@@ -117,6 +118,14 @@ erDiagram
 - Every foreign key uses `ON DELETE RESTRICT ON UPDATE RESTRICT`. Deleting or re-keying a warehouse or Order that an allocation still references fails; nothing cascades.
 - The schema does not enforce that an Order's allocations sum to its quantity, or that allocations never exceed warehouse stock. These cross-row invariants belong to the SubmitOrder transaction.
 
+### Read pattern for verification (#9)
+
+VerifyOrder in `@scos/core` reads Warehouse Inventory through its `InventoryReader` port. `createPrismaInventoryReader(prisma)` implements the port with one statement per read, a single Prisma `findMany` equivalent to `SELECT id, latitude, longitude, stock FROM warehouses ORDER BY id`. Prisma 7.10 with `@prisma/adapter-pg` was observed to send exactly that one `SELECT`, with no `BEGIN` and no second statement. It maps `id` to `warehouseId` and `stock` to `available`, and returns a frozen `InventorySnapshot`; Prisma row types do not leave the adapter.
+
+- PostgreSQL runs a single statement against one MVCC snapshot taken when the statement starts, under READ COMMITTED and every stricter level. All six stock values therefore come from the same committed state, and a concurrent submission that deducts from several warehouses is seen completely or not at all. No explicit transaction is needed.
+- The read takes no row lock (`FOR UPDATE` is reserved for submission), so verification neither waits for nor blocks a submission, and it sees only committed stock.
+- Nothing is written: no Order, no allocation, no stock change, and no `updated_at` change. Nothing is cached, so each verification reads current stock. The Order Estimate is advisory ([ADR 0001](adr/0001-advisory-verification.md)); submission recalculates from the rows it locks.
+
 ### Write pattern for submission (#10)
 
 Within one transaction, SubmitOrder locks the warehouse rows in ascending `id` order, recomputes the outcome from the locked stock, and, on acceptance, inserts the Order and its allocations and decrements stock before committing. A rejection is returned to the caller; nothing is written.
@@ -173,6 +182,12 @@ The seed uses `INSERT ... ON CONFLICT (id) DO NOTHING`. Rerunning it never reple
 
 ## Verification
 
-`corepack pnpm test:integration` (with `DATABASE_TEST_URL` set) runs `packages/persistence/test/*.integration.test.ts` against real PostgreSQL. Each test file creates a uniquely named database next to `scos_test` on the disposable test server, applies the migrations with `prisma migrate deploy`, and drops the database afterwards. The tests cover clean migration and drift, timestamp columns and triggers on every table, timestamp behavior through Prisma and raw SQL, UUIDv7 defaults, constraints and restricted deletes, the derived-amount range checks, decimal round-trips, derived totals matching PostgreSQL's arithmetic, and seed reruns.
+`corepack pnpm test:integration` (with `DATABASE_TEST_URL` set) runs `packages/persistence/test/*.integration.test.ts` against real PostgreSQL. Each test file creates a uniquely named database next to `scos_test` on the disposable test server, applies the migrations with `prisma migrate deploy`, and drops the database afterwards. The tests cover clean migration and drift, timestamp columns and triggers on every table, timestamp behavior through Prisma and raw SQL, UUIDv7 defaults, constraints and restricted deletes, the derived-amount range checks, decimal round-trips, derived totals matching PostgreSQL's arithmetic, seed reruns, and the inventory reader (`inventory-reader.integration.test.ts`): a complete snapshot in ID order, identical warehouse rows (including `updated_at`, `xmin`, and `ctid`) and empty order tables before and after a read, committed stock changes visible on the next read, and a read that completes while another transaction holds the warehouse row locks.
+
+VerifyOrder is tested by level, and each package tests only itself:
+
+- `packages/core` tests VerifyOrder with an in-memory fake `InventoryReader`, including exact valid, excessive-shipping, and insufficient-stock Order Estimates and reverification after inventory changes.
+- `packages/persistence` tests the inventory reader's port contract against real PostgreSQL (`inventory-reader.integration.test.ts`), without core use cases or estimate amounts. The reader's single read is the only database access, and the tests above prove it writes nothing and sees current stock; computing any estimate afterwards happens in memory.
+- The full composition (HTTP, use case, adapter, and PostgreSQL) is tested once, with the API in #11. There is no separate core-plus-persistence test for VerifyOrder.
 
 Each package tests only itself; there is no core-plus-persistence test level. SubmitOrder's outcomes are unit-tested in `packages/core` with a fake `SubmissionStore`, and the Prisma submission store and its error classification are unit-tested in `packages/persistence` against a stubbed client. No test currently runs a submission against real PostgreSQL: concurrency, rollback, the `submission_key` unique-index backstop, and stock deduction are exercised against the database by the full-stack API tests (#11).

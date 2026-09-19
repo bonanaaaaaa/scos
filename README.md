@@ -124,7 +124,7 @@ The workflow exposes these stable check names:
 
 - `Workspace checks`: frozen install followed by separate Turbo build, typecheck, Oxlint, Oxfmt, and test steps
 - `Coverage comment`: aggregate Vitest coverage reporting on same-repository pull requests
-- `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached Turbo `test:integration` connectivity smoke test plus migration, schema, and seed integration tests
+- `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached Turbo `test:integration` connectivity smoke test plus migration, schema, seed, and inventory-reader integration tests in `packages/persistence`
 - `PR title`: Conventional Commit title validation on opened, edited, reopened, and synchronized pull requests
 - `Code scanner`: verified-secret scanning across the pull request's explicit base and head revisions
 - `Actionlint`: workflow validation when `.github/workflows/**` or `.github/actions/**` changes; local-action changes trigger the workflow but actionlint validates workflow files

@@ -1,8 +1,9 @@
 /**
- * Public API of the Ordering domain and its application use cases. Adapters
- * import only from here, never from `./domain/*` or `./application/*` directly.
+ * Public API of the Ordering core: the domain model, the application use cases
+ * and the ports that driven adapters implement. Adapters import only from
+ * here, never from `./domain/*` or `./application/*` directly.
  *
- * @see docs/architecture.md, "Domain model"
+ * @see docs/architecture.md, "Domain model" and "Application layer"
  * @module
  */
 
@@ -67,3 +68,10 @@ export {
   type UnavailableSubmission,
   createSubmitOrder,
 } from "./application/submit-order";
+
+export type { InventoryReader } from "./application/ports/inventory-reader";
+export {
+  type VerifyOrder,
+  type VerifyOrderDependencies,
+  createVerifyOrder,
+} from "./application/verify-order";
