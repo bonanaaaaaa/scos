@@ -1,3 +1,9 @@
 {
-  "ignorePatterns": ["dist", ".turbo", "pnpm-lock.yaml", "packages/persistence/src/generated"]
+  "ignorePatterns": [
+    "dist",
+    ".turbo",
+    "pnpm-lock.yaml",
+    "packages/persistence/src/generated",
+    "docs/openapi.json"
+  ]
 }

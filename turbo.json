@@ -34,6 +34,16 @@
       "env": ["DATABASE_TEST_URL", "DATABASE_URL"],
       "persistent": false
     },
+    "openapi:export": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": []
+    },
+    "openapi:check": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": []
+    },
     "db:migrate": {
       "cache": false,
       "env": ["DATABASE_URL"],

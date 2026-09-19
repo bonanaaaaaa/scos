@@ -15,7 +15,12 @@ import {
   insufficientStockEstimateSchema,
   shippingExceedsLimitEstimateSchema,
 } from "../../http/estimate";
-import { API_PREFIX, invalidRequestResponse, type RouteContract } from "../../http/route-contract";
+import {
+  API_PREFIX,
+  type RouteContract,
+  SUBMISSION_ADR_URL,
+  invalidRequestResponse,
+} from "../../http/route-contract";
 import {
   destinationResponseSchema,
   discountRateSchema,
@@ -23,10 +28,13 @@ import {
   longitudeFieldSchema,
   moneySchema,
   quantityFieldSchema,
+  responseQuantitySchema,
+  warehouseIdSchema,
 } from "../../http/schemas";
+import { submitOrderRequestExamples, submitOrderResponseExamples } from "./examples";
 
 /**
- * Client-generated retry key: 1-255 UTF-16 code units, no leading or trailing
+ * Client-generated retry key: 1-255 Unicode code points, no leading or trailing
  * whitespace (so whitespace-only keys are rejected), no NUL, well-formed
  * Unicode. Core's schema, composed as-is.
  */
@@ -43,8 +51,8 @@ export const submitOrderRequestSchema = z.strictObject({
 export type SubmitOrderRequest = z.input<typeof submitOrderRequestSchema>;
 
 export const orderAllocationSchema = z.object({
-  warehouseId: z.string(),
-  quantity: z.number().int().positive(),
+  warehouseId: warehouseIdSchema,
+  quantity: responseQuantitySchema,
 });
 
 /**
@@ -55,7 +63,7 @@ export const orderAllocationSchema = z.object({
 export const orderResponseSchema = z.object({
   orderNumber: z.string().regex(ORDER_NUMBER_PATTERN),
   submissionId: z.string(),
-  quantity: z.number().int().positive(),
+  quantity: responseQuantitySchema,
   destination: destinationResponseSchema,
   unitPrice: moneySchema,
   merchandiseSubtotal: moneySchema,
@@ -90,34 +98,58 @@ export const submitOrderRoute = {
   method: "post",
   path: `${API_PREFIX}/orders`,
   summary: "Submit an Order against current stock, deduplicated by submissionId.",
+  description: [
+    "Accepts or rejects the Order atomically against current stock: pricing and allocation are recalculated under lock, and acceptance saves the Order and deducts stock together.",
+    "`submissionId` is a client-generated key that makes retries safe; there is no `Idempotency-Key` header. Generate a new one for each new order and reuse it only to retry that order:",
+    [
+      "- An accepted Order keeps its submissionId indefinitely: keys are retained as long as their Orders.",
+      "- Repeating an accepted submissionId with the same quantity and destination returns the original Order (`201`, byte-identical body) without deducting stock again, even after stock changes.",
+      "- Reusing it with a different quantity or destination is `409 SUBMISSION_ID_CONFLICT`; the existing Order is unchanged and not disclosed.",
+      "- Business rejections (`422`), malformed requests (`400`) and transient failures (`503`) are not stored and consume no key. A rejected request can be retried with the same submissionId: it is evaluated again against current stock and may be accepted.",
+      "- A `500` means the outcome is unknown (for example, the connection failed after the commit). Retry with the same submissionId and body: a stored Order is returned, never duplicated.",
+    ].join("\n"),
+    `See [ADR 0004: Deduplicate accepted Orders by submission key](${SUBMISSION_ADR_URL}).`,
+  ].join("\n\n"),
   requestBody: submitOrderRequestSchema,
+  requestExamples: submitOrderRequestExamples,
   responses: {
     201: {
       description:
-        "Accepted. A repeated submissionId with the same inputs returns the original Order unchanged, without deducting stock again.",
+        "Accepted. A repeated submissionId with the same inputs returns the original Order unchanged (byte-identical body), without deducting stock again.",
       schema: orderResponseSchema,
+      examples: submitOrderResponseExamples[201],
     },
-    400: invalidRequestResponse,
+    400: { ...invalidRequestResponse, examples: submitOrderResponseExamples[400] },
     409: {
       description:
         "SUBMISSION_ID_CONFLICT: the submissionId belongs to an Order with a different quantity or destination. That Order is unchanged and not disclosed.",
       schema: errorResponseSchema,
+      examples: submitOrderResponseExamples[409],
     },
     422: {
       description:
-        "Business rejection (INSUFFICIENT_STOCK or SHIPPING_EXCEEDS_LIMIT). Rejections are not stored: the submissionId stays reusable and a repeat is re-evaluated.",
+        "Business rejection (INSUFFICIENT_STOCK or SHIPPING_EXCEEDS_LIMIT) with the estimate that caused it, in the same shape as a `valid: false` verification. Rejections are not stored: the submissionId stays reusable and a repeat is re-evaluated.",
       schema: rejectedSubmissionResponseSchema,
+      examples: submitOrderResponseExamples[422],
     },
     500: {
       description:
-        "INTERNAL_ERROR: the order could not be confirmed and may or may not have been stored. No internals are exposed. Retry with the same submissionId: a stored Order is returned, never duplicated.",
+        "INTERNAL_ERROR: the order could not be confirmed and may or may not have been stored. No internals are exposed. Retry with the same submissionId and body: a stored Order is returned, never duplicated.",
       schema: errorResponseSchema,
+      examples: submitOrderResponseExamples[500],
     },
     503: {
       description:
-        "SERVICE_UNAVAILABLE: a transient database failure (contention that persisted through every attempt, or no database connection available in time). Nothing was stored; retry with the same submissionId after Retry-After seconds.",
+        "SERVICE_UNAVAILABLE: a transient database failure (contention that persisted through every attempt, or no database connection available in time). Nothing was stored by this request; retry with the same submissionId after Retry-After seconds.",
       schema: errorResponseSchema,
-      headers: { "Retry-After": "Seconds to wait before retrying." },
+      headers: {
+        "Retry-After": {
+          description: "Seconds to wait before retrying.",
+          schema: z.int().min(1),
+          example: RETRY_AFTER_SECONDS,
+        },
+      },
+      examples: submitOrderResponseExamples[503],
     },
   },
 } as const satisfies RouteContract;

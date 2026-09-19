@@ -8,17 +8,23 @@
 import type { Destination, OrderEstimate } from "@scos/core";
 import { z } from "zod";
 
-import { destinationResponseSchema, discountRateSchema, moneySchema } from "./schemas";
+import {
+  destinationResponseSchema,
+  discountRateSchema,
+  moneySchema,
+  responseQuantitySchema,
+  warehouseIdSchema,
+} from "./schemas";
 
 export const estimateAllocationSchema = z.object({
-  warehouseId: z.string(),
-  quantity: z.number().int().positive(),
+  warehouseId: warehouseIdSchema,
+  quantity: responseQuantitySchema,
   /** Great-circle distance from the warehouse to the destination, unrounded. */
   distanceKm: z.number().nonnegative(),
 });
 
 const estimateBaseShape = {
-  quantity: z.number().int().positive(),
+  quantity: responseQuantitySchema,
   destination: destinationResponseSchema,
   merchandiseSubtotal: moneySchema,
   discountRate: discountRateSchema,

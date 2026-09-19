@@ -1,7 +1,7 @@
 /**
  * The route/status table of the whole API, assembled from each endpoint's own
  * contract. Pure: it reads no environment and opens no connection, so an
- * offline OpenAPI export (#12) can import it.
+ * offline OpenAPI export (`src/openapi/`) can import it.
  *
  * @module
  */

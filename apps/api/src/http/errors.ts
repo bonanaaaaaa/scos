@@ -40,7 +40,10 @@ export const errorBodySchema = z.object({
   issues: z.array(errorIssueSchema).optional(),
 });
 
-/** The envelope of every non-2xx response. */
+/**
+ * The envelope of every non-2xx response, except a 422 submission rejection,
+ * which also carries the estimate (`rejectedSubmissionResponseSchema`).
+ */
 export const errorResponseSchema = z.object({ error: errorBodySchema });
 
 export type ErrorResponse = z.output<typeof errorResponseSchema>;

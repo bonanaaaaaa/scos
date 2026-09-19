@@ -6,6 +6,11 @@
       "dependsOn": ["^build"],
       "inputs": ["src/**", "build.mjs", "tsconfig.json", "package.json"],
       "outputs": ["dist/**"]
+    },
+    "test": {
+      "dependsOn": ["build", "^build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/openapi.json"],
+      "outputs": ["coverage/**"]
     }
   }
 }

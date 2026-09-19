@@ -19,6 +19,8 @@
     "db:migrate": "turbo run db:migrate",
     "db:seed": "turbo run db:seed",
     "db:reset": "turbo run db:reset",
+    "openapi:export": "turbo run openapi:export --filter=@scos/api",
+    "openapi:check": "turbo run openapi:check --filter=@scos/api",
     "validate:pr-title": "node scripts/validate-pr-title.mjs"
   },
   "devDependencies": {

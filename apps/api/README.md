@@ -9,15 +9,18 @@ responses. Business rules live in `packages/core`; SQL lives in
 src/
   endpoints/
     health/        contract, app, composition, config (+ tests)
-    verify-order/  contract, app, composition (+ tests)
-    submit-order/  contract, app, composition, messages, serializers (+ tests)
+    verify-order/  contract, examples, app, composition (+ tests)
+    submit-order/  contract, examples, app, composition, messages, serializers (+ tests)
   http/            shared only: error envelope and codes, messages, JSON guard and
                    validator hook, createEndpointApp, shared schemas, estimate shape,
-                   the Logger port and its console JSON default
+                   the example scenarios shared by verify and submit, and the
+                   Logger port and its console JSON default
   telemetry/       runtime-neutral telemetry: config schema, Telemetry port, log
                    record contract, HTTP middleware, use-case/port decorators
     node/          Node/Lambda only: OpenTelemetry SDK, exporters, Pino adapter
-  app.ts           createApp: mounts the three endpoint apps
+  openapi/         OpenAPI document from the contracts, component names, export and
+                   drift check, /openapi.json and /docs routes (+ tests)
+  app.ts           createApp: mounts the three endpoint apps and the docs routes
   composition.ts   composeApplication: all routes over one pool
   database.ts      bounded pool + Prisma shared by the database compositions
   config.ts        shared env parsing, DATABASE_URL config, local-server config
@@ -25,7 +28,9 @@ src/
   server.ts        Node.js entrypoint: validate config, start telemetry, listen,
                    graceful shutdown
   index.ts         public exports
-  testing/         unit-test support (fixtures, request cases, spies, black hole)
+  testing/         unit-test support (fixtures, request cases, spies, black hole,
+                   seeded in-memory use cases, Ajv over the generated document)
+scripts/openapi.ts CLI for `openapi:export` and `openapi:check`
 ```
 
 Each endpoint folder owns its request and response schemas, route contract,
@@ -36,11 +41,9 @@ Estimate shape and serializer are in `http/estimate.ts` because both
 verification (200) and a rejected submission (422) return it.
 
 The app factories and contracts (`endpoints/*/contract.ts`, `routes.ts`) read
-no environment and open no connection, so tests and an offline OpenAPI export
-(#12) can import them without deployment configuration. The schemas convert with
-`z.toJSONSchema(schema, { target: "draft-07" })`; the submissionId refinements
-(no surrounding whitespace, no NUL, well-formed Unicode) are not expressible in
-JSON Schema and must be documented in prose.
+no environment and open no connection, so tests and the offline OpenAPI export
+can import them without deployment configuration. See
+[OpenAPI and documentation](#openapi-and-documentation).
 
 ## Per-endpoint apps and compositions
 
@@ -66,8 +69,9 @@ as its own Lambda function (#14):
   Hono's `app.route()`. Each mounted app keeps its own error handler for its
   route, and the combined app answers everything else with the same 404
   envelope, so its behaviour is identical to the standalone apps.
-  `composeApplication` builds it over one pool for the local server
-  (`src/server.ts`) and for the documentation routes (#12).
+  `createApp` also serves the documentation routes (`GET /openapi.json`,
+  `GET /docs`); the standalone apps do not. `composeApplication` builds it
+  over one pool for the local server (`src/server.ts`).
 - Configuration is validated per runtime: `parseHealthConfig` requires
   nothing, `parseDatabaseConfig` (for the verify and submit runtimes) requires
   `DATABASE_URL`, and the local server (`parseConfig`) requires `DATABASE_URL`
@@ -79,8 +83,9 @@ as its own Lambda function (#14):
   nothing is instrumented. `createApp` and the endpoint app factories never
   add the middleware themselves, so each request gets exactly one server span.
 - `src/index.ts` exports the app factories, the compositions, these
-  configuration parsers, the route contract (`routes`, `API_PREFIX`) and the
-  request/response schemas. `routes[*].servedBy` names the app that serves
+  configuration parsers, the route contract (`routes`, `API_PREFIX`), the
+  request/response schemas and the OpenAPI builders (`buildOpenApiDocument`,
+  `renderOpenApiDocument`). `routes[*].servedBy` names the app that serves
   each route.
 
 ### Notes for Lambda deployment (#14)
@@ -216,12 +221,12 @@ Requests are validated with Zod through `sValidator` from
 `@hono/standard-validator` before any use case runs. A malformed request is
 `400 INVALID_REQUEST`; it stores nothing and consumes no `submissionId`.
 
-| Field          | Rule                                                                                                                                               |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `quantity`     | JSON integer, 1 to 66,666,666 (`MAX_QUANTITY` in core: the largest subtotal that fits `NUMERIC(12, 2)`)                                            |
-| `latitude`     | JSON number, -90 to 90 inclusive                                                                                                                   |
-| `longitude`    | JSON number, -180 to 180 inclusive                                                                                                                 |
-| `submissionId` | JSON string, 1 to 255 UTF-16 code units, no leading or trailing whitespace (so blank, tab- or newline-only keys fail), no NUL, well-formed Unicode |
+| Field          | Rule                                                                                                                                                                                                  |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `quantity`     | JSON integer, 1 to 66,666,666 (`MAX_QUANTITY` in core: the largest subtotal that fits `NUMERIC(12, 2)`)                                                                                               |
+| `latitude`     | JSON number, -90 to 90 inclusive                                                                                                                                                                      |
+| `longitude`    | JSON number, -180 to 180 inclusive                                                                                                                                                                    |
+| `submissionId` | JSON string, 1 to 255 characters (Unicode code points), no leading or trailing whitespace (so blank, tab- or newline-only keys fail), no NUL, well-formed Unicode; any string, not necessarily a UUID |
 
 - **Content type:** the body must be sent with `Content-Type: application/json`
   (parameters such as `charset` and `+json` media types are accepted). A missing
@@ -235,7 +240,8 @@ Requests are validated with Zod through `sValidator` from
 
 ## Errors
 
-Every non-2xx response uses one envelope:
+Every non-2xx body has an `error` object. It is exactly this envelope, except
+that a `422` submission rejection also carries the `estimate` that caused it:
 
 ```json
 {
@@ -282,6 +288,61 @@ nothing was stored either (for example a failed or lost `COMMIT`). After a
 attempt was committed, the original Order is returned (`201`) and stock is not
 deducted again; otherwise the request is evaluated afresh. Use a new
 `submissionId` only for a new order.
+
+## OpenAPI and documentation
+
+The OpenAPI 3.1 document is generated from the route contracts, not written by
+hand. `src/openapi/document.ts` converts the same Zod schemas the endpoints
+validate with (`io: "input"`) and serialize to (`io: "output"`) using Zod's
+native `z.toJSONSchema` (JSON Schema draft 2020-12, the OpenAPI 3.1 dialect).
+Schemas are published under readable names in `components.schemas`
+(`src/openapi/components.ts`), and each endpoint's named request and response
+examples live next to its contract (`endpoints/*/examples.ts`,
+`http/estimate-examples.ts`).
+
+| Route               | Served by   | Content                                                            |
+| ------------------- | ----------- | ------------------------------------------------------------------ |
+| `GET /openapi.json` | `createApp` | The document, byte-identical to `docs/openapi.json`                |
+| `GET /docs`         | `createApp` | Swagger UI over `/openapi.json`; "Try it out" hits the same origin |
+
+Neither route is listed in the document, and the per-endpoint (Lambda) apps do
+not serve them. Swagger UI's scripts and styles load from the jsDelivr CDN, pinned
+to one swagger-ui-dist release (`SWAGGER_UI_VERSION`), so
+the browser viewing `/docs` needs internet access. The request examples produce
+the documented responses against a freshly seeded database (send the conflict
+example after the acceptance example).
+
+The committed export, `docs/openapi.json`, is regenerated without a server,
+environment variables or a database:
+
+```sh
+pnpm openapi:export   # write docs/openapi.json (Turbo builds core first)
+pnpm openapi:check    # exit 1 if docs/openapi.json differs from regenerated output
+```
+
+`pnpm --filter @scos/api openapi:export` (and `openapi:check`) run the same
+script directly and expect `@scos/core` to be built. The output is
+`JSON.stringify(document, null, 2)` plus a newline, with no timestamps, and
+Oxfmt ignores the file so formatting never rewrites generated bytes. A unit
+test compares the committed file with regenerated output, so `pnpm test` (and
+CI) fails on drift; the file is a Turbo input of the API's `test` task.
+
+**What JSON Schema cannot express.** The `SubmissionId` component documents
+these server-side rules in prose; they are the only differences between the
+published request schemas and runtime validation, and unit tests check both
+directions (Ajv on the generated schema, Zod, and the app):
+
+- no leading or trailing whitespace (the key is never trimmed);
+- no NUL character (U+0000);
+- well-formed Unicode (no lone surrogates).
+
+The Content-Type requirement, rejection of unknown fields (also expressed as
+`additionalProperties: false`) and the absence of coercion are stated in each
+request body's description. Unit tests also check that every example parses
+with its Zod schema, validates with Ajv against the generated JSON Schema, and
+equals, byte for byte, the response the app returns when the paired request is
+replayed through the real `VerifyOrder`/`SubmitOrder` use cases over the seed
+inventory; and that the document passes `@apidevtools/swagger-parser`.
 
 ## Configuration
 
@@ -383,8 +444,10 @@ pnpm api:start      # built bundle
 ```sh
 # Unit tests (no database): contracts, handlers with fake use cases, config,
 # composition, telemetry with in-memory exporters and captured logs, the
-# entrypoint spawned as a subprocess, and the built dist/server.js (log
-# correlation on the bundled load path; build first, as `pnpm test` does).
+# entrypoint spawned as a subprocess, the built dist/server.js (log
+# correlation on the bundled load path; build first, as `pnpm test` does), and
+# the OpenAPI document (validity, examples, schema/runtime agreement, export
+# drift).
 pnpm --filter @scos/api test
 
 # Full-stack tests through the composed app against real PostgreSQL.

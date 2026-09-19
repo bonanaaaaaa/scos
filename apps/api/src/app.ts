@@ -1,7 +1,9 @@
 /**
- * The combined app: every endpoint in one Hono app, for the local server and
- * the documentation routes (#12). Each endpoint is also a complete app on its
- * own (`endpoints/<name>/app.ts`), deployable as its own Lambda function (#14).
+ * The combined app: every endpoint in one Hono app, plus the documentation
+ * routes (`GET /openapi.json`, `GET /docs`), for the local server. Each
+ * endpoint is also a complete app on its own (`endpoints/<name>/app.ts`),
+ * deployable as its own Lambda function (#14); those do not serve the
+ * documentation.
  *
  * @module
  */
@@ -16,6 +18,7 @@ import { createVerifyOrderApp } from "./endpoints/verify-order/app";
 import { createEndpointApp } from "./http/endpoint-app";
 import { type Logger, defaultLogger } from "./http/logger";
 import { MESSAGES } from "./http/messages";
+import { createDocsApp } from "./openapi/docs-app";
 import { routes } from "./routes";
 
 export interface AppDependencies {
@@ -25,7 +28,7 @@ export interface AppDependencies {
 }
 
 /**
- * Mounts the three endpoint apps. Hono applies each mounted app's own error
+ * Mounts the three endpoint apps and the documentation routes. Hono applies each mounted app's own error
  * handler to its routes, and this app's 404 envelope to everything else, so
  * responses are identical to the standalone apps.
  */
@@ -38,5 +41,6 @@ export function createApp(dependencies: AppDependencies): Hono {
   app.route("/", createHealthApp({ logger }));
   app.route("/", createVerifyOrderApp({ verifyOrder, logger }));
   app.route("/", createSubmitOrderApp({ submitOrder, logger }));
+  app.route("/", createDocsApp(logger));
   return app;
 }
