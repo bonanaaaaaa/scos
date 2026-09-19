@@ -241,11 +241,25 @@ find_role() {
 
 create_database() {
   log "Creating PostgreSQL database $PLANETSCALE_DATABASE in $PLANETSCALE_REGION ($PLANETSCALE_CLUSTER_SIZE, $PLANETSCALE_REPLICAS replicas, PostgreSQL $PLANETSCALE_POSTGRES_MAJOR_VERSION), billed to Cloudflare account $CLOUDFLARE_ACCOUNT_ID."
-  local raw billing account out
-  # The signature is a credential: captured in memory, never echoed.
-  if ! raw="$(wrangler_run hyperdrive planetscale signature 2>/dev/null)"; then
-    die "wrangler hyperdrive planetscale signature failed. Create the database from the Cloudflare dashboard instead, then rerun with CREATE_DATABASE=false (docs/planetscale-bootstrap.md)."
+  local raw billing account out errlog
+  # The signature is a credential: captured in memory (stdout), never echoed.
+  # Wrangler's stderr carries only its banner and errors (the Cloudflare API
+  # endpoint, error code and hint), never the signature, so it goes to a
+  # scratch file and is shown when the command fails.
+  errlog="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/wrangler-signature.XXXXXX")"
+  # WRANGLER_LOG=info: debug logging would print the signature response.
+  if ! raw="$(WRANGLER_LOG=info wrangler_run hyperdrive planetscale signature 2>"$errlog")"; then
+    raw=""
+    {
+      echo "Wrangler output:"
+      # Colour codes stripped (portable), and each line indented so text in
+      # a Cloudflare error is never read as a workflow command.
+      sed -e $'s/\x1b\\[[0-9;]*m//g' -e 's/^/  /' "$errlog"
+    } >&2
+    rm -f "$errlog"
+    die "wrangler hyperdrive planetscale signature failed (see Wrangler's output above; a Cloudflare API authentication error usually means CLOUDFLARE_API_TOKEN is invalid, expired, or lacks a permission this call needs). Or create the database from the Cloudflare dashboard, then rerun with CREATE_DATABASE=false (docs/planetscale-bootstrap.md)."
   fi
+  rm -f "$errlog"
   # Keep only the JSON object, in case Wrangler prints a banner first.
   if ! billing="$(printf '%s\n' "$raw" | sed -n '/^[[:space:]]*{/,$p' |
     jq -ce 'select(type == "object" and (.account_id | type) == "string" and (.timestamp | tostring | length) > 0 and (.signature | type) == "string" and (.signature | length) > 0) | {account_id, timestamp: (.timestamp | tostring), signature}' 2>/dev/null)"; then

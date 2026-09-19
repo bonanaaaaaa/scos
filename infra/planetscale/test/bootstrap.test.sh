@@ -337,6 +337,14 @@ expect_nonzero
 expect_output_contains "4.126.0 or newer"
 expect_calls ' create ' 0
 
+new_case "signature failure shows Wrangler's error"
+run_deploy CREATE_DATABASE=true STUB_WRANGLER_SIGNATURE_ERROR="Authentication failed (status: 400) [code: 9106]"
+expect_nonzero
+expect_output_contains "Authentication failed (status: 400) [code: 9106]"
+expect_output_contains "lacks a permission"
+expect_calls ' create ' 0
+expect_no_secrets
+
 new_case "wrangler binary missing"
 run_deploy CREATE_DATABASE=true WRANGLER_CMD=/nonexistent/wrangler
 expect_nonzero

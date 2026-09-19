@@ -11,6 +11,11 @@ case "$*" in
   printf '%s\n' "${STUB_WRANGLER_VERSION:-4.135.0}"
   ;;
 "hyperdrive planetscale signature")
+  if [[ -n "${STUB_WRANGLER_SIGNATURE_ERROR:-}" ]]; then
+    # As the real CLI does: the error on stderr, nothing on stdout.
+    printf '\033[31m✘ [ERROR]\033[0m %s\n' "$STUB_WRANGLER_SIGNATURE_ERROR" >&2
+    exit 1
+  fi
   printf ' ⛅️ wrangler %s\n' "${STUB_WRANGLER_VERSION:-4.135.0}"
   printf '{\n  "account_id": "%s",\n  "timestamp": "1790000000",\n  "signature": "%s"\n}\n' \
     "${STUB_SIGNATURE_ACCOUNT:-${CLOUDFLARE_ACCOUNT_ID:-}}" "${STUB_SIGNATURE:?}"
