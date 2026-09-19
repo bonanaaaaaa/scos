@@ -29,16 +29,13 @@ Postgres exclusions for it.
 
 ### Cluster size
 
-**Recommendation: PS-5, single node** (1/16 vCPU, 512 MiB, $5/month in
-`ap-southeast`). Resize to PS-10 single node (1/8 vCPU, 1 GiB, $16/month) if
-either check below fails.
+**Decision: PS-5, single node** (1/16 vCPU, 512 MiB, $5/month in
+`ap-southeast`).
 
-| Option       | vCPU / memory     | Price in `ap-southeast` | Egress included |
-| ------------ | ----------------- | ----------------------- | --------------- |
-| PS-5 single  | 1/16 vCPU, 512MiB | $5/month                | 10 GB/month     |
-| PS-5 HA      | 1/16 vCPU, 512MiB | $15/month               | 100 GB/month    |
-| PS-10 single | 1/8 vCPU, 1 GiB   | $16/month (x86-64)      | 100 GB/month    |
-| PS-10 HA     | 1/8 vCPU, 1 GiB   | $47/month (x86-64)      | 100 GB/month    |
+| Option      | vCPU / memory     | Price in `ap-southeast` | Egress included |
+| ----------- | ----------------- | ----------------------- | --------------- |
+| PS-5 single | 1/16 vCPU, 512MiB | $5/month                | 10 GB/month     |
+| PS-5 HA     | 1/16 vCPU, 512MiB | $15/month               | 100 GB/month    |
 
 Reasoning:
 
@@ -47,16 +44,16 @@ Reasoning:
   whatever the cluster size. More CPU shortens each lock hold; it does not
   add parallelism.
 - **Connections.** PlanetScale does not publish `max_connections` per size.
-  It is likely lower on 512 MiB than on 1 GiB. The budget below needs only
-  the Hyperdrive origin pool (minimum 5) plus reserved and migration/admin
-  headroom, so a small value is likely enough. This is unverified until the
-  cluster exists.
+  The budget below needs only the Hyperdrive origin pool (minimum 5) plus
+  reserved and migration/admin headroom, so a small value is likely enough.
+  This is unverified until the cluster exists.
 - **HA is not needed.** The demo is disposable, and an outage of a replica
-  set is not an acceptance criterion. HA about triples the price at both sizes.
+  set is not an acceptance criterion. HA triples the price, to $15/month.
 - **Prices vary by region.** Singapore can cost more than other regions for
   the same size. Latency to Bangkok outweighs that difference.
 
-Resize to PS-10 when either holds:
+PS-5 stays unless the user decides otherwise. #33 reports back if either
+holds:
 
 1. After creation, the cluster's Parameters tab shows a `max_connections`
    that does not fit the [connection budget rule](#connection-budget) with
@@ -87,28 +84,27 @@ The schema uses `uuidv7()` as a column default, which needs PostgreSQL 18.
 
 Built only from the cited PlanetScale figures:
 
-| Item                                    | Estimate                                                                                                                              |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Cluster, PS-5 single node (recommended) | $5/month                                                                                                                              |
-| Cluster, PS-10 single node (fallback)   | $16/month                                                                                                                             |
-| Storage                                 | $0: 10 GB included per cluster; the demo data is far smaller                                                                          |
-| Backups                                 | $0 while backups stay within 2x the disk size; then $0.023 per GB-month                                                               |
-| Egress                                  | $0 within 10 GB/month (PS-5 without HA) or 100 GB/month (PS-10); a demo's JSON responses are far below either                         |
-| **Range**                               | **$5 to $16 per month**, prorated: PlanetScale bills to the millisecond, so a demo deleted after two weeks costs about half the month |
+| Item                      | Estimate                                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Cluster, PS-5 single node | $5/month                                                                                                                  |
+| Storage                   | $0: 10 GB included per cluster; the demo data is far smaller                                                              |
+| Backups                   | $0 while backups stay within 2x the disk size; then $0.023 per GB-month                                                   |
+| Egress                    | $0 within the 10 GB/month included with PS-5 without HA; a demo's JSON responses are far below it                         |
+| **Estimate**              | **$5 per month**, prorated: PlanetScale bills to the millisecond, so a demo deleted after two weeks costs about half that |
 
-Excluded from the range, because this record has no cited figure for them:
+Excluded from the estimate, because this record has no cited figure for them:
 
 - Cloudflare charges: the Workers plan (Free or Paid) and any Hyperdrive
   charge. The Free plan's 10 ms CPU limit may force the Paid plan (see
   [#33](#remaining-approvals-and-verification-for-33)).
 - Whether billing through the Cloudflare account changes the PlanetScale
   price.
-- HA ($15 or $47), development branches, and usage beyond the included
+- HA ($15), development branches, and usage beyond the included
   storage, backup and egress allowances.
 - The OTLP backend or collector, if one is used, and the R2 state bucket.
 - Taxes.
 
-**The budget decision is the user's.** This range is an input to it, not a
+**The budget decision is the user's.** This estimate is an input to it, not a
 budget.
 
 ## Hyperdrive
@@ -297,7 +293,7 @@ above an 8 MiB budget.
 | Input                     | Value                                                                                                                                                                                                                                                                       |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Region                    | `ap-southeast` (AWS Singapore)                                                                                                                                                                                                                                              |
-| Cluster size              | PS-5; PS-10 if the `max_connections` check fails                                                                                                                                                                                                                            |
+| Cluster size              | PS-5, single node                                                                                                                                                                                                                                                           |
 | HA                        | No (single node)                                                                                                                                                                                                                                                            |
 | PostgreSQL version        | 18 (the schema uses `uuidv7()`); confirm availability                                                                                                                                                                                                                       |
 | Branch                    | `main` as production; no development branch                                                                                                                                                                                                                                 |
