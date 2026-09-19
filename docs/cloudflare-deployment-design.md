@@ -139,26 +139,15 @@ Any cached configuration added later must be a **separate** configuration
 with its own binding. It must never serve stock reads, estimate reads or
 submission-key lookups. No current path qualifies for it.
 
-### Origin port: the direct primary on 5432
+### Origin
 
-Point Hyperdrive at the PlanetScale branch's **direct** connection on port
-**5432**. Do not route it through PlanetScale's PgBouncer on 6432.
-
-- Hyperdrive already pools in transaction mode. PgBouncer on 6432 is also
-  transaction mode only. Stacking them adds a second pool with the same
-  semantics, a second queue, and a second limit (`default_pool_size` 20,
-  `max_client_conn` 100) to reason about, and gains nothing.
-- With one pooler, the origin connection count is exactly Hyperdrive's
-  `origin_connection_limit`, which is the only number to budget.
-- Migrations need the direct port anyway: PlanetScale reserves direct
-  connections for DDL, migrations and long transactions.
-- Cloudflare's PlanetScale guide does not say which port to use, so this is
-  a design choice, not a documented requirement.
-
-If the measured `max_connections` is too low for the budget, lower
-`origin_connection_limit` first. Switch Hyperdrive to 6432 only as a
-fallback, when even the minimum of 5 does not fit beside the reserved and
-migration connections; PgBouncer then multiplexes those 5 onto its own pool.
+The Worker never sees a PlanetScale address. It reads only the `HYPERDRIVE`
+binding's `connectionString`. The Hyperdrive configuration's origin is
+whatever Cloudflare's PlanetScale integration or #15 sets. This design takes
+no position on that origin, including whether it goes through PlanetScale's
+PgBouncer. The application works either way: both Hyperdrive and PgBouncer
+pool in transaction mode, and the application keeps no session state (see
+[Transaction pooling](#transaction-pooling-and-submission-semantics)).
 
 ### TLS
 
@@ -283,8 +272,6 @@ commits) but not retried. #33 should record what it observes.
 - **Measurement is #33's.** #33 measures origin connections, queueing and
   lock waits under representative concurrent requests, and revisits the
   value. It must stay within the rule.
-- **PgBouncer** is not needed alongside Hyperdrive (see
-  [origin port](#origin-port-the-direct-primary-on-5432)).
 
 ## Worker runtime
 
@@ -317,7 +304,7 @@ above an 8 MiB budget.
 | Runtime role              | Dedicated, `--inherited-roles pg_read_all_data,pg_write_all_data`; TLS required                                                                                                                                                                                             |
 | Migration role            | Separate. `prisma migrate deploy` creates and alters tables, indexes, a trigger function and triggers in `public`, and writes `_prisma_migrations`. It needs `CREATE` on `public` and ownership of those objects. #15 confirms which PlanetScale inherited roles grant that |
 | Migration connection      | Direct to the branch host on 5432, never through Hyperdrive; `sslmode=require` or stricter                                                                                                                                                                                  |
-| Hyperdrive origin         | Branch host, port 5432, database name, the runtime role; password as a `sensitive` Terraform variable                                                                                                                                                                       |
+| Hyperdrive origin         | As set by Cloudflare's PlanetScale integration or #15, with the runtime role; the application does not depend on the host or port                                                                                                                                           |
 | TLS / `sslmode`           | `require` (default, WebPKI validation); `verify-full` with an uploaded CA is optional                                                                                                                                                                                       |
 | Caching                   | `caching = { disabled = true }`, set explicitly                                                                                                                                                                                                                             |
 | `origin_connection_limit` | 5, within the [budget rule](#connection-budget)                                                                                                                                                                                                                             |
