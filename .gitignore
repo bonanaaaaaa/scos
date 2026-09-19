@@ -20,3 +20,13 @@ packages/persistence/src/generated/
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
+
+# Terraform (infra/): provider caches, state, plans and crash logs are never
+# committed; state and plans hold secrets. .terraform.lock.hcl stays tracked.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log

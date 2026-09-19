@@ -1,0 +1,528 @@
+name: Deploy (shared)
+
+# The shared deployment workflow (#15), called by one thin workflow per
+# environment (deploy-prod.yml today). It deploys one commit, already gated by
+# the caller, to the GitHub environment named by `inputs.environment` (its
+# variables and secrets; prod has no required reviewers, so nothing pauses for
+# an approval). Order: ensure the PlanetScale database
+# and its roles (created only when missing, or reset on a rotation; ADR 0005
+# amendment), state backup,
+# Terraform plan and apply of that saved plan, migrations directly to
+# PlanetScale, Wrangler
+# deploy of the bundle built once in this job from that commit (CI's own
+# build is not reused), health check. Any failing step fails the deployment;
+# nothing is ever destroyed. State locking is Terraform's own (use_lockfile
+# in the s3 backend). The PlanetScale role credentials live in the Terraform
+# state, not in GitHub secrets (the user's decision):
+# docs/deployment-pipeline.md#role-credentials-in-the-state.
+#
+# Secrets differ from a plain "pass everything" reusable workflow: the caller
+# passes only the repository secrets (the R2 key pair and the PlanetScale
+# service token). The environment secrets and variables (the Cloudflare API
+# token, the optional OTLP headers, TF_STATE_*, CLOUDFLARE_ACCOUNT_ID, ...)
+# cannot be passed by a caller; each job here binds
+# `environment: ${{ inputs.environment }}` and reads them itself.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub environment to deploy to (its variables, secrets and deployment-branch rule apply).
+        type: string
+        required: true
+      sha:
+        description: The commit to deploy, already checked by the caller (CI passed, still the head of main).
+        type: string
+        required: true
+      terraform_working_dir:
+        description: Terraform root for this environment.
+        type: string
+        default: infra/cloudflare
+      rotate_credentials:
+        description: "Rotate PlanetScale role credentials in this run: none, runtime, migration or both (reset in PlanetScale, then replaced in the Terraform state)."
+        type: string
+        default: none
+      seed_demo_data:
+        description: After the migrations, insert the demo warehouses that are missing (idempotent; never resets stock).
+        type: boolean
+        default: false
+    secrets:
+      r2_access_key_id:
+        description: R2 state bucket access key ID (repository secret R2_ACCESS_KEY_ID).
+        required: true
+      r2_secret_access_key:
+        description: R2 state bucket secret access key (repository secret R2_SECRET_ACCESS_KEY).
+        required: true
+      planetscale_service_token:
+        description: PlanetScale service token (repository secret PLANETSCALE_SERVICE_TOKEN), for the database bootstrap step.
+        required: true
+
+permissions: {}
+
+env:
+  TERRAFORM_VERSION: 1.16.3
+  PSCALE_VERSION: 0.337.0
+  # sha256 of pscale_0.337.0_linux_amd64.tar.gz (release checksums file and
+  # GitHub asset digest).
+  PSCALE_SHA256: 1c6055dc145c7e1a16c2fc00ee66951359f9771681ffdff09ba47cd18d2acb4c
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-24.04
+    # The first deploy also creates the database and waits for its branch.
+    timeout-minutes: 60
+    environment: ${{ inputs.environment }}
+    # The manual PlanetScale bootstrap uses this group too (planetscale-prod
+    # for prod), so it never runs while a deploy creates roles or migrates.
+    concurrency:
+      group: planetscale-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      SHA: ${{ inputs.sha }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      ROTATE: ${{ inputs.rotate_credentials }}
+      TF_DIR: ${{ inputs.terraform_working_dir }}
+      # Terraform state (R2). Non-secret settings from the environment.
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_STATE_ENDPOINT: ${{ vars.TF_STATE_ENDPOINT }}
+      TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
+      TF_STATE_KEY: ${{ vars.TF_STATE_KEY }}
+      TF_STATE_WORKSPACE_PREFIX: ${{ vars.TF_STATE_WORKSPACE_PREFIX }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+    steps:
+      # Repeated here, before the database bootstrap, terraform apply and
+      # wrangler deploy: a "Re-run failed jobs" reuses the caller gate's old
+      # commit, and a run can wait in the concurrency groups (deploy-prod,
+      # planetscale-prod) while main moves on. An older commit never
+      # overwrites a newer one.
+      - name: Check that main is still at this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq '.sha')
+          if [[ $head != "$SHA" ]]; then
+            echo "::error title=Stale deploy stopped::main is at $head, not $SHA. Nothing was changed; the newer commit's CI run deploys it."
+            exit 1
+          fi
+      - name: Prepare scratch space
+        # For the saved plan and generated files; removed at the end.
+        run: echo "WORK=$RUNNER_TEMP/deploy" >>"$GITHUB_ENV"
+
+      - name: Check required settings
+        # The database settings (branch host, runtime username) come from the
+        # PlanetScale step below; the role credentials from the Terraform
+        # state. CLOUDFLARE_API_TOKEN is the one Cloudflare token (Terraform,
+        # Wrangler and the billing signature).
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          PLANETSCALE_ORG: ${{ vars.PLANETSCALE_ORG }}
+          PLANETSCALE_SERVICE_TOKEN_ID: ${{ vars.PLANETSCALE_SERVICE_TOKEN_ID }}
+          HAS_R2_KEYS: ${{ secrets.r2_access_key_id != '' && secrets.r2_secret_access_key != '' }}
+          HAS_PLANETSCALE_TOKEN: ${{ secrets.planetscale_service_token != '' }}
+          HAS_CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          if [[ ! $ENVIRONMENT =~ ^[a-z][a-z0-9-]{0,15}$ || ! $SHA =~ ^[0-9a-f]{40}$ ||
+            ! $ROTATE =~ ^(none|runtime|migration|both)$ ]]; then
+            echo "::error::Unexpected environment name, commit SHA or rotate_credentials input."
+            exit 1
+          fi
+          missing=()
+          for name in TF_STATE_BUCKET TF_STATE_ENDPOINT TF_STATE_REGION TF_STATE_KEY \
+            TF_STATE_WORKSPACE_PREFIX CLOUDFLARE_ACCOUNT_ID PLANETSCALE_ORG PLANETSCALE_SERVICE_TOKEN_ID; do
+            [[ -n ${!name} ]] || missing+=("variable $name")
+          done
+          [[ $HAS_R2_KEYS == true ]] || missing+=("secrets R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY")
+          [[ $HAS_PLANETSCALE_TOKEN == true ]] || missing+=("secret PLANETSCALE_SERVICE_TOKEN")
+          [[ $HAS_CLOUDFLARE_TOKEN == true ]] || missing+=("secret CLOUDFLARE_API_TOKEN")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            printf '::error::Missing %s setting: %s\n' "$ENVIRONMENT" "${missing[@]}"
+            exit 1
+          fi
+
+      - name: Check out the commit CI tested
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          # The wrapper copies stdout into step outputs: never for state or
+          # plans.
+          terraform_wrapper: false
+      - name: Install pscale
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/pscale.tar.gz"
+          curl --fail --silent --show-error --location --output "$archive" \
+            "https://github.com/planetscale/cli/releases/download/v${PSCALE_VERSION}/pscale_${PSCALE_VERSION}_linux_amd64.tar.gz"
+          echo "${PSCALE_SHA256}  $archive" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/pscale-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/pscale-bin" pscale
+          echo "$RUNNER_TEMP/pscale-bin" >>"$GITHUB_PATH"
+      # Installs run before any step that holds a secret, so package install
+      # scripts never see a credential.
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      # No Turbo remote cache here: the deployed bundle is built from source.
+      - name: Build the packages the Worker imports
+        run: pnpm exec turbo run build --filter=@scos/api^...
+
+      - name: Build the Worker bundle once and record its checksums
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK"
+          infra/cloudflare/scripts/worker-bundle.sh build "$WORK/bundle"
+          {
+            echo "### Worker bundle for \`$SHA\`"
+            echo "Built once with \`wrangler deploy --dry-run\`; this exact output is uploaded."
+            echo '```'
+            cat "$WORK/bundle/SHA256SUMS"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      # 1. Terraform state first: initialize and back it up before anything
+      #    can change it (the credential store below writes to it). The s3
+      #    backend's lock file (use_lockfile) guards the state.
+      - name: Initialize Terraform against the R2 state
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+        run: infra/cloudflare/scripts/backend-init.sh "$TF_DIR"
+      - name: Back up the current state
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+        run: infra/cloudflare/scripts/state-backup.sh backup "${SHA:0:12}-run${GITHUB_RUN_ID}"
+      - name: Read the stored database name
+        # Only the non-secret database name from the stored migration URL, as
+        # the fallback for a migration-role reset (bootstrap.sh). The URL is
+        # masked and never leaves this step. Empty on a first run.
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+        run: |
+          set -euo pipefail
+          url=$(terraform -chdir="$TF_DIR" output -raw migration_database_url 2>/dev/null || true)
+          [[ -z $url ]] || echo "::add-mask::$url"
+          name=${url#*://*/}
+          name=${name%%\?*}
+          [[ -n $url && $name =~ ^[A-Za-z0-9_-]+$ ]] || name=""
+          url=""
+          echo "STORED_ORIGIN_DATABASE=$name" >>"$GITHUB_ENV"
+
+      # 2. PlanetScale: the database and its roles, created only when missing
+      #    (a merge provisions them; ADR 0005 amendment), or reset when
+      #    rotate_credentials names them. A role's password is shown only
+      #    then: the script exports it, masked, to $GITHUB_ENV
+      #    (BOOTSTRAP_PLANETSCALE_RUNTIME_PASSWORD,
+      #    BOOTSTRAP_MIGRATION_DATABASE_URL), and the next step stores it in
+      #    the state at once. The branch host and runtime username are read
+      #    from PlanetScale on every run.
+      - name: Check that main is still at this commit (before the database)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: infra/cloudflare/scripts/require-main-head.sh "$SHA" "before the PlanetScale bootstrap"
+      - name: Ensure the PlanetScale database (create only what is missing)
+        env:
+          PLANETSCALE_ORG: ${{ vars.PLANETSCALE_ORG }}
+          PLANETSCALE_SERVICE_TOKEN_ID: ${{ vars.PLANETSCALE_SERVICE_TOKEN_ID }}
+          PLANETSCALE_SERVICE_TOKEN: ${{ secrets.planetscale_service_token }}
+          PLANETSCALE_DATABASE: ${{ vars.PLANETSCALE_DATABASE || 'scos' }}
+          PLANETSCALE_BRANCH: ${{ vars.PLANETSCALE_BRANCH || 'main' }}
+          PLANETSCALE_REGION: ${{ vars.PLANETSCALE_REGION || 'ap-southeast' }}
+          PLANETSCALE_CLUSTER_SIZE: ${{ vars.PLANETSCALE_CLUSTER_SIZE || 'PS-5' }}
+          MIGRATION_ROLE_NAME: ${{ vars.MIGRATION_ROLE_NAME || 'scos_migrator' }}
+          CREATE_DATABASE: "true"
+          MANAGE_ROLES: "true"
+          EXPORT_GITHUB_ENV: "true"
+          ROTATE_ROLES: ${{ inputs.rotate_credentials }}
+          # For a migration-role reset whose output lacks the database name.
+          ORIGIN_DATABASE_FALLBACK: ${{ vars.HYPERDRIVE_ORIGIN_DATABASE || env.STORED_ORIGIN_DATABASE || 'postgres' }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          # For the billing signature; used only while the database is missing.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: infra/planetscale/bootstrap.sh
+      - name: Store fresh role credentials in the state
+        # Runs as soon as a credential exists, even if the step above failed
+        # after creating one role, or the run was cancelled: the credential
+        # has no other copy, and the role cannot be recreated. A targeted
+        # plan and apply of only the affected terraform_data resource, with
+        # -replace so the new value is taken (Terraform warns about -target;
+        # expected). No main-head check here: storing a credential is always
+        # right, whatever deploys next. Then the values are cleared, so no
+        # later step has them, and every later failure (plan, the head checks,
+        # a timeout) leaves the credentials safe in the state.
+        if: always() && (env.BOOTSTRAP_PLANETSCALE_RUNTIME_PASSWORD != '' || env.BOOTSTRAP_MIGRATION_DATABASE_URL != '')
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_environment: ${{ inputs.environment }}
+          # Required inputs of resources this targeted run does not touch; a
+          # placeholder only if PlanetScale reported nothing (a failed step).
+          TF_VAR_planetscale_host: ${{ vars.PLANETSCALE_HOST || env.BOOTSTRAP_PLANETSCALE_HOST || 'unused.invalid' }}
+          TF_VAR_hyperdrive_origin_user: ${{ vars.HYPERDRIVE_ORIGIN_USER || env.BOOTSTRAP_HYPERDRIVE_ORIGIN_USER || 'unused' }}
+          TF_VAR_planetscale_runtime_password: ${{ env.BOOTSTRAP_PLANETSCALE_RUNTIME_PASSWORD }}
+          TF_VAR_migration_database_url: ${{ env.BOOTSTRAP_MIGRATION_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          clear() {
+            {
+              echo "BOOTSTRAP_PLANETSCALE_RUNTIME_PASSWORD="
+              echo "BOOTSTRAP_MIGRATION_DATABASE_URL="
+            } >>"$GITHUB_ENV"
+            rm -f "$WORK/credentials.tfplan" "$WORK/credentials.log"
+          }
+          trap clear EXIT
+          targets=()
+          if [[ -n $TF_VAR_planetscale_runtime_password ]]; then
+            targets+=("-target=terraform_data.planetscale_runtime_password"
+              "-replace=terraform_data.planetscale_runtime_password")
+          fi
+          if [[ -n $TF_VAR_migration_database_url ]]; then
+            targets+=("-target=terraform_data.migration_database_url"
+              "-replace=terraform_data.migration_database_url")
+          fi
+          mkdir -p "$WORK"
+          umask 077
+          # Nothing is printed: the plan holds the credentials in clear text.
+          if ! terraform -chdir="$TF_DIR" plan -input=false -lock-timeout=5m -no-color \
+            "${targets[@]}" -out="$WORK/credentials.tfplan" >"$WORK/credentials.log" 2>&1 ||
+            ! terraform -chdir="$TF_DIR" apply -input=false -lock-timeout=5m -no-color \
+              "$WORK/credentials.tfplan" >>"$WORK/credentials.log" 2>&1; then
+            grep -E '^(Error|│|  on )' "$WORK/credentials.log" || tail -n 20 "$WORK/credentials.log"
+            echo "::error title=Credential not stored::A PlanetScale role credential issued in this run could not be stored in the Terraform state. Rotate that role (Deploy Prod, rotate_credentials) once the cause is fixed."
+            exit 1
+          fi
+          [[ -z $TF_VAR_planetscale_runtime_password ]] || echo "Stored the new runtime role password in the Terraform state."
+          [[ -z $TF_VAR_migration_database_url ]] || echo "Stored the new migration role URL in the Terraform state."
+      - name: Check the database settings
+        # The host and username come from PlanetScale (BOOTSTRAP_*) unless an
+        # operator variable overrides them. The role credentials are checked
+        # by the Terraform plan: it fails, before anything is applied, when
+        # the state holds none.
+        env:
+          RESOLVED_HOST: ${{ vars.PLANETSCALE_HOST || env.BOOTSTRAP_PLANETSCALE_HOST }}
+          RESOLVED_USER: ${{ vars.HYPERDRIVE_ORIGIN_USER || env.BOOTSTRAP_HYPERDRIVE_ORIGIN_USER }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n $RESOLVED_HOST ]] || missing+=("the branch host (PLANETSCALE_HOST)")
+          [[ -n $RESOLVED_USER ]] || missing+=("the runtime username (HYPERDRIVE_ORIGIN_USER)")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            printf '::error::No %s after the PlanetScale step: %s\n' "$ENVIRONMENT" "${missing[@]}"
+            exit 1
+          fi
+
+      - name: Terraform plan (saved, never printed)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_environment: ${{ inputs.environment }}
+          TF_VAR_planetscale_host: ${{ vars.PLANETSCALE_HOST || env.BOOTSTRAP_PLANETSCALE_HOST }}
+          # Empty: Terraform takes the name from the stored migration URL.
+          TF_VAR_hyperdrive_origin_database: ${{ vars.HYPERDRIVE_ORIGIN_DATABASE || env.BOOTSTRAP_HYPERDRIVE_ORIGIN_DATABASE }}
+          TF_VAR_hyperdrive_origin_user: ${{ vars.HYPERDRIVE_ORIGIN_USER || env.BOOTSTRAP_HYPERDRIVE_ORIGIN_USER }}
+          # No credential variable: the role credentials are already in the
+          # state (the store step above), and ignore_changes keeps them.
+        run: |
+          set -euo pipefail
+          # The saved plan holds both role credentials in clear text. It stays
+          # on this runner, inside this job, and is deleted at the end; it is
+          # never uploaded or printed. Only the change summary is shown.
+          umask 077
+          if ! terraform -chdir="$TF_DIR" plan -input=false -lock-timeout=5m -no-color \
+            -out="$WORK/tfplan" >"$WORK/plan.log" 2>&1; then
+            # Diagnostics only: plan errors do not echo sensitive values.
+            grep -E '^(Error|│|  on |Warning)' "$WORK/plan.log" || tail -n 20 "$WORK/plan.log"
+            exit 1
+          fi
+          {
+            echo "### Terraform plan"
+            echo '```'
+            terraform -chdir="$TF_DIR" show -json "$WORK/tfplan" |
+              jq -r '.resource_changes[]? | "\(.change.actions | join(",")) \(.address)"'
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Terraform apply of the saved plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        # A saved plan is stale if the state changed after it was made;
+        # Terraform then refuses it and this step fails. Rerun the job to
+        # replan.
+        run: |
+          set -euo pipefail
+          infra/cloudflare/scripts/require-main-head.sh "$SHA" "before terraform apply"
+          terraform -chdir="$TF_DIR" apply -input=false -lock-timeout=5m -no-color "$WORK/tfplan"
+      - name: Read the Hyperdrive ID
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+        run: |
+          set -euo pipefail
+          id=$(terraform -chdir="$TF_DIR" output -raw hyperdrive_id)
+          echo "::add-mask::$id"
+          if [[ ! $id =~ ^[0-9a-f]{32}$ ]]; then
+            echo "::error::The hyperdrive_id output is not a 32-character hex ID."
+            exit 1
+          fi
+          echo "HYPERDRIVE_ID=$id" >>"$GITHUB_ENV"
+
+      # 2. Migrations: the migration role, straight to the PlanetScale branch,
+      #    with the URL stored in the Terraform state (masked before any use,
+      #    and only in this step's commands).
+      - name: Apply database migrations (prisma migrate deploy)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          PLANETSCALE_HOST: ${{ vars.PLANETSCALE_HOST || env.BOOTSTRAP_PLANETSCALE_HOST }}
+          SEED_DEMO_DATA: ${{ inputs.seed_demo_data }}
+        run: |
+          set -euo pipefail
+          url=$(terraform -chdir="$TF_DIR" output -raw migration_database_url)
+          echo "::add-mask::$url"
+          # The password on its own, as it appears in the URL (percent-encoded)
+          # and, when different, decoded, as a driver error might print it.
+          password=${url#*://}
+          password=${password%%@*}
+          password=${password#*:}
+          if [[ -n $password ]]; then
+            echo "::add-mask::$password"
+            decoded=$(PASSWORD="$password" node -e 'process.stdout.write(decodeURIComponent(process.env.PASSWORD))')
+            [[ $decoded == "$password" ]] || echo "::add-mask::$decoded"
+            decoded=""
+          fi
+          # Checked without printing the URL: direct to the branch host on
+          # 5432 (never Hyperdrive or the PgBouncer port), TLS required.
+          # shellcheck disable=SC2016 # JavaScript, not shell, expansions.
+          DATABASE_URL="$url" node --input-type=module -e '
+            const url = new URL(process.env.DATABASE_URL);
+            const problems = [];
+            if (!["postgres:", "postgresql:"].includes(url.protocol)) problems.push("scheme must be postgresql://");
+            if (url.hostname !== process.env.PLANETSCALE_HOST) problems.push("host must be PLANETSCALE_HOST (direct, not Hyperdrive)");
+            if (!["", "5432"].includes(url.port)) problems.push("port must be 5432");
+            if (!["require", "verify-ca", "verify-full"].includes(url.searchParams.get("sslmode") ?? "")) problems.push("sslmode must be require or stricter");
+            if (problems.length) { for (const p of problems) console.error(`::error::The stored migration URL: ${p}`); process.exit(1); }
+          '
+          DATABASE_URL="$url" pnpm --filter @scos/persistence run db:migrate
+          # Optional, one-time: insert the demo warehouses that are missing
+          # (ON CONFLICT DO NOTHING; never resets or replenishes stock).
+          if [[ $SEED_DEMO_DATA == true ]]; then
+            DATABASE_URL="$url" pnpm --filter @scos/persistence run db:seed
+            echo "- Demo data: seeded (missing warehouses inserted)." >>"$GITHUB_STEP_SUMMARY"
+          fi
+          url=""
+
+      # 3. The Worker: exactly the bundle built above from the commit CI tested.
+      - name: Generate the deploy configuration
+        working-directory: apps/api
+        env:
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+          SERVICE_VERSION: ${{ inputs.sha }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+          OTEL_SDK_DISABLED: ${{ vars.OTEL_SDK_DISABLED }}
+          OTEL_TRACES_EXPORTER: ${{ vars.OTEL_TRACES_EXPORTER }}
+          OTEL_METRICS_EXPORTER: ${{ vars.OTEL_METRICS_EXPORTER }}
+          OTEL_TRACES_SAMPLER_ARG: ${{ vars.OTEL_TRACES_SAMPLER_ARG }}
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_TIMEOUT: ${{ vars.OTEL_EXPORTER_OTLP_TIMEOUT }}
+          # Validated here with the Worker's own schema; never written to the
+          # file.
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          WORKER_PLACEMENT_REGION: ${{ vars.WORKER_PLACEMENT_REGION }}
+        run: |
+          ./node_modules/.bin/tsx ../../infra/cloudflare/scripts/worker-deploy-config.mjs \
+            --bundle "$WORK/bundle" --hyperdrive-id "$HYPERDRIVE_ID" \
+            --out "$WORK/wrangler.deploy.json"
+      - name: Deploy the Worker (wrangler deploy, no rebuild)
+        working-directory: apps/api
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          set -euo pipefail
+          ../../infra/cloudflare/scripts/require-main-head.sh "$SHA" "before wrangler deploy"
+          ../../infra/cloudflare/scripts/worker-bundle.sh verify "$WORK/bundle"
+          secrets_args=()
+          if [[ -n $OTEL_EXPORTER_OTLP_HEADERS ]]; then
+            # Uploaded with this version as a Worker secret; the file is private
+            # to this runner and removed at the end of the job.
+            umask 077
+            jq -n '{OTEL_EXPORTER_OTLP_HEADERS: env.OTEL_EXPORTER_OTLP_HEADERS}' >"$WORK/worker-secrets.json"
+            secrets_args=(--secrets-file "$WORK/worker-secrets.json")
+          fi
+          ./node_modules/.bin/wrangler deploy -c "$WORK/wrangler.deploy.json" \
+            --message "Deploy ${SHA} (run ${GITHUB_RUN_ID})" --tag "${SHA:0:12}" \
+            "${secrets_args[@]}" 2>&1 | tee "$WORK/wrangler-deploy.log"
+          rm -f "$WORK/worker-secrets.json"
+          version=$(grep -oE 'Current Version ID: [0-9a-f-]+' "$WORK/wrangler-deploy.log" | awk '{print $4}' || true)
+          url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' "$WORK/wrangler-deploy.log" | head -n 1 || true)
+          echo "WORKER_URL_FROM_DEPLOY=$url" >>"$GITHUB_ENV"
+          {
+            echo "### Worker deployed"
+            echo "- Commit: \`$SHA\`"
+            echo "- Worker version: \`${version:-unknown}\`"
+            echo "- Uploaded modules match the SHA256SUMS above (verified before upload)."
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      # 4. Health check.
+      - name: Check GET /health on the deployed Worker
+        env:
+          WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
+        run: |
+          set -euo pipefail
+          base=${WORKER_BASE_URL:-$WORKER_URL_FROM_DEPLOY}
+          if [[ -z $base ]]; then
+            echo "::error::No Worker URL: set the $ENVIRONMENT variable WORKER_BASE_URL."
+            exit 1
+          fi
+          # 200 with {"status":"ok"} means the configuration validated: an
+          # invalid one makes the Worker answer 500 to every request. It does
+          # not prove database connectivity (docs/deployment-pipeline.md).
+          for attempt in $(seq 1 12); do
+            body=$(curl -fsS --max-time 10 "${base%/}/health" || true)
+            if [[ $(jq -r '.status? // empty' <<<"$body" 2>/dev/null) == ok ]]; then
+              echo "Healthy after $attempt attempt(s): ${base%/}/health"
+              echo "- Health: \`GET ${base%/}/health\` returned \`{\"status\":\"ok\"}\`" >>"$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::GET ${base%/}/health did not return {\"status\":\"ok\"}. Roll back with wrangler rollback (docs/deployment-pipeline.md)."
+          exit 1
+
+      - name: Remove the saved plan and generated files
+        if: always()
+        run: rm -rf "$WORK"

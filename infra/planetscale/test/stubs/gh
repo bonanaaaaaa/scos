@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Tripwire: the bootstrap must never call the GitHub CLI (role credentials go
+# to the Terraform state, not to GitHub secrets or variables). Any call is
+# recorded and fails.
+set -euo pipefail
+printf 'gh %s\n' "$*" >>"${STUB_STATE:?}/calls.log"
+printf 'stub: the bootstrap must not call gh: %s\n' "$*" >&2
+exit 2

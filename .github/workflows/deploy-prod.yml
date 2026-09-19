@@ -1,0 +1,145 @@
+name: Deploy Prod
+
+# Thin caller for the prod environment (#15). A merge to main is the trigger:
+# the gate waits until CI has passed for the same commit, then the shared
+# workflow (deploy.yml) deploys it. There is no human approval: by the
+# user's decision the prod environment has no required reviewers, so once
+# DEPLOY_ENABLED is `true` every merge to main deploys to prod, and the first
+# one creates the PlanetScale database (billing starts).
+#
+# Secondary: a manual run (workflow_dispatch) on main redeploys main's head,
+# gated exactly like a push. Its inputs are the operator actions:
+# - rotate_credentials: reset a PlanetScale role's password and replace the
+#   stored credential in the Terraform state in the same run;
+# - seed_demo_data: insert the demo warehouses once, after the migrations.
+#
+# Nothing deploys until the repository variable DEPLOY_ENABLED is `true`; it
+# is the provisioning authorization and the kill switch.
+# docs/deployment-pipeline.md.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      rotate_credentials:
+        description: Rotate PlanetScale role credentials (pscale role reset, then replace the value stored in the Terraform state).
+        type: choice
+        options: [none, runtime, migration, both]
+        default: none
+      seed_demo_data:
+        description: After the migrations, insert the demo warehouses that are missing (one-time; never resets stock).
+        type: boolean
+        default: false
+
+permissions: {}
+
+# One prod deployment at a time; a running one is never
+# cancelled. A newer push replaces a pending one.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Wait for CI on the same commit
+    # No environment and no secret. Only main (a push, or a manual run on
+    # main), and only with DEPLOY_ENABLED.
+    if: vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      sha: ${{ steps.wait.outputs.sha }}
+      deploy: ${{ steps.wait.outputs.deploy }}
+    steps:
+      - name: Wait for CI on this commit, and check main has not moved on
+        id: wait
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ ! $SHA =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Unexpected commit SHA."
+            exit 1
+          fi
+          echo "sha=$SHA" >>"$GITHUB_OUTPUT"
+          # Never deploy an older commit over a newer one. Checked on every
+          # poll and once more after CI passed: if main moves on, this run
+          # skips and the newer commit's run deploys it. (CI cancels an older
+          # run on main when a newer push arrives, so a cancelled CI plus a
+          # moved main is a skip, not a failure.)
+          moved_on() {
+            local head
+            head=$(gh api "repos/$REPOSITORY/commits/main" --jq '.sha') || head=
+            # Called inside `if`, where set -e is off: an API error must fail
+            # the gate, not look like a moved main and skip the deploy.
+            if [[ ! $head =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Could not read the head of main."
+              exit 1
+            fi
+            if [[ $head != "$SHA" ]]; then
+              echo "::notice title=Deploy skipped::main is at $head, not $SHA. The newer commit's run deploys it."
+              echo "deploy=false" >>"$GITHUB_OUTPUT"
+              return 0
+            fi
+            return 1
+          }
+          # CI (ci.yml) runs on the same push. Poll its push runs on main for
+          # this commit: success continues; failure, cancellation, no run
+          # within 5 minutes or no result within 30 fails the gate.
+          interval=25
+          appear_limit=$((5 * 60))
+          overall_limit=$((30 * 60))
+          started=$SECONDS
+          while true; do
+            if moved_on; then exit 0; fi
+            runs=$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SHA&event=push&branch=main&per_page=20" \
+              --jq '[.workflow_runs[] | {status, conclusion}]')
+            elapsed=$((SECONDS - started))
+            if jq -e 'any(.[]; .conclusion == "success")' <<<"$runs" >/dev/null; then
+              echo "CI passed for $SHA."
+              break
+            fi
+            if jq -e 'length > 0 and all(.[]; .status == "completed")' <<<"$runs" >/dev/null; then
+              echo "::error title=CI did not pass::CI for $SHA finished without success ($(jq -r '[.[].conclusion] | join(", ")' <<<"$runs")). Nothing deploys."
+              exit 1
+            fi
+            if jq -e 'length == 0' <<<"$runs" >/dev/null && ((elapsed >= appear_limit)); then
+              echo "::error title=No CI run::No CI push run for $SHA on main after $((appear_limit / 60)) minutes. Nothing deploys."
+              exit 1
+            fi
+            if ((elapsed >= overall_limit)); then
+              echo "::error title=CI timeout::CI for $SHA did not finish within $((overall_limit / 60)) minutes. Nothing deploys; run Deploy Prod manually once CI has passed."
+              exit 1
+            fi
+            echo "Waiting for CI on $SHA: $(jq -r 'if length == 0 then "no run yet" else ([.[].status] | join(", ")) end' <<<"$runs") (${elapsed}s)."
+            sleep "$interval"
+          done
+          if moved_on; then exit 0; fi
+          echo "deploy=true" >>"$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
+    # Caps the shared workflow's jobs: checkout and the main-head checks.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: prod
+      sha: ${{ needs.gate.outputs.sha }}
+      # Operator actions exist only on a manual run; a push never rotates or
+      # seeds.
+      rotate_credentials: ${{ github.event_name == 'workflow_dispatch' && inputs.rotate_credentials || 'none' }}
+      seed_demo_data: ${{ github.event_name == 'workflow_dispatch' && inputs.seed_demo_data }}
+    secrets:
+      r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
+      r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      planetscale_service_token: ${{ secrets.PLANETSCALE_SERVICE_TOKEN }}

@@ -1,0 +1,11 @@
+# actionlint configuration (read by actionlint.yml and local runs).
+paths:
+  # The shared deploy workflow reads its environment secrets directly: its
+  # jobs bind `environment: ${{ inputs.environment }}`, and GitHub lets such a
+  # job read that environment's secrets, which a caller cannot pass through
+  # `workflow_call`. actionlint only knows the declared `workflow_call`
+  # secrets, so it reports these names as undefined. Only these names are
+  # ignored, only in this file.
+  .github/workflows/deploy.yml:
+    ignore:
+      - 'property "(cloudflare_api_token|otel_exporter_otlp_headers)" is not defined in object type'

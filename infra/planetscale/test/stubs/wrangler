@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Test stub for Wrangler: a version and a billing signature (with a banner line
+# first, as a real CLI might print).
+set -euo pipefail
+
+state="${STUB_STATE:?}"
+printf 'wrangler %s\n' "$*" >>"$state/calls.log"
+
+case "$*" in
+--version)
+  printf '%s\n' "${STUB_WRANGLER_VERSION:-4.135.0}"
+  ;;
+"hyperdrive planetscale signature")
+  printf ' ⛅️ wrangler %s\n' "${STUB_WRANGLER_VERSION:-4.135.0}"
+  printf '{\n  "account_id": "%s",\n  "timestamp": "1790000000",\n  "signature": "%s"\n}\n' \
+    "${STUB_SIGNATURE_ACCOUNT:-${CLOUDFLARE_ACCOUNT_ID:-}}" "${STUB_SIGNATURE:?}"
+  ;;
+*)
+  printf 'stub: unsupported wrangler command: %s\n' "$*" >&2
+  exit 2
+  ;;
+esac

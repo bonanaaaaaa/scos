@@ -1,0 +1,193 @@
+name: Infrastructure checks
+
+# Offline checks of the deployment pipeline (#15) on every pull request. No
+# job here references a secret or an environment, so fork pull requests get
+# the same checks and no credential. A Terraform plan needs trusted
+# credentials and runs only in deploy.yml; the skip is reported explicitly.
+# Workflow syntax is checked by actionlint.yml.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  TERRAFORM_VERSION: 1.16.3
+  SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0
+  MINIO_IMAGE: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+
+jobs:
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: Check formatting
+        run: terraform fmt -check -recursive -diff infra
+      - name: Validate the Cloudflare root
+        working-directory: infra/cloudflare
+        run: |
+          set -euo pipefail
+          # -lockfile=readonly: the committed provider hashes must already match.
+          terraform init -backend=false -lockfile=readonly -input=false -no-color
+          terraform validate -no-color
+      - name: Test the Hyperdrive configuration (mocked provider)
+        working-directory: infra/cloudflare
+        run: terraform test -no-color
+      - name: Report the skipped cloud plan
+        run: |
+          echo "::notice title=Terraform plan skipped::No trusted credentials in pull request runs. The plan runs in deploy.yml, after CI on main, in the prod environment."
+          echo "### Terraform plan skipped: no trusted credentials in PR runs" >>"$GITHUB_STEP_SUMMARY"
+
+  state-backup:
+    name: State backup (local S3)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    env:
+      # A throwaway local MinIO standing in for the R2 bucket, with
+      # disposable credentials that exist only in this job.
+      AWS_ACCESS_KEY_ID: backup-test
+      AWS_SECRET_ACCESS_KEY: backup-test-only-for-ci
+      TF_STATE_BUCKET: scos-tfstate
+      TF_STATE_ENDPOINT: http://127.0.0.1:9000
+      TF_STATE_REGION: auto
+      TF_STATE_KEY: scos/ci/terraform.tfstate
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Start MinIO
+        run: |
+          set -euo pipefail
+          docker run -d --name minio -p 127.0.0.1:9000:9000 \
+            -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" \
+            "$MINIO_IMAGE" server /data
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:9000/minio/health/live && break
+            sleep 1
+          done
+          AWS_REGION=us-east-1 aws --endpoint-url "$TF_STATE_ENDPOINT" s3 mb "s3://$TF_STATE_BUCKET"
+      - name: Check bounded state backups and restore
+        run: |
+          set -euo pipefail
+          backup=infra/cloudflare/scripts/state-backup.sh
+          first=$($backup backup first-apply)
+          grep -q "nothing to back up" <<<"$first"
+          echo '{"version":4,"serial":1}' | AWS_REGION=us-east-1 aws --endpoint-url "$TF_STATE_ENDPOINT" \
+            s3 cp - "s3://$TF_STATE_BUCKET/$TF_STATE_KEY"
+          for run in 1 2 3 4; do
+            STATE_BACKUP_KEEP=3 $backup backup "run-$run"
+            sleep 1
+          done
+          test "$($backup list | wc -l)" -eq 3
+          [[ $($backup list | tail -n 1) == *run-4 ]]
+          $backup restore "$($backup list | head -n 1)"
+
+  shell:
+    name: Shell scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: ShellCheck (pinned)
+        run: |
+          set -euo pipefail
+          # Every *.sh under infra/, plus the extensionless PlanetScale test stubs.
+          mapfile -t scripts < <(
+            { find infra -type f -name '*.sh'; find infra/planetscale/test/stubs -type f 2>/dev/null; } | sort -u
+          )
+          printf 'Checking %s\n' "${scripts[@]}"
+          docker run --rm -v "$PWD:/mnt" -w /mnt "$SHELLCHECK_IMAGE" --version
+          docker run --rm -v "$PWD:/mnt" -w /mnt "$SHELLCHECK_IMAGE" "${scripts[@]}"
+      - name: Test the PlanetScale bootstrap (stubbed CLIs)
+        run: bash infra/planetscale/test/bootstrap.test.sh
+
+  worker-bundle:
+    name: Worker bundle and deploy configuration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build the packages the Worker imports
+        run: pnpm exec turbo run build --filter=@scos/api^...
+      # The same scripts deploy.yml runs, with a fake Hyperdrive ID and no upload.
+      - name: Build the bundle once (wrangler deploy --dry-run), size budget, checksums
+        run: |
+          set -euo pipefail
+          infra/cloudflare/scripts/worker-bundle.sh build "$RUNNER_TEMP/worker/bundle"
+          {
+            echo "### Worker bundle (dry run)"
+            echo '```'
+            cat "$RUNNER_TEMP/worker/bundle/SHA256SUMS"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+      - name: Generate and validate the deploy configuration
+        working-directory: apps/api
+        env:
+          DEPLOYMENT_ENVIRONMENT: prod
+          SERVICE_VERSION: ${{ github.event.pull_request.head.sha }}
+          OTEL_TRACES_EXPORTER: otlp
+          OTEL_METRICS_EXPORTER: otlp
+          OTEL_EXPORTER_OTLP_ENDPOINT: https://otlp.example.com
+          OTEL_EXPORTER_OTLP_HEADERS: x-example-key=not-a-secret
+        run: |
+          ./node_modules/.bin/tsx ../../infra/cloudflare/scripts/worker-deploy-config.mjs \
+            --bundle "$RUNNER_TEMP/worker/bundle" \
+            --hyperdrive-id 0123456789abcdef0123456789abcdef \
+            --out "$RUNNER_TEMP/worker/wrangler.deploy.json"
+      - name: Check that the upload is exactly the built bundle
+        working-directory: apps/api
+        run: |
+          set -euo pipefail
+          ../../infra/cloudflare/scripts/worker-bundle.sh verify "$RUNNER_TEMP/worker/bundle"
+          CI=true WRANGLER_SEND_METRICS=false ./node_modules/.bin/wrangler deploy --dry-run \
+            -c "$RUNNER_TEMP/worker/wrangler.deploy.json" --outdir "$RUNNER_TEMP/worker/upload"
+          cp "$RUNNER_TEMP/worker/bundle/SHA256SUMS" "$RUNNER_TEMP/worker/upload/SHA256SUMS"
+          ../../infra/cloudflare/scripts/worker-bundle.sh verify "$RUNNER_TEMP/worker/upload"

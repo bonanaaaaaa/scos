@@ -15,6 +15,8 @@ records why the first hosted demonstration runs on Cloudflare Workers.
 - **Ownership.** #28 owns the Worker runtime and this design. #15 owns the
   PlanetScale bootstrap, Terraform, credentials and the pipeline. #33 owns the
   hosted deployment and every measurement under load.
+- **Implemented by #15** in [PlanetScale bootstrap](planetscale-bootstrap.md)
+  and [deployment pipeline](deployment-pipeline.md).
 - **Not decided here.** The monthly budget, the account and organization, and
   the provisioning authorization belong to the user (see
   [remaining approvals](#remaining-approvals-and-verification-for-33)).
@@ -313,8 +315,10 @@ Approvals, all the user's:
 
 - The monthly budget (see [estimated monthly cost](#estimated-monthly-cost)).
 - The Cloudflare account and the PlanetScale organization.
-- Explicit provisioning authorization: the approval on #15's bootstrap
-  workflow, which starts billing.
+- Explicit provisioning authorization: setting the repository variable
+  `DEPLOY_ENABLED` to `true`. Deploys need no approval, so the next merge to
+  `main` creates the database and starts billing
+  ([ADR 0005 amendment](adr/0005-cloudflare-first-deployment.md#amendment-2026-09-19-the-deploy-creates-the-database)).
 
 Verification, hosted:
 

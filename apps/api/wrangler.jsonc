@@ -11,8 +11,10 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "scos-api",
   "main": "src/entrypoints/worker.ts",
-  // Pinned; not later than the workerd release bundled with the pinned
-  // wrangler and @cloudflare/vitest-pool-workers (1.20260815.1).
+  // Pinned; not later than the oldest workerd release bundled with the pinned
+  // tools: wrangler 4.135.0 (workerd 1.20260918.1) and
+  // @cloudflare/vitest-pool-workers 0.22.0 (its own wrangler 4.124.0, workerd
+  // 1.20260815.1).
   "compatibility_date": "2026-08-15",
   // AsyncLocalStorage (trace context and the per-request database), pg's
   // cloudflare:sockets transport and the Node built-ins Prisma and pg use.

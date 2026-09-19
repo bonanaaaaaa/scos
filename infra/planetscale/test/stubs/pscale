@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Test stub for the PlanetScale CLI. State lives in $STUB_STATE; every call is
+# appended to $STUB_STATE/calls.log (arguments only, never stdin).
+# STUB_ROLE_OMIT=<field> drops that field from `role create` output.
+set -euo pipefail
+
+state="${STUB_STATE:?}"
+mkdir -p "$state/roles"
+printf 'pscale %s\n' "$*" >>"$state/calls.log"
+
+not_found() {
+  printf '{"status":"error","error":"%s not found","issues":[{"code":"NOT_FOUND","message":"not found"}],"next_steps":[]}\n' "$1"
+  exit 2
+}
+
+case "${1:-} ${2:-}" in
+"version "*)
+  printf 'pscale version %s (build date: 2026-09-18T00:00:00Z commit: stub)\n' "${STUB_PSCALE_VERSION:-0.337.0}"
+  ;;
+"database show")
+  [[ -f "$state/db" ]] || not_found "database $3"
+  printf '{"name":"%s","kind":"postgresql","default_branch":"main"}\n' "$3"
+  ;;
+"database create")
+  # Read the billing proof from stdin (--cloudflare-billing @-) and check it
+  # without printing it.
+  billing="$(cat)"
+  if jq -e --arg sig "${STUB_SIGNATURE:?}" '.signature == $sig and (.account_id | length > 0) and (.timestamp | type == "string")' <<<"$billing" >/dev/null; then
+    touch "$state/billing_ok"
+  fi
+  touch "$state/db"
+  printf '{"name":"%s","kind":"postgresql","default_branch":"main"}\n' "$3"
+  ;;
+"branch show")
+  [[ -f "$state/db" ]] || not_found "branch $4"
+  printf '{"name":"%s","ready":true}\n' "$4"
+  ;;
+"role list")
+  [[ -f "$state/db" ]] || not_found "database $3"
+  filter=""
+  shift 4
+  while (($#)); do
+    if [[ "$1" == "--name" ]]; then filter="$2"; fi
+    shift
+  done
+  printf '['
+  sep=""
+  for file in "$state"/roles/*; do
+    [[ -f "$file" ]] || continue
+    name="$(basename "$file")"
+    [[ -z "$filter" || "$name" == *"$filter"* ]] || continue
+    printf '%s{"id":"id-%s","name":"%s","username":"%s.stubbranch","status":"active","access_host_url":"ap-southeast.pg.psdb.cloud"}' "$sep" "$name" "$name" "$name"
+    sep=","
+  done
+  printf ']\n'
+  ;;
+"role create")
+  name="$5"
+  touch "$state/roles/$name"
+  password="pw/${name}+SECRET@:$RANDOM$RANDOM"
+  printf '%s\n' "$password" >>"$state/passwords"
+  jq -nc --arg name "$name" --arg password "$password" \
+    --arg omit "${STUB_ROLE_OMIT:-}" \
+    '{id: ("id-" + $name), name: $name, username: ($name + ".stubbranch"), password: $password, access_host_url: "ap-southeast.pg.psdb.cloud", database_name: "postgres", database_url: ("postgresql://" + $name + ":" + $password + "@ap-southeast.pg.psdb.cloud:5432/postgres")} | if $omit == "" then . else del(.[$omit]) end'
+  ;;
+"role reset")
+  # pscale role reset <db> <branch> <role-id> --force: a new password for an
+  # existing role. STUB_RESET_OMIT=<field> drops that field.
+  id="$5"
+  name="${id#id-}"
+  [[ -f "$state/roles/$name" ]] || not_found "role $id"
+  password="pw/${name}+RESET@:$RANDOM$RANDOM"
+  printf '%s\n' "$password" >>"$state/passwords"
+  jq -nc --arg name "$name" --arg password "$password" \
+    --arg omit "${STUB_RESET_OMIT:-}" \
+    '{id: ("id-" + $name), name: $name, username: ($name + ".stubbranch"), password: $password, access_host_url: "ap-southeast.pg.psdb.cloud", database_name: "postgres"} | if $omit == "" then . else del(.[$omit]) end'
+  ;;
+"role reset-default" | "role delete" | "database delete")
+  printf '{"status":"ok"}\n'
+  ;;
+*)
+  printf '{"status":"error","error":"stub: unsupported command","issues":[{"code":"UNKNOWN_COMMAND","message":"x"}],"next_steps":[]}\n'
+  exit 2
+  ;;
+esac
