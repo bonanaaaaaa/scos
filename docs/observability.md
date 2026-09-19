@@ -12,6 +12,8 @@ The domain and persistence packages (`packages/core`, `packages/persistence`)
 have no OpenTelemetry dependency. Their ports are wrapped by decorators in
 the API compositions.
 
+![Telemetry in the SCOS hexagonal architecture](images/telemetry-hexagon.svg)
+
 ## Runtime-neutral ports and the Node/Lambda composition
 
 Telemetry sits behind ports that do not depend on a runtime. The runtime's
