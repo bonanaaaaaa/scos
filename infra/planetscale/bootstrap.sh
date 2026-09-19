@@ -7,15 +7,21 @@
 #   2. the runtime role used by Hyperdrive (pg_read_all_data,pg_write_all_data);
 #   3. the migration role used by `prisma migrate deploy` and the seed job.
 #
+# The deploy workflow runs it first in every deployment (EXPORT_GITHUB_ENV=true)
+# so a first deploy provisions the database; planetscale-bootstrap.yml runs it
+# by hand for repair and rotation.
+#
 # Anything that already exists is left alone: no database is recreated and no
 # role password is reset. Rotation is a separate, manual action (see
 # docs/planetscale-bootstrap.md).
 #
 # Secrets (the billing signature and the role passwords) are held in memory
-# only. They are never printed, never written to a file and never passed as a
-# command-line argument. A new role's password goes straight into GitHub
-# environment secrets through `gh secret set` (stdin), so a role is created
-# only when that sink is configured.
+# only. They are never printed and never passed as a command-line argument. A
+# new role's password goes straight into GitHub environment secrets through
+# `gh secret set` (stdin), so a role is created only when that sink is
+# configured. The one file exception: with EXPORT_GITHUB_ENV=true, a password
+# created in this run is also appended, masked, to the job's $GITHUB_ENV file,
+# because the stored secret is not readable until the next run.
 #
 # Inputs are environment variables; see docs/planetscale-bootstrap.md.
 
@@ -24,7 +30,8 @@ set -euo pipefail
 readonly PSCALE_MIN_VERSION="0.313.0"
 # `wrangler hyperdrive planetscale signature` first shipped in Wrangler 4.126.0.
 readonly WRANGLER_MIN_VERSION="4.126.0"
-readonly WRANGLER_DEFAULT_VERSION="4.135.0"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+readonly REPO_ROOT
 
 PLANETSCALE_ORG="${PLANETSCALE_ORG:-}"
 PLANETSCALE_DATABASE="${PLANETSCALE_DATABASE:-scos}"
@@ -40,10 +47,11 @@ MIGRATION_INHERITED_ROLES="${MIGRATION_INHERITED_ROLES:-postgres}"
 CREATE_DATABASE="${CREATE_DATABASE:-false}"
 MANAGE_ROLES="${MANAGE_ROLES:-true}"
 DRY_RUN="${DRY_RUN:-false}"
+EXPORT_GITHUB_ENV="${EXPORT_GITHUB_ENV:-false}"
 SECRETS_REPO="${SECRETS_REPO:-}"
 SECRETS_ENVIRONMENT="${SECRETS_ENVIRONMENT:-prod}"
-WRANGLER_VERSION="${WRANGLER_VERSION:-$WRANGLER_DEFAULT_VERSION}"
-WRANGLER_CMD="${WRANGLER_CMD:-}"
+# The lockfile-pinned Wrangler of @scos/api (after `pnpm install --frozen-lockfile`).
+WRANGLER_CMD="${WRANGLER_CMD:-$REPO_ROOT/apps/api/node_modules/.bin/wrangler}"
 BRANCH_READY_TIMEOUT_SECONDS="${BRANCH_READY_TIMEOUT_SECONDS:-900}"
 BRANCH_READY_POLL_SECONDS="${BRANCH_READY_POLL_SECONDS:-15}"
 
@@ -90,13 +98,7 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "$1 is required but not found on PATH."
 }
 
-wrangler_run() {
-  if [[ -n "$WRANGLER_CMD" ]]; then
-    "$WRANGLER_CMD" "$@"
-  else
-    npx --yes "wrangler@${WRANGLER_VERSION}" "$@"
-  fi
-}
+wrangler_run() { "$WRANGLER_CMD" "$@"; }
 
 # Runs pscale with JSON output. Prints stdout; returns pscale's exit status.
 # pscale reads PLANETSCALE_SERVICE_TOKEN_ID and PLANETSCALE_SERVICE_TOKEN from
@@ -125,7 +127,7 @@ validate_inputs() {
     die "PLANETSCALE_SERVICE_TOKEN_ID and PLANETSCALE_SERVICE_TOKEN are required in GitHub Actions."
   fi
   local name value
-  for name in CREATE_DATABASE MANAGE_ROLES DRY_RUN; do
+  for name in CREATE_DATABASE MANAGE_ROLES DRY_RUN EXPORT_GITHUB_ENV; do
     value="${!name}"
     [[ "$value" == "true" || "$value" == "false" ]] || die "$name must be true or false, got '$value'."
   done
@@ -135,6 +137,10 @@ validate_inputs() {
   done
   [[ "$RUNTIME_ROLE_NAME" != "$MIGRATION_ROLE_NAME" ]] || die "RUNTIME_ROLE_NAME and MIGRATION_ROLE_NAME must differ."
   [[ "$PLANETSCALE_REPLICAS" =~ ^[0-9]+$ ]] || die "PLANETSCALE_REPLICAS must be a number."
+  if is_true "$EXPORT_GITHUB_ENV"; then
+    [[ "${GITHUB_ACTIONS:-}" == "true" && -n "${GITHUB_ENV:-}" ]] ||
+      die "EXPORT_GITHUB_ENV=true works only inside GitHub Actions (GITHUB_ENV is unset)."
+  fi
 }
 
 check_tools() {
@@ -149,9 +155,8 @@ check_tools() {
 }
 
 check_wrangler() {
-  if [[ -z "$WRANGLER_CMD" ]]; then
-    require_command npx
-  fi
+  command -v "$WRANGLER_CMD" >/dev/null 2>&1 ||
+    die "Wrangler not found at $WRANGLER_CMD. Run 'pnpm install --frozen-lockfile' at the repository root, or set WRANGLER_CMD."
   [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]] || die "CLOUDFLARE_ACCOUNT_ID is required to create a Cloudflare-billed database."
   if [[ "${GITHUB_ACTIONS:-}" == "true" && -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
     die "CLOUDFLARE_API_TOKEN is required to mint the billing signature in GitHub Actions."
@@ -180,6 +185,48 @@ store_secret() {
   gh secret set "$name" --env "$SECRETS_ENVIRONMENT" --repo "$SECRETS_REPO" >/dev/null ||
     return 1
   log "Stored $name in the '$SECRETS_ENVIRONMENT' environment of $SECRETS_REPO."
+}
+
+# Appends NAME=value to $GITHUB_ENV for the later steps of this job. Values
+# are single-line: a newline could inject another variable. Secret values are
+# masked by the caller before this runs.
+export_env() {
+  local name="$1" value="$2"
+  is_true "$EXPORT_GITHUB_ENV" || return 0
+  [[ -n "$value" ]] || return 0
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || die "Refusing to export $name: the value spans lines."
+  printf '%s=%s\n' "$name" "$value" >>"$GITHUB_ENV"
+}
+
+# Stores a non-secret value as an environment variable when it is absent, so
+# the operator never has to copy it by hand. An existing, different value is
+# kept (with a warning): the operator may have set it on purpose.
+persist_variable() {
+  local name="$1" value="$2" current
+  [[ -n "$SECRETS_REPO" && -n "$value" ]] || return 0
+  if ! current="$(gh variable list --env "$SECRETS_ENVIRONMENT" --repo "$SECRETS_REPO" --json name,value 2>/dev/null)"; then
+    log "warning: could not read '$SECRETS_ENVIRONMENT' variables; set $name=$value by hand."
+    return 0
+  fi
+  current="$(jq -r --arg name "$name" '(map(select(.name == $name)) | first | .value) // empty' <<<"$current")"
+  if [[ -z "$current" ]]; then
+    if gh variable set "$name" --env "$SECRETS_ENVIRONMENT" --repo "$SECRETS_REPO" --body "$value" >/dev/null 2>&1; then
+      log "Set variable $name in the '$SECRETS_ENVIRONMENT' environment of $SECRETS_REPO."
+    else
+      log "warning: could not set variable $name; set $name=$value by hand."
+    fi
+  elif [[ "$current" != "$value" ]]; then
+    log "warning: variable $name is '$current' but PlanetScale reports '$value'; kept '$current'."
+  fi
+}
+
+# Non-secret values reported by pscale must look like a host or an identifier
+# before they reach $GITHUB_ENV or a variable.
+non_secret_field() {
+  local json="$1" field="$2" pattern="$3" value
+  value="$(jq -r --arg f "$field" '(.[$f] // empty) | strings' <<<"${json:-null}" 2>/dev/null || true)"
+  [[ -z "$value" || "$value" =~ $pattern ]] || die "pscale reported an unexpected $field; not exported."
+  printf '%s' "$value"
 }
 
 # Prints "present", "missing", or exits on any other error.
@@ -279,6 +326,7 @@ create_role() {
     if ! printf '%s' "$password" | store_secret HYPERDRIVE_ORIGIN_PASSWORD; then
       die "Role $name was created but HYPERDRIVE_ORIGIN_PASSWORD could not be stored. Rotate it: docs/planetscale-bootstrap.md#rotation."
     fi
+    export_env BOOTSTRAP_HYPERDRIVE_ORIGIN_PASSWORD "$password"
   else
     url="$(jq -r "$JQ_REQUIRE$JQ_MIGRATION_URL" <<<"$out" 2>/dev/null)" ||
       die "pscale role create $name lacks username, password, access_host_url or database_name. Nothing was stored; rotate the role: docs/planetscale-bootstrap.md#rotation."
@@ -286,6 +334,7 @@ create_role() {
     if ! printf '%s' "$url" | store_secret MIGRATION_DATABASE_URL; then
       die "Role $name was created but MIGRATION_DATABASE_URL could not be stored. Rotate it: docs/planetscale-bootstrap.md#rotation."
     fi
+    export_env BOOTSTRAP_MIGRATION_DATABASE_URL "$url"
     url=""
   fi
   password=""
@@ -293,29 +342,37 @@ create_role() {
   jq -c '{name, username, access_host_url, database_name}' <<<"$out"
 }
 
-summary() {
+# Publishes the non-secret connection values: job summary, $GITHUB_ENV
+# (BOOTSTRAP_*) and, when absent, the environment's variables.
+publish_connection_values() {
   local runtime="$1" migration="$2"
   local host user dbname migration_user
-  host="$(jq -r '.access_host_url? // "unknown"' <<<"${runtime:-null}")"
-  user="$(jq -r '.username? // "unknown"' <<<"${runtime:-null}")"
-  dbname="$(jq -r '.database_name? // "unknown (see pscale role get)"' <<<"${runtime:-null}")"
-  migration_user="$(jq -r '.username? // "unknown"' <<<"${migration:-null}")"
+  host="$(non_secret_field "$runtime" access_host_url '^[A-Za-z0-9.-]+$')"
+  user="$(non_secret_field "$runtime" username '^[A-Za-z0-9._-]+$')"
+  dbname="$(non_secret_field "$runtime" database_name '^[A-Za-z0-9_-]+$')"
+  migration_user="$(non_secret_field "$migration" username '^[A-Za-z0-9._-]+$')"
+
+  export_env BOOTSTRAP_PLANETSCALE_HOST "$host"
+  export_env BOOTSTRAP_HYPERDRIVE_ORIGIN_USER "$user"
+  export_env BOOTSTRAP_HYPERDRIVE_ORIGIN_DATABASE "$dbname"
+  persist_variable PLANETSCALE_HOST "$host"
+  persist_variable HYPERDRIVE_ORIGIN_USER "$user"
+  persist_variable HYPERDRIVE_ORIGIN_DATABASE "$dbname"
+
   local text
   text="$(
-    cat <<EOF
+    cat <<SUMMARY
 PlanetScale bootstrap result (non-secret values):
 
 | Setting | Value |
 | --- | --- |
 | Database | $PLANETSCALE_DATABASE |
 | Branch | $PLANETSCALE_BRANCH |
-| PLANETSCALE_HOST (branch host) | $host |
-| PostgreSQL database name | $dbname |
-| HYPERDRIVE_ORIGIN_USER (runtime connection username) | $user |
-| Migration connection username | $migration_user |
-
-Set PLANETSCALE_HOST and HYPERDRIVE_ORIGIN_USER as '$SECRETS_ENVIRONMENT' environment variables.
-EOF
+| PLANETSCALE_HOST (branch host) | ${host:-unknown} |
+| HYPERDRIVE_ORIGIN_DATABASE (PostgreSQL database name) | ${dbname:-reported only when the runtime role is created} |
+| HYPERDRIVE_ORIGIN_USER (runtime connection username) | ${user:-unknown} |
+| Migration connection username | ${migration_user:-unknown} |
+SUMMARY
   )"
   printf '%s\n' "$text"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
@@ -390,7 +447,7 @@ main() {
   fi
 
   if is_true "$MANAGE_ROLES"; then
-    summary "$runtime" "$migration"
+    publish_connection_values "$runtime" "$migration"
   fi
   log "Bootstrap complete."
 }

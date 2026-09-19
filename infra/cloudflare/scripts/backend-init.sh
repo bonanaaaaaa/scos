@@ -9,8 +9,7 @@
 # The fixed R2 settings (path-style, skip_* flags, use_lockfile) are in the
 # root's backend block. The R2 key pair is read by Terraform itself from
 # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY; it never reaches a file or an
-# argument. The optional second argument overrides TF_STATE_KEY (the lock
-# proof uses a throwaway key).
+# argument. The optional second argument overrides TF_STATE_KEY.
 set -euo pipefail
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
@@ -36,8 +35,8 @@ if [[ ${#missing[@]} -gt 0 ]]; then
 fi
 
 # The endpoint is a bare origin: https://<account_id>.r2.cloudflarestorage.com
-# on R2. Plain http is accepted only for a loopback test server (the local
-# MinIO lock proof). Credentials in the URL are rejected.
+# on R2. Plain http is accepted only for a loopback test server (a local
+# MinIO). Credentials in the URL are rejected.
 endpoint=${TF_STATE_ENDPOINT%/}
 if [[ ! $endpoint =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ &&
   ! $endpoint =~ ^http://(127\.0\.0\.1|localhost)(:[0-9]+)?$ ]]; then

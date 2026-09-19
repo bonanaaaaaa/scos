@@ -53,44 +53,32 @@ jobs:
       - name: Test the Hyperdrive configuration (mocked provider)
         working-directory: infra/cloudflare
         run: terraform test -no-color
-      - name: Validate the lock-proof root
-        working-directory: infra/cloudflare/lock-proof
-        run: |
-          set -euo pipefail
-          terraform init -backend=false -input=false -no-color
-          terraform validate -no-color
       - name: Report the skipped cloud plan
         run: |
           echo "::notice title=Terraform plan skipped::No trusted credentials in pull request runs. The plan runs in deploy.yml, after CI on main, in the prod environment."
           echo "### Terraform plan skipped: no trusted credentials in PR runs" >>"$GITHUB_STEP_SUMMARY"
 
-  state-lock:
-    name: State lock and backup (local S3)
+  state-backup:
+    name: State backup (local S3)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
         shell: bash
     env:
-      # A throwaway local MinIO: the same s3 backend settings as R2, with
+      # A throwaway local MinIO standing in for the R2 bucket, with
       # disposable credentials that exist only in this job.
-      AWS_ACCESS_KEY_ID: lockproof
-      AWS_SECRET_ACCESS_KEY: lockproof-only-for-ci
+      AWS_ACCESS_KEY_ID: backup-test
+      AWS_SECRET_ACCESS_KEY: backup-test-only-for-ci
       TF_STATE_BUCKET: scos-tfstate
       TF_STATE_ENDPOINT: http://127.0.0.1:9000
       TF_STATE_REGION: auto
       TF_STATE_KEY: scos/ci/terraform.tfstate
-      TF_STATE_WORKSPACE_PREFIX: scos/ci/workspaces
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Install Terraform
-        uses: hashicorp/setup-terraform@v4.0.1
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-          terraform_wrapper: false
       - name: Start MinIO
         run: |
           set -euo pipefail
@@ -102,8 +90,6 @@ jobs:
             sleep 1
           done
           AWS_REGION=us-east-1 aws --endpoint-url "$TF_STATE_ENDPOINT" s3 mb "s3://$TF_STATE_BUCKET"
-      - name: Prove the state lock rejects a concurrent run
-        run: infra/cloudflare/scripts/prove-state-lock.sh
       - name: Check bounded state backups and restore
         run: |
           set -euo pipefail

@@ -181,6 +181,13 @@ expect_nonzero
 expect_output_contains "4.126.0 or newer"
 expect_calls ' create ' 0
 
+# --- workspace Wrangler not installed ----------------------------------------
+new_case "wrangler binary missing"
+run CREATE_DATABASE=true WRANGLER_CMD=/nonexistent/wrangler
+expect_nonzero
+expect_output_contains "pnpm install --frozen-lockfile"
+expect_calls ' create ' 0
+
 # --- no secret sink: nothing is created ------------------------------------
 new_case "roles need a secret sink"
 run CREATE_DATABASE=true SECRETS_REPO=
@@ -230,6 +237,78 @@ run CREATE_DATABASE=true STUB_ROLE_OMIT=access_host_url
 expect_nonzero
 expect_calls '^gh secret set MIGRATION_DATABASE_URL' 0
 expect_no_secrets
+
+# --- deploy mode (EXPORT_GITHUB_ENV): the first run hands values to the job --
+new_case "deploy first run exports values"
+genv="$state/github_env"
+: >"$genv"
+run CREATE_DATABASE=true GITHUB_ACTIONS=true EXPORT_GITHUB_ENV=true GITHUB_ENV="$genv"
+expect_status 0
+runtime_password="$(sed -n 1p "$state/passwords")"
+migration_url="$(cat "$state/secrets/MIGRATION_DATABASE_URL")"
+if grep -qxF "BOOTSTRAP_HYPERDRIVE_ORIGIN_PASSWORD=$runtime_password" "$genv"; then pass; else fail "fresh runtime password not exported"; fi
+if grep -qxF "BOOTSTRAP_MIGRATION_DATABASE_URL=$migration_url" "$genv"; then pass; else fail "fresh migration URL not exported"; fi
+for line in BOOTSTRAP_PLANETSCALE_HOST=ap-southeast.pg.psdb.cloud \
+  BOOTSTRAP_HYPERDRIVE_ORIGIN_USER=scos_runtime.stubbranch \
+  BOOTSTRAP_HYPERDRIVE_ORIGIN_DATABASE=postgres; do
+  if grep -qxF "$line" "$genv"; then pass; else fail "missing $line in GITHUB_ENV"; fi
+done
+# Every exported secret was masked first.
+if grep -qxF "::add-mask::$runtime_password" "$err" && grep -qxF "::add-mask::$migration_url" "$err"; then pass; else fail "exported secret not masked"; fi
+expect_calls '^gh variable set PLANETSCALE_HOST --env prod --repo owner/repo --body ap-southeast.pg.psdb.cloud$' 1
+expect_calls '^gh variable set HYPERDRIVE_ORIGIN_USER --env prod --repo owner/repo --body scos_runtime.stubbranch$' 1
+expect_calls '^gh variable set HYPERDRIVE_ORIGIN_DATABASE --env prod --repo owner/repo --body postgres$' 1
+expect_no_secrets
+
+case_name="deploy re-run exports nothing secret"
+: >"$state/calls.log"
+: >"$genv"
+run CREATE_DATABASE=true GITHUB_ACTIONS=true EXPORT_GITHUB_ENV=true GITHUB_ENV="$genv"
+expect_status 0
+expect_calls ' (create|reset|reset-default|delete) ' 0
+expect_calls '^wrangler ' 0
+expect_calls '^gh (secret|variable) set' 0
+if grep -qE '^BOOTSTRAP_(HYPERDRIVE_ORIGIN_PASSWORD|MIGRATION_DATABASE_URL)=' "$genv"; then fail "a secret was exported on a re-run"; else pass; fi
+while IFS= read -r secret; do
+  if grep -qF -- "$secret" "$genv"; then fail "a password reached GITHUB_ENV on a re-run"; fi
+done <"$state/passwords"
+pass
+if grep -qxF "BOOTSTRAP_PLANETSCALE_HOST=ap-southeast.pg.psdb.cloud" "$genv" &&
+  grep -qxF "BOOTSTRAP_HYPERDRIVE_ORIGIN_USER=scos_runtime.stubbranch" "$genv"; then pass; else fail "host/user not exported on a re-run"; fi
+if grep -q '^BOOTSTRAP_HYPERDRIVE_ORIGIN_DATABASE=' "$genv"; then fail "database name exported without a source"; else pass; fi
+expect_no_secrets
+
+new_case "deploy without a secrets token creates nothing"
+genv="$state/github_env"
+: >"$genv"
+run CREATE_DATABASE=true GITHUB_ACTIONS=true EXPORT_GITHUB_ENV=true GITHUB_ENV="$genv" STUB_GH_LIST_EXIT=1
+expect_nonzero
+expect_calls ' create ' 0
+expect_calls '^wrangler hyperdrive' 0
+if [[ -s "$genv" ]]; then fail "GITHUB_ENV written although nothing was created"; else pass; fi
+
+new_case "deploy with the database but no token"
+touch "$state/db"
+genv="$state/github_env"
+: >"$genv"
+run GITHUB_ACTIONS=true EXPORT_GITHUB_ENV=true GITHUB_ENV="$genv" SECRETS_REPO=
+expect_nonzero
+expect_calls ' create ' 0
+expect_output_contains "SECRETS_REPO is empty"
+
+new_case "export mode needs Actions"
+run CREATE_DATABASE=true EXPORT_GITHUB_ENV=true
+expect_nonzero
+expect_calls '^pscale ' 0
+
+new_case "an operator-set variable is kept"
+mkdir -p "$state/variables"
+printf 'custom.example' >"$state/variables/PLANETSCALE_HOST"
+run CREATE_DATABASE=true
+expect_status 0
+expect_calls '^gh variable set PLANETSCALE_HOST' 0
+if [[ "$(cat "$state/variables/PLANETSCALE_HOST")" == custom.example ]]; then pass; else fail "operator variable overwritten"; fi
+expect_output_contains "kept 'custom.example'"
 
 # --- dry run changes nothing -------------------------------------------------
 new_case "dry run"

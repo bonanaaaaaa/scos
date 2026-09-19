@@ -38,18 +38,21 @@ jobs:
         # GitHub keeps one pending job per concurrency group, and the deploy
         # workflow's migration job shares seed-demo-data-prod. A seed entering
         # the group would cancel a pending, approved deploy job. This job holds
-        # no group, so it checks before the seed job claims it.
+        # no group, so it checks before the seed job claims it. It looks at
+        # the caller workflow (deploy-prod.yml): runs of the shared deploy.yml
+        # appear under their caller's run. A future environment's caller
+        # (deploy-<env>.yml) must be added here too.
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
           for status in requested queued pending waiting in_progress; do
-            if ! count="$(gh api "repos/${REPOSITORY}/actions/workflows/deploy.yml/runs?status=${status}&per_page=1" --jq '.total_count')"; then
-              echo "::error::Could not read Deploy workflow runs (deploy.yml)."
+            if ! count="$(gh api "repos/${REPOSITORY}/actions/workflows/deploy-prod.yml/runs?status=${status}&per_page=1" --jq '.total_count')"; then
+              echo "::error::Could not read Deploy Prod workflow runs (deploy-prod.yml)."
               exit 1
             fi
             if [ "${count}" -gt 0 ]; then
-              echo "::error::A Deploy run is ${status}. Wait for it to finish, then dispatch the seed again."
+              echo "::error::A Deploy Prod run is ${status}. Wait for it to finish, then dispatch the seed again."
               exit 1
             fi
           done

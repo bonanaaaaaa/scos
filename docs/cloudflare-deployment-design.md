@@ -315,8 +315,9 @@ Approvals, all the user's:
 
 - The monthly budget (see [estimated monthly cost](#estimated-monthly-cost)).
 - The Cloudflare account and the PlanetScale organization.
-- Explicit provisioning authorization: the approval on #15's bootstrap
-  workflow, which starts billing.
+- Explicit provisioning authorization: setting `DEPLOY_ENABLED` and approving
+  the first `prod` deploy, which creates the database and starts billing
+  ([ADR 0005 amendment](adr/0005-cloudflare-first-deployment.md#amendment-2026-09-19-the-deploy-creates-the-database)).
 
 Verification, hosted:
 

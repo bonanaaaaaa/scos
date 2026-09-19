@@ -1247,23 +1247,23 @@ and 31 ms), and each request logged one failure per signal:
 
 Pinned in `apps/api/package.json`:
 
-| Package                                      | Version                               |
-| -------------------------------------------- | ------------------------------------- |
-| `pino`                                       | 10.3.1                                |
-| `@opentelemetry/api`                         | 1.9.1                                 |
-| `@opentelemetry/sdk-trace`                   | 2.11.0                                |
-| `@opentelemetry/sdk-metrics`                 | 2.11.0                                |
-| `@opentelemetry/resources`                   | 2.11.0                                |
-| `@opentelemetry/core`                        | 2.11.0                                |
-| `@opentelemetry/context-async-hooks`         | 2.11.0                                |
-| `@opentelemetry/exporter-trace-otlp-proto`   | 0.222.0                               |
-| `@opentelemetry/exporter-metrics-otlp-proto` | 0.222.0                               |
-| `@opentelemetry/instrumentation`             | 0.222.0                               |
-| `@opentelemetry/instrumentation-pino`        | 0.68.0 (supports `pino >=5.14.0 <11`) |
-| `@opentelemetry/semantic-conventions`        | 1.43.0                                |
-| `@opentelemetry/otlp-transformer` (Workers)  | 0.222.0                               |
-| `wrangler` (dev)                             | 4.124.0                               |
-| `@cloudflare/vitest-pool-workers` (dev)      | 0.22.0 (workerd 1.20260815.1)         |
+| Package                                      | Version                                                 |
+| -------------------------------------------- | ------------------------------------------------------- |
+| `pino`                                       | 10.3.1                                                  |
+| `@opentelemetry/api`                         | 1.9.1                                                   |
+| `@opentelemetry/sdk-trace`                   | 2.11.0                                                  |
+| `@opentelemetry/sdk-metrics`                 | 2.11.0                                                  |
+| `@opentelemetry/resources`                   | 2.11.0                                                  |
+| `@opentelemetry/core`                        | 2.11.0                                                  |
+| `@opentelemetry/context-async-hooks`         | 2.11.0                                                  |
+| `@opentelemetry/exporter-trace-otlp-proto`   | 0.222.0                                                 |
+| `@opentelemetry/exporter-metrics-otlp-proto` | 0.222.0                                                 |
+| `@opentelemetry/instrumentation`             | 0.222.0                                                 |
+| `@opentelemetry/instrumentation-pino`        | 0.68.0 (supports `pino >=5.14.0 <11`)                   |
+| `@opentelemetry/semantic-conventions`        | 1.43.0                                                  |
+| `@opentelemetry/otlp-transformer` (Workers)  | 0.222.0                                                 |
+| `wrangler` (dev)                             | 4.135.0 (workerd 1.20260918.1)                          |
+| `@cloudflare/vitest-pool-workers` (dev)      | 0.22.0 (its own wrangler 4.124.0, workerd 1.20260815.1) |
 
 Semantic conventions: **1.43.0**. Spans and metrics carry the scope schema
 URL `https://opentelemetry.io/schemas/1.43.0`, and a unit test keeps
