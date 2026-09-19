@@ -1,7 +1,31 @@
 import { describe, expect, test, vi } from "vitest";
 
 import type { ComposedApplication } from "./composition";
-import { type ServerRuntime, main, nodeRuntime, startServer } from "./server";
+import type { StructuredLogger } from "./http/logger";
+import {
+  TELEMETRY_SHUTDOWN_TIMEOUT_MS,
+  type ServerRuntime,
+  main,
+  nodeRuntime,
+  startServer,
+} from "./server";
+import type { TelemetryRuntime } from "./telemetry/node/sdk";
+import { DEFAULT_TELEMETRY_CONFIG, testTelemetry } from "./testing/telemetry.test-support";
+
+function fakeStructuredLogger() {
+  const logger = {
+    trace: vi.fn(),
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    fatal: vi.fn(),
+    child: vi.fn(() => logger as StructuredLogger),
+  };
+  return logger;
+}
+
+const defaultTelemetry = DEFAULT_TELEMETRY_CONFIG;
 
 function fakeRuntime(overrides: Partial<ServerRuntime> = {}) {
   const signals = new Map<string, () => void>();
@@ -10,13 +34,20 @@ function fakeRuntime(overrides: Partial<ServerRuntime> = {}) {
     close: vi.fn(async () => undefined),
   } as unknown as ComposedApplication & { close: ReturnType<typeof vi.fn> };
   const closeServer = vi.fn((callback?: (error?: Error) => void) => callback?.());
+  const logger = fakeStructuredLogger();
+  const observability = {
+    telemetry: testTelemetry().telemetry,
+    logger,
+    forceFlush: vi.fn(async () => undefined),
+    shutdown: vi.fn(async () => undefined),
+  } satisfies TelemetryRuntime;
   const mocks = {
     serve: vi.fn((options: { port: number }, onListening: (info: { port: number }) => void) => {
       onListening({ port: options.port });
       return { close: closeServer };
     }),
     compose: vi.fn(() => composed),
-    log: vi.fn(),
+    startTelemetry: vi.fn(() => observability),
     logError: vi.fn(),
     exit: vi.fn(),
     onSignal: vi.fn((signal: string, handler: () => void) => {
@@ -24,7 +55,7 @@ function fakeRuntime(overrides: Partial<ServerRuntime> = {}) {
     }),
   } satisfies ServerRuntime;
   const runtime: ServerRuntime = { ...mocks, ...overrides };
-  return { runtime, mocks, signals, composed, closeServer };
+  return { runtime, mocks, signals, composed, closeServer, logger, observability };
 }
 
 describe("main (in process)", () => {
@@ -35,6 +66,7 @@ describe("main (in process)", () => {
 
     expect(mocks.exit).toHaveBeenCalledExactlyOnceWith(1);
     expect(mocks.compose).not.toHaveBeenCalled();
+    expect(mocks.startTelemetry).not.toHaveBeenCalled();
     expect(mocks.serve).not.toHaveBeenCalled();
     expect(mocks.logError.mock.calls.map(([message]) => message)).toStrictEqual([
       "SCOS API not started: invalid configuration.",
@@ -44,15 +76,29 @@ describe("main (in process)", () => {
   });
 
   test("valid configuration composes over DATABASE_URL and listens on PORT", () => {
-    const { runtime, mocks, composed } = fakeRuntime();
+    const { runtime, mocks, composed, logger, observability } = fakeRuntime();
 
     const running = main({ DATABASE_URL: "postgresql://h/db", PORT: "4321" }, runtime);
 
-    expect(running?.config).toStrictEqual({ databaseUrl: "postgresql://h/db", port: 4321 });
-    expect(mocks.compose).toHaveBeenCalledExactlyOnceWith({ databaseUrl: "postgresql://h/db" });
+    expect(running?.config).toStrictEqual({
+      databaseUrl: "postgresql://h/db",
+      port: 4321,
+      telemetry: defaultTelemetry,
+    });
+    expect(mocks.startTelemetry).toHaveBeenCalledExactlyOnceWith(defaultTelemetry);
+    // Telemetry starts before the app (and so any logger) is composed.
+    expect(mocks.startTelemetry.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.compose.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(mocks.compose).toHaveBeenCalledExactlyOnceWith({
+      databaseUrl: "postgresql://h/db",
+      logger,
+      telemetry: observability.telemetry,
+    });
     expect(mocks.serve.mock.calls[0]?.[0]).toStrictEqual({ fetch: composed.app.fetch, port: 4321 });
-    expect(mocks.log).toHaveBeenCalledExactlyOnceWith(
+    expect(logger.info).toHaveBeenCalledExactlyOnceWith(
       "SCOS API listening on http://localhost:4321",
+      { "server.port": 4321 },
     );
     expect(mocks.onSignal.mock.calls.map(([signal]) => signal)).toStrictEqual([
       "SIGINT",
@@ -61,8 +107,8 @@ describe("main (in process)", () => {
     expect(mocks.exit).not.toHaveBeenCalled();
   });
 
-  test("a signal closes the listener, then the database clients, then exits 0", async () => {
-    const { runtime, mocks, signals, composed, closeServer } = fakeRuntime();
+  test("a signal closes the listener, the database clients, then flushes telemetry and exits 0", async () => {
+    const { runtime, mocks, signals, composed, closeServer, observability } = fakeRuntime();
     main({ DATABASE_URL: "postgresql://h/db" }, runtime);
 
     signals.get("SIGTERM")?.();
@@ -74,11 +120,15 @@ describe("main (in process)", () => {
     expect(closeServer.mock.invocationCallOrder[0]).toBeLessThan(
       composed.close.mock.invocationCallOrder[0] ?? 0,
     );
+    expect(observability.shutdown).toHaveBeenCalledExactlyOnceWith(TELEMETRY_SHUTDOWN_TIMEOUT_MS);
+    expect(composed.close.mock.invocationCallOrder[0]).toBeLessThan(
+      observability.shutdown.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   test("a failed shutdown still closes the clients and exits 1", async () => {
     const failure = new Error("close failed");
-    const { runtime, mocks, signals, composed } = fakeRuntime({
+    const { runtime, mocks, signals, composed, logger, observability } = fakeRuntime({
       serve: (_options, onListening) => {
         onListening({ port: 1 });
         return { close: (callback) => callback?.(failure) };
@@ -90,29 +140,28 @@ describe("main (in process)", () => {
     await vi.waitFor(() => expect(mocks.exit).toHaveBeenCalledWith(1));
 
     expect(composed.close).toHaveBeenCalledOnce();
-    expect(mocks.logError).toHaveBeenCalledWith("SCOS API shutdown failed.", failure);
+    expect(observability.shutdown).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledWith("SCOS API shutdown failed.", { error: failure });
   });
 
   test("startServer can be used without main", async () => {
     const { runtime, composed } = fakeRuntime();
-    const running = startServer({ databaseUrl: "postgresql://h/db", port: 0 }, runtime);
+    const running = startServer(
+      { databaseUrl: "postgresql://h/db", port: 0, telemetry: defaultTelemetry },
+      runtime,
+    );
 
     await running.shutdown();
     await running.shutdown();
     expect(composed.close).toHaveBeenCalledOnce();
   });
 
-  test("the node runtime logs to the console", () => {
-    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  test("the node runtime prints configuration errors to stderr", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      nodeRuntime.log("hello");
       nodeRuntime.logError("plain");
-      nodeRuntime.logError("with cause", "cause");
-      expect(log).toHaveBeenCalledWith("hello");
-      expect(error.mock.calls).toStrictEqual([["plain"], ["with cause", "cause"]]);
+      expect(error.mock.calls).toStrictEqual([["plain"]]);
     } finally {
-      log.mockRestore();
       error.mockRestore();
     }
   });

@@ -11,7 +11,7 @@ import type { Hono } from "hono";
 import { createEndpointApp } from "../../http/endpoint-app";
 import { estimateBody } from "../../http/estimate";
 import { jsonBody, requireJson } from "../../http/json";
-import { type Logger, consoleLogger } from "../../http/logger";
+import { type Logger, defaultLogger } from "../../http/logger";
 import { MESSAGES } from "../../http/messages";
 import { verifyOrderRequestSchema, verifyOrderRoute } from "./contract";
 
@@ -21,7 +21,7 @@ export interface VerifyOrderAppDependencies {
 }
 
 export function createVerifyOrderApp(dependencies: VerifyOrderAppDependencies): Hono {
-  const { verifyOrder, logger = consoleLogger } = dependencies;
+  const { verifyOrder, logger = defaultLogger } = dependencies;
   const app = createEndpointApp(logger, () => MESSAGES.internal);
 
   app.post(verifyOrderRoute.path, requireJson, jsonBody(verifyOrderRequestSchema), async (c) => {

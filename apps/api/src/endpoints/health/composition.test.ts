@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { factorySpies } from "../../testing/persistence-spies.test-support";
+import { DEFAULT_TELEMETRY_CONFIG } from "../../testing/telemetry.test-support";
 
 // Spy on the adapter factories while keeping their real behaviour.
 vi.mock("@scos/persistence", async (importOriginal) =>
@@ -19,8 +20,11 @@ afterEach(() => {
 });
 
 describe("composeHealthApplication builds only what health needs", () => {
-  test("health: no configuration, no pool and no adapters", async () => {
-    expect(parseHealthConfig({})).toStrictEqual({ success: true, config: {} });
+  test("health: no database configuration, no pool and no adapters", async () => {
+    expect(parseHealthConfig({})).toStrictEqual({
+      success: true,
+      config: { telemetry: DEFAULT_TELEMETRY_CONFIG },
+    });
     const composed = composeHealthApplication();
     const response = await composed.app.request("/health");
     expect(response.status).toBe(200);

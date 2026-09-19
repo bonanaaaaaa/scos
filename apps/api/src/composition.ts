@@ -23,7 +23,7 @@ export type CompositionOptions = SubmitOrderCompositionOptions;
 export function composeApplication(options: CompositionOptions): ComposedApplication {
   return composeOverDatabase(options, (prisma) =>
     createApp({
-      verifyOrder: buildVerifyOrder(prisma),
+      verifyOrder: buildVerifyOrder(prisma, options.telemetry),
       submitOrder: buildSubmitOrder(prisma, options),
       ...withLogger(options.logger),
     }),

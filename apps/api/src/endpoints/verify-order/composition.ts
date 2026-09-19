@@ -14,18 +14,30 @@ import {
   composeOverDatabase,
   withLogger,
 } from "../../database";
+import { traceInventoryReader, traceVerifyOrder } from "../../telemetry/decorators";
+import type { Telemetry } from "../../telemetry/telemetry";
 import { createVerifyOrderApp } from "./app";
 
 export type VerifyOrderCompositionOptions = DatabaseCompositionOptions;
 
-export function buildVerifyOrder(prisma: PrismaClient): VerifyOrder {
-  return createVerifyOrder({ inventoryReader: createPrismaInventoryReader(prisma) });
+export function buildVerifyOrder(prisma: PrismaClient, telemetry?: Telemetry): VerifyOrder {
+  const reader = createPrismaInventoryReader(prisma);
+  if (telemetry === undefined) {
+    return createVerifyOrder({ inventoryReader: reader });
+  }
+  return traceVerifyOrder(
+    createVerifyOrder({ inventoryReader: traceInventoryReader(reader, telemetry) }),
+    telemetry,
+  );
 }
 
 export function composeVerifyOrderApplication(
   options: VerifyOrderCompositionOptions,
 ): ComposedApplication {
   return composeOverDatabase(options, (prisma) =>
-    createVerifyOrderApp({ verifyOrder: buildVerifyOrder(prisma), ...withLogger(options.logger) }),
+    createVerifyOrderApp({
+      verifyOrder: buildVerifyOrder(prisma, options.telemetry),
+      ...withLogger(options.logger),
+    }),
   );
 }

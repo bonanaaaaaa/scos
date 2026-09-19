@@ -3,9 +3,11 @@
  *
  * Validates the environment first; on failure it prints only variable names
  * and safe reasons to stderr and exits nonzero without building a database
- * client or opening the listener. Otherwise it composes the app, listens, and
- * shuts down gracefully on SIGINT/SIGTERM (close the listener, disconnect
- * Prisma, end the pool).
+ * client, starting telemetry or opening the listener. Otherwise it starts
+ * telemetry (before any logger exists, so Pino is instrumented), composes the
+ * app, listens, and shuts down gracefully on SIGINT/SIGTERM: close the
+ * listener, disconnect Prisma and end the pool, then flush and stop the
+ * telemetry providers within a bounded time.
  *
  * @module
  */
@@ -19,6 +21,12 @@ import {
   composeApplication,
 } from "./composition";
 import { type ServerConfig, parseConfig } from "./config";
+import type { StructuredLogger } from "./http/logger";
+import type { TelemetryConfig } from "./telemetry/config";
+import { type TelemetryRuntime, startTelemetry } from "./telemetry/node/sdk";
+
+/** Upper bound for flushing telemetry during shutdown. */
+export const TELEMETRY_SHUTDOWN_TIMEOUT_MS = 5_000;
 
 interface ServerInfo {
   readonly port: number;
@@ -36,8 +44,9 @@ type ServeApplication = (
 export interface ServerRuntime {
   readonly serve: ServeApplication;
   readonly compose: (options: CompositionOptions) => ComposedApplication;
-  readonly log: (message: string) => void;
-  readonly logError: (message: string, error?: unknown) => void;
+  readonly startTelemetry: (config: TelemetryConfig) => TelemetryRuntime;
+  /** Configuration errors only: printed before any logger exists. */
+  readonly logError: (message: string) => void;
   readonly exit: (code: number) => void;
   readonly onSignal: (signal: NodeJS.Signals, handler: () => void) => void;
 }
@@ -45,14 +54,8 @@ export interface ServerRuntime {
 export const nodeRuntime: ServerRuntime = {
   serve: (options, onListening) => serve(options, onListening),
   compose: composeApplication,
-  log: (message) => console.log(message),
-  logError: (message, error) => {
-    if (error === undefined) {
-      console.error(message);
-    } else {
-      console.error(message, error);
-    }
-  },
+  startTelemetry: (config) => startTelemetry(config),
+  logError: (message) => console.error(message),
   exit: (code) => process.exit(code),
   onSignal: (signal, handler) => {
     process.once(signal, handler);
@@ -61,22 +64,31 @@ export const nodeRuntime: ServerRuntime = {
 
 export interface RunningServer {
   readonly config: ServerConfig;
+  readonly logger: StructuredLogger;
   shutdown(): Promise<void>;
 }
 
-/** Composes the app over the configured database and starts listening. */
+/**
+ * Starts telemetry, composes the app over the configured database and starts
+ * listening.
+ */
 export function startServer(
   config: ServerConfig,
-  runtime: Pick<ServerRuntime, "serve" | "compose" | "log">,
+  runtime: Pick<ServerRuntime, "serve" | "compose" | "startTelemetry">,
 ): RunningServer {
-  const composed = runtime.compose({ databaseUrl: config.databaseUrl });
+  const observability = runtime.startTelemetry(config.telemetry);
+  const { logger, telemetry } = observability;
+  const composed = runtime.compose({ databaseUrl: config.databaseUrl, logger, telemetry });
   const server = runtime.serve({ fetch: composed.app.fetch, port: config.port }, (serverInfo) => {
-    runtime.log(`SCOS API listening on http://localhost:${serverInfo.port}`);
+    logger.info(`SCOS API listening on http://localhost:${serverInfo.port}`, {
+      "server.port": serverInfo.port,
+    });
   });
 
   let shuttingDown: Promise<void> | undefined;
   return {
     config,
+    logger,
     shutdown() {
       shuttingDown ??= (async () => {
         try {
@@ -84,7 +96,12 @@ export function startServer(
             server.close((error) => (error === undefined ? resolve() : reject(error)));
           });
         } finally {
-          await composed.close();
+          try {
+            await composed.close();
+          } finally {
+            // Last, so spans of requests that finished during close are exported.
+            await observability.shutdown(TELEMETRY_SHUTDOWN_TIMEOUT_MS);
+          }
         }
       })();
       return shuttingDown;
@@ -116,7 +133,7 @@ export function main(
     running.shutdown().then(
       () => runtime.exit(0),
       (error: unknown) => {
-        runtime.logError("SCOS API shutdown failed.", error);
+        running.logger.error("SCOS API shutdown failed.", { error });
         runtime.exit(1);
       },
     );

@@ -7,10 +7,16 @@
 
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { matchedRoutes } from "hono/route";
 
 import { errorBody, invalidRequest, notFound } from "./errors";
 import type { Logger } from "./logger";
 import { MESSAGES } from "./messages";
+
+/** The route template that served the request, or `undefined` (404). */
+export function routeTemplate(c: Context): string | undefined {
+  return matchedRoutes(c).find((route) => route.method !== "ALL")?.path;
+}
 
 /**
  * The shared error mapping: an unparsable JSON body (Hono's validator throws a
@@ -22,9 +28,12 @@ function errorHandler(logger: Logger, internalMessage: (c: Context) => string) {
     if (error instanceof HTTPException && error.status === 400) {
       return invalidRequest(c, MESSAGES.malformedJson);
     }
+    const route = routeTemplate(c);
+    // The same semantic-convention keys as the request log.
     logger.error("Unhandled error while handling a request", {
-      method: c.req.method,
-      path: c.req.path,
+      "http.request.method": c.req.method,
+      "url.path": c.req.path,
+      ...(route === undefined ? {} : { "http.route": route }),
       error,
     });
     return c.json(errorBody("INTERNAL_ERROR", internalMessage(c)), 500);

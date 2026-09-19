@@ -12,7 +12,7 @@ import type { Context, Hono } from "hono";
 import { createEndpointApp } from "../../http/endpoint-app";
 import { errorBody, invalidRequest, toIssues } from "../../http/errors";
 import { jsonBody, requireJson } from "../../http/json";
-import { type Logger, consoleLogger } from "../../http/logger";
+import { type Logger, defaultLogger } from "../../http/logger";
 import { MESSAGES } from "../../http/messages";
 import {
   RETRY_AFTER_SECONDS,
@@ -35,7 +35,7 @@ function unavailable(c: Context) {
 }
 
 export function createSubmitOrderApp(dependencies: SubmitOrderAppDependencies): Hono {
-  const { submitOrder, logger = consoleLogger } = dependencies;
+  const { submitOrder, logger = defaultLogger } = dependencies;
   const app = createEndpointApp(logger, () => SUBMIT_ORDER_MESSAGES.internal);
 
   app.post(submitOrderRoute.path, requireJson, jsonBody(submitOrderRequestSchema), async (c) => {

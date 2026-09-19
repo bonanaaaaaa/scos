@@ -23,6 +23,8 @@ import {
 import type { Hono } from "hono";
 
 import type { Logger } from "./http/logger";
+import { instrumentApp } from "./telemetry/http";
+import type { Telemetry } from "./telemetry/telemetry";
 
 /** Default limit for acquiring or opening a pooled connection. */
 export const DEFAULT_CONNECTION_TIMEOUT_MS = 5_000;
@@ -51,6 +53,11 @@ export interface DatabaseCompositionOptions {
   /** A validated PostgreSQL connection string (see `config.ts`). */
   readonly databaseUrl: string;
   readonly logger?: Logger;
+  /**
+   * Traces and meters the app, its use cases and its persistence ports.
+   * Omitted: nothing is instrumented (unit tests, offline tools).
+   */
+  readonly telemetry?: Telemetry;
   /** Limit for acquiring or opening a connection; {@link DEFAULT_CONNECTION_TIMEOUT_MS}. */
   readonly connectionTimeoutMs?: number;
 }
@@ -85,6 +92,19 @@ export function openDatabase(options: DatabaseCompositionOptions): Database {
 }
 
 /**
+ * Wraps `app` with the HTTP server instrumentation when telemetry is
+ * configured; returns it unchanged otherwise.
+ */
+export function withHttpTelemetry(
+  app: Hono,
+  options: { readonly telemetry?: Telemetry; readonly logger?: Logger },
+): Hono {
+  return options.telemetry === undefined
+    ? app
+    : instrumentApp(app, options.telemetry, options.logger);
+}
+
+/**
  * Builds an app over a freshly opened database. If building fails, the pool
  * is closed and the error rethrown.
  */
@@ -94,7 +114,7 @@ export function composeOverDatabase(
 ): ComposedApplication {
   const database = openDatabase(options);
   try {
-    return { app: build(database.prisma), close: database.close };
+    return { app: withHttpTelemetry(build(database.prisma), options), close: database.close };
   } catch (error) {
     // Not awaited: pg connects lazily, so nothing has connected yet.
     void database.close().catch(() => undefined);
