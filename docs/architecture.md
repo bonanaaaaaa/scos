@@ -75,6 +75,10 @@ flowchart LR
      `set_config(..., true)` calls pin the client connection, and whether
      pg/Prisma prepared statements do; verify IAM or Secrets Manager
      authentication; and compare proxy timeouts with the 5 s connect timeout.
+   - **Telemetry** is adapter code in `apps/api`: spans come from a Hono
+     middleware and decorators around the use cases and ports, applied in the
+     compositions, behind runtime-neutral ports. Core and persistence have no
+     OpenTelemetry dependency. See [observability.md](observability.md).
    - **Driven adapters** are called by the application. `packages/persistence`
      implements the ports with Prisma and SQL.
 

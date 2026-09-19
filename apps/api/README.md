@@ -12,13 +12,18 @@ src/
     verify-order/  contract, app, composition (+ tests)
     submit-order/  contract, app, composition, messages, serializers (+ tests)
   http/            shared only: error envelope and codes, messages, JSON guard and
-                   validator hook, createEndpointApp, shared schemas, estimate shape
+                   validator hook, createEndpointApp, shared schemas, estimate shape,
+                   the Logger port and its console JSON default
+  telemetry/       runtime-neutral telemetry: config schema, Telemetry port, log
+                   record contract, HTTP middleware, use-case/port decorators
+    node/          Node/Lambda only: OpenTelemetry SDK, exporters, Pino adapter
   app.ts           createApp: mounts the three endpoint apps
   composition.ts   composeApplication: all routes over one pool
   database.ts      bounded pool + Prisma shared by the database compositions
   config.ts        shared env parsing, DATABASE_URL config, local-server config
   routes.ts        the route/status table assembled from the endpoint contracts
-  server.ts        Node.js entrypoint: validate config, listen, graceful shutdown
+  server.ts        Node.js entrypoint: validate config, start telemetry, listen,
+                   graceful shutdown
   index.ts         public exports
   testing/         unit-test support (fixtures, request cases, spies, black hole)
 ```
@@ -42,11 +47,11 @@ JSON Schema and must be documented in prose.
 Each endpoint is a separately constructible Hono app, so each can be deployed
 as its own Lambda function (#14):
 
-| Route                        | App factory                                      | Composition                              | Builds                         | Configuration  |
-| ---------------------------- | ------------------------------------------------ | ---------------------------------------- | ------------------------------ | -------------- |
-| `GET /health`                | `createHealthApp({ logger? })`                   | `composeHealthApplication()`             | nothing                        | none           |
-| `POST /api/v1/orders/verify` | `createVerifyOrderApp({ verifyOrder, logger? })` | `composeVerifyOrderApplication(options)` | pool, Prisma, inventory reader | `DATABASE_URL` |
-| `POST /api/v1/orders`        | `createSubmitOrderApp({ submitOrder, logger? })` | `composeSubmitOrderApplication(options)` | pool, Prisma, submission store | `DATABASE_URL` |
+| Route                        | App factory                                      | Composition                              | Builds                         | Configuration              |
+| ---------------------------- | ------------------------------------------------ | ---------------------------------------- | ------------------------------ | -------------------------- |
+| `GET /health`                | `createHealthApp({ logger? })`                   | `composeHealthApplication(options?)`     | nothing                        | telemetry only             |
+| `POST /api/v1/orders/verify` | `createVerifyOrderApp({ verifyOrder, logger? })` | `composeVerifyOrderApplication(options)` | pool, Prisma, inventory reader | `DATABASE_URL` + telemetry |
+| `POST /api/v1/orders`        | `createSubmitOrderApp({ submitOrder, logger? })` | `composeSubmitOrderApplication(options)` | pool, Prisma, submission store | `DATABASE_URL` + telemetry |
 
 - Every standalone app is complete: the same Content-Type and JSON handling,
   error envelope and 500 mapping (with its route's message), and the same
@@ -66,13 +71,26 @@ as its own Lambda function (#14):
 - Configuration is validated per runtime: `parseHealthConfig` requires
   nothing, `parseDatabaseConfig` (for the verify and submit runtimes) requires
   `DATABASE_URL`, and the local server (`parseConfig`) requires `DATABASE_URL`
-  and accepts `PORT`.
+  and accepts `PORT`. All of them validate the optional telemetry variables
+  ([Telemetry](#telemetry)).
+- Every composition accepts `telemetry` (a `Telemetry` object) and `logger`.
+  With `telemetry`, it wraps the app in the HTTP server middleware once and
+  decorates its use cases and persistence ports with spans; without it,
+  nothing is instrumented. `createApp` and the endpoint app factories never
+  add the middleware themselves, so each request gets exactly one server span.
 - `src/index.ts` exports the app factories, the compositions, these
   configuration parsers, the route contract (`routes`, `API_PREFIX`) and the
   request/response schemas. `routes[*].servedBy` names the app that serves
   each route.
 
 ### Notes for Lambda deployment (#14)
+
+- **Telemetry:** call `startTelemetry` once in module scope, pass its
+  `logger` and `telemetry` to the composition, and call
+  `await runtime.forceFlush(timeoutMs)` at the end of every invocation. Never rely
+  on process shutdown. The bundle loads `pino` from `node_modules` at runtime,
+  so the artifact must include it. See
+  [docs/observability.md](../../docs/observability.md#initialization-graceful-shutdown-and-lambda-lifecycle).
 
 - The in-process pg pool belongs to one Lambda execution environment. An
   environment serves one request at a time, so the pool never shares
@@ -267,9 +285,10 @@ deducted again; otherwise the request is evaluated afresh. Use a new
 
 ## Configuration
 
-`src/server.ts` validates the environment once, before building any database
-client or listening. On failure it prints only the variable name and a reason
-to stderr (never the value) and exits with status 1.
+`src/server.ts` validates the environment once, before starting telemetry,
+building any database client or listening. On failure it prints only the
+variable name and a reason to stderr (never the value) and exits with
+status 1.
 
 | Variable       | Required | Rule                                                                   |
 | -------------- | -------- | ---------------------------------------------------------------------- |
@@ -279,7 +298,26 @@ to stderr (never the value) and exits with status 1.
 Validation does not connect to the database: the server starts and `/health`
 answers while PostgreSQL is down. SIGINT or SIGTERM closes the listener
 (in-flight requests finish first; see the limitation below), disconnects
-Prisma, and ends the pool.
+Prisma, ends the pool, and then flushes and stops telemetry (at most 5 s).
+
+### Telemetry
+
+Logs are Pino JSON lines on stdout. Traces and metrics are off by default
+(`OTEL_TRACES_EXPORTER=none`, `OTEL_METRICS_EXPORTER=none`) and can be sent
+over OTLP/HTTP or printed with `console`. The main variables:
+
+| Variable                                                         | Default                              | Purpose                                         |
+| ---------------------------------------------------------------- | ------------------------------------ | ----------------------------------------------- |
+| `LOG_LEVEL`                                                      | `info`                               | `trace` ... `fatal`, or `silent`                |
+| `OTEL_TRACES_EXPORTER` / `OTEL_METRICS_EXPORTER`                 | `none`                               | `otlp`, `console` or `none`                     |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                                    | `http://localhost:4318`              | Collector base URL (validated only when used)   |
+| `OTEL_TRACES_SAMPLER_ARG`                                        | `1`                                  | Ratio of new root traces sampled (parent-based) |
+| `OTEL_SERVICE_NAME`, `SERVICE_VERSION`, `DEPLOYMENT_ENVIRONMENT` | `scos-api`, package version, `local` | Resource attributes on every signal             |
+| `OTEL_SDK_DISABLED`                                              | `false`                              | `true` turns tracing and metrics off            |
+
+The full table, the spans and metrics, the log field mapping, sampling,
+export bounds, failure behaviour and sample output are in
+[docs/observability.md](../../docs/observability.md).
 
 ### Database timeouts
 
@@ -344,7 +382,9 @@ pnpm api:start      # built bundle
 
 ```sh
 # Unit tests (no database): contracts, handlers with fake use cases, config,
-# composition, and the entrypoint spawned as a subprocess.
+# composition, telemetry with in-memory exporters and captured logs, the
+# entrypoint spawned as a subprocess, and the built dist/server.js (log
+# correlation on the bundled load path; build first, as `pnpm test` does).
 pnpm --filter @scos/api test
 
 # Full-stack tests through the composed app against real PostgreSQL.
@@ -359,4 +399,6 @@ or does not name `scos_test`. They cover the per-endpoint verify and submit comp
 unchanged, acceptance and both rejections, repeats after stock changes and a
 restart, conflicts, concurrent submissions under controlled lock overlap, and
 failure injection (rollback at each stage, `submission_key` unique violations,
-real `lock_timeout` retries ending in `503`, and a lost response after commit).
+real `lock_timeout` retries ending in `503`, and a lost response after commit),
+and the persistence decorator spans and submission counter against the real
+database, including an unreachable collector.

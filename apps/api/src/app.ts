@@ -14,7 +14,7 @@ import { SUBMIT_ORDER_MESSAGES } from "./endpoints/submit-order/messages";
 import { createSubmitOrderApp } from "./endpoints/submit-order/app";
 import { createVerifyOrderApp } from "./endpoints/verify-order/app";
 import { createEndpointApp } from "./http/endpoint-app";
-import { type Logger, consoleLogger } from "./http/logger";
+import { type Logger, defaultLogger } from "./http/logger";
 import { MESSAGES } from "./http/messages";
 import { routes } from "./routes";
 
@@ -30,7 +30,7 @@ export interface AppDependencies {
  * responses are identical to the standalone apps.
  */
 export function createApp(dependencies: AppDependencies): Hono {
-  const { verifyOrder, submitOrder, logger = consoleLogger } = dependencies;
+  const { verifyOrder, submitOrder, logger = defaultLogger } = dependencies;
   // Only reached by errors outside the mounted routes; same mapping by path.
   const app = createEndpointApp(logger, (c) =>
     c.req.path === routes.submitOrder.path ? SUBMIT_ORDER_MESSAGES.internal : MESSAGES.internal,

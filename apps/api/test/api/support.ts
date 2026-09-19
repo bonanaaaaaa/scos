@@ -17,7 +17,9 @@ import { serve } from "@hono/node-server";
 import { expect } from "vitest";
 
 import { composeApplication } from "../../src/composition";
+import { parseHealthConfig } from "../../src/endpoints/health/config";
 import { startServer } from "../../src/server";
+import { createTelemetryRuntime } from "../../src/telemetry/node/sdk";
 
 // ---------------------------------------------------------------------------
 // Server
@@ -30,6 +32,15 @@ export interface RunningApi {
 
 const silentLogger = { error: () => undefined };
 
+/** Telemetry off and logs silent: these tests assert HTTP behaviour only. */
+function quietTelemetry() {
+  const parsed = parseHealthConfig({ OTEL_SDK_DISABLED: "true", LOG_LEVEL: "silent" });
+  if (!parsed.success) {
+    throw new Error(parsed.errors.join("; "));
+  }
+  return parsed.config.telemetry;
+}
+
 /** Starts the real Node.js listener on an ephemeral port. */
 export async function startApi(databaseUrl: string): Promise<RunningApi> {
   let resolvePort: (port: number) => void = () => undefined;
@@ -37,7 +48,7 @@ export async function startApi(databaseUrl: string): Promise<RunningApi> {
     resolvePort = resolve;
   });
   const running = startServer(
-    { databaseUrl, port: 0 },
+    { databaseUrl, port: 0, telemetry: quietTelemetry() },
     {
       serve: (options, onListening) =>
         serve(options, (info) => {
@@ -45,7 +56,7 @@ export async function startApi(databaseUrl: string): Promise<RunningApi> {
           resolvePort(info.port);
         }),
       compose: (options) => composeApplication({ ...options, logger: silentLogger }),
-      log: () => undefined,
+      startTelemetry: (config) => createTelemetryRuntime(config),
     },
   );
   const port = await listening;

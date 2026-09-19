@@ -138,6 +138,7 @@ sequenceDiagram
 - Record HTTP request duration in seconds under stable HTTP semantic conventions and a documented submission-request outcome counter (including replay outcomes). Use bounded metric dimensions and route templates, never per-request IDs or raw URLs.
 - Exclude request bodies, credentials, tokens, database parameters and destination coordinates from telemetry. Sanitize errors. Use bounded asynchronous export, configurable sampling and documented OTLP/local test-sink configuration. Telemetry failures must not change order outcomes or extend database transactions.
 - Developers own instrumentation unit/integration tests; QA validates telemetry via API scenarios. Hosted delivery must verify Lambda warm reuse and bounded flush behavior. Telemetry backend provisioning is a separate deployment choice.
+- Implementation, configuration, field mapping and sample output: [docs/observability.md](observability.md).
 - References: [OTel logs](https://opentelemetry.io/docs/specs/otel/logs/data-model/), [HTTP spans](https://opentelemetry.io/docs/specs/semconv/http/http-spans/), [HTTP metrics](https://opentelemetry.io/docs/specs/semconv/http/http-metrics/).
 
 ## Unresolved

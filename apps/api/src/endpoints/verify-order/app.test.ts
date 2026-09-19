@@ -146,9 +146,10 @@ describe("POST /api/v1/orders/verify", () => {
       error: { code: "INTERNAL_ERROR", message: MESSAGES.internal },
     });
     expect(logger.error).toHaveBeenCalledOnce();
-    expect(logger.error.mock.calls[0]?.[1]).toMatchObject({
-      method: "POST",
-      path: "/api/v1/orders/verify",
+    expect(logger.error.mock.calls[0]?.[1]).toStrictEqual({
+      "http.request.method": "POST",
+      "url.path": "/api/v1/orders/verify",
+      "http.route": "/api/v1/orders/verify",
       error: expect.any(Error),
     });
   });

@@ -26,7 +26,12 @@ export {
   type VerifyOrderAppDependencies,
   createVerifyOrderApp,
 } from "./endpoints/verify-order/app";
-export { type Logger, consoleLogger } from "./http/logger";
+export {
+  type Logger,
+  type StructuredLogger,
+  createConsoleJsonLogger,
+  defaultLogger,
+} from "./http/logger";
 
 // Compositions
 export { type CompositionOptions, composeApplication } from "./composition";

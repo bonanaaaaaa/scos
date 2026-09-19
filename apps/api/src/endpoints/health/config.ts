@@ -1,18 +1,26 @@
 /**
- * Configuration of a health-only runtime: none.
+ * Configuration of a health-only runtime: telemetry and logging only; no
+ * database.
  *
  * @module
  */
 
-import { z } from "zod";
+import {
+  type Environment,
+  type ParseResult,
+  type TelemetrySettings,
+  parseEnvironment,
+  telemetryEnvironmentSchema,
+} from "../../config";
+import { toTelemetryConfig } from "../../telemetry/config";
 
-import { type Environment, type ParseResult, parseEnvironment } from "../../config";
+export const healthEnvironmentSchema = telemetryEnvironmentSchema;
 
-export const healthEnvironmentSchema = z.object({});
-
-/** Health has no configuration; this always succeeds. */
-export type HealthConfig = Readonly<Record<string, never>>;
+/** Health needs no database; only the telemetry variables are validated. */
+export type HealthConfig = TelemetrySettings;
 
 export function parseHealthConfig(environment: Environment): ParseResult<HealthConfig> {
-  return parseEnvironment(healthEnvironmentSchema, environment, () => ({}));
+  return parseEnvironment(healthEnvironmentSchema, environment, (data) => ({
+    telemetry: toTelemetryConfig(data),
+  }));
 }

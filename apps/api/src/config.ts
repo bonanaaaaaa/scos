@@ -14,6 +14,14 @@
 
 import { z } from "zod";
 
+import {
+  REFINE_ALWAYS,
+  type TelemetryConfig,
+  refineTelemetry,
+  telemetryEnvironmentShape,
+  toTelemetryConfig,
+} from "./telemetry/config";
+
 export const DEFAULT_PORT = 3000;
 
 const POSTGRES_PROTOCOLS = new Set(["postgres:", "postgresql:"]);
@@ -41,10 +49,22 @@ const portSchema = z
   .optional()
   .transform((port) => port ?? DEFAULT_PORT);
 
-/** The database endpoints (verify, submit) need DATABASE_URL only. */
-export const databaseEnvironmentSchema = z.object({ DATABASE_URL: databaseUrlSchema });
+/**
+ * Telemetry and logging variables every runtime accepts (see
+ * `telemetry/config.ts`), with their cross-field rules.
+ */
+export const telemetryEnvironmentSchema = z
+  .object(telemetryEnvironmentShape)
+  .superRefine(refineTelemetry, REFINE_ALWAYS);
 
-export const serverEnvironmentSchema = databaseEnvironmentSchema.extend({ PORT: portSchema });
+/** The database endpoints (verify, submit): DATABASE_URL plus telemetry. */
+export const databaseEnvironmentSchema = z
+  .object({ DATABASE_URL: databaseUrlSchema, ...telemetryEnvironmentShape })
+  .superRefine(refineTelemetry, REFINE_ALWAYS);
+
+export const serverEnvironmentSchema = z
+  .object({ DATABASE_URL: databaseUrlSchema, PORT: portSchema, ...telemetryEnvironmentShape })
+  .superRefine(refineTelemetry, REFINE_ALWAYS);
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -74,15 +94,24 @@ export function parseEnvironment<Schema extends z.ZodObject, Config>(
   return { success: true, config: toConfig(parsed.data) };
 }
 
-/** What the verify and submit compositions need. */
-export interface DatabaseConfig {
+/** Telemetry and logging settings, validated for every runtime. */
+export interface TelemetrySettings {
+  readonly telemetry: TelemetryConfig;
+}
+
+/** What the verify and submit runtimes need. */
+export interface DatabaseConfig extends TelemetrySettings {
   readonly databaseUrl: string;
 }
 
-/** For a verify-only or submit-only runtime: requires DATABASE_URL. */
+/**
+ * For a verify-only or submit-only runtime: requires DATABASE_URL and
+ * validates the telemetry variables.
+ */
 export function parseDatabaseConfig(environment: Environment): ParseResult<DatabaseConfig> {
   return parseEnvironment(databaseEnvironmentSchema, environment, (data) => ({
     databaseUrl: data.DATABASE_URL,
+    telemetry: toTelemetryConfig(data),
   }));
 }
 
@@ -93,12 +122,14 @@ export interface ServerConfig extends DatabaseConfig {
 export type ConfigResult = ParseResult<ServerConfig>;
 
 /**
- * Parses the local server's environment (DATABASE_URL and PORT). Returns
- * sanitized `NAME: reason` lines on failure; values are never included.
+ * Parses the local server's environment (DATABASE_URL, PORT and telemetry).
+ * Returns sanitized `NAME: reason` lines on failure; values are never
+ * included.
  */
 export function parseConfig(environment: Environment): ConfigResult {
   return parseEnvironment(serverEnvironmentSchema, environment, (data) => ({
     databaseUrl: data.DATABASE_URL,
     port: data.PORT,
+    telemetry: toTelemetryConfig(data),
   }));
 }

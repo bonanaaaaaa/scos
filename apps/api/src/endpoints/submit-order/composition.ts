@@ -18,6 +18,7 @@ import {
   composeOverDatabase,
   withLogger,
 } from "../../database";
+import { traceSubmissionStore, traceSubmitOrder } from "../../telemetry/decorators";
 import { createSubmitOrderApp } from "./app";
 
 export interface SubmitOrderCompositionOptions extends DatabaseCompositionOptions {
@@ -36,14 +37,17 @@ export function buildSubmitOrder(
   prisma: PrismaClient,
   options: SubmitOrderCompositionOptions,
 ): SubmitOrder {
+  const { telemetry } = options;
   const realStore = createPrismaSubmissionStore(prisma, options.submissionStore);
-  const store = options.decorateSubmissionStore?.(realStore) ?? realStore;
-  return createSubmitOrder({
+  const decorated = options.decorateSubmissionStore?.(realStore) ?? realStore;
+  const store = telemetry === undefined ? decorated : traceSubmissionStore(decorated, telemetry);
+  const submitOrder = createSubmitOrder({
     store,
     ...(options.maxSubmissionAttempts === undefined
       ? {}
       : { maxAttempts: options.maxSubmissionAttempts }),
   });
+  return telemetry === undefined ? submitOrder : traceSubmitOrder(submitOrder, telemetry);
 }
 
 export function composeSubmitOrderApplication(

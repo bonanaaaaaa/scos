@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { DEFAULT_PORT, parseConfig, parseDatabaseConfig } from "./config";
+import { DEFAULT_TELEMETRY_CONFIG as telemetry } from "./testing/telemetry.test-support";
 
 const databaseUrl = "postgresql://scos:secret-password@localhost:5432/scos";
 
@@ -8,7 +9,7 @@ describe("parseConfig", () => {
   test("accepts a PostgreSQL URL and defaults PORT to 3000", () => {
     expect(parseConfig({ DATABASE_URL: databaseUrl })).toStrictEqual({
       success: true,
-      config: { databaseUrl, port: DEFAULT_PORT },
+      config: { databaseUrl, port: DEFAULT_PORT, telemetry },
     });
     expect(DEFAULT_PORT).toBe(3000);
     expect(parseConfig({ DATABASE_URL: "postgres://db.internal/scos" }).success).toBe(true);
@@ -69,11 +70,11 @@ describe("parseConfig", () => {
 });
 
 describe("parseDatabaseConfig", () => {
-  test("verify and submit require DATABASE_URL only", () => {
+  test("verify and submit require DATABASE_URL and no other variable", () => {
     const databaseUrl = "postgresql://scos:secret@127.0.0.1:1/scos";
     expect(parseDatabaseConfig({ DATABASE_URL: databaseUrl, PORT: "not-a-port" })).toStrictEqual({
       success: true,
-      config: { databaseUrl },
+      config: { databaseUrl, telemetry },
     });
     expect(parseDatabaseConfig({})).toStrictEqual({
       success: false,

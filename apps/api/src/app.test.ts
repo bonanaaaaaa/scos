@@ -17,7 +17,7 @@ import { rejectedSubmissionResponseSchema } from "./endpoints/submit-order/contr
 import { SUBMIT_ORDER_MESSAGES } from "./endpoints/submit-order/messages";
 import { createVerifyOrderApp } from "./endpoints/verify-order/app";
 import { errorResponseSchema } from "./http/errors";
-import { consoleLogger } from "./http/logger";
+import { defaultLogger } from "./http/logger";
 import { MESSAGES } from "./http/messages";
 import {
   acceptedOrder,
@@ -132,19 +132,51 @@ describe("unknown routes", () => {
   });
 });
 
+/** Captures the default logger's `console.log` lines as parsed records. */
+function captureConsole() {
+  const spy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  return {
+    records: () =>
+      spy.mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>),
+    restore: () => spy.mockRestore(),
+  };
+}
+
 describe("default logger", () => {
-  test("writes unexpected errors to stderr", () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  test("writes unexpected errors as one JSON record through console.log", () => {
+    const stdout = captureConsole();
     try {
-      consoleLogger.error("boom", { path: "/api/v1/orders" });
-      expect(spy).toHaveBeenCalledWith("boom", { path: "/api/v1/orders" });
+      defaultLogger.error("boom", { path: "/api/v1/orders" });
+      expect(stdout.records()).toMatchObject([
+        { level: "error", severity_number: 17, msg: "boom", path: "/api/v1/orders" },
+      ]);
     } finally {
-      spy.mockRestore();
+      stdout.restore();
+    }
+  });
+
+  test("each level and child loggers write through the same console sink", () => {
+    const stdout = captureConsole();
+    try {
+      defaultLogger.trace("hidden at the default info level");
+      defaultLogger.debug("hidden at the default info level");
+      defaultLogger.info("i");
+      defaultLogger.warn("w");
+      defaultLogger.fatal("f");
+      defaultLogger.child({ component: "c" }).info("from child");
+      expect(stdout.records()).toMatchObject([
+        { level: "info", msg: "i" },
+        { level: "warn", msg: "w" },
+        { level: "fatal", msg: "f" },
+        { level: "info", msg: "from child", component: "c" },
+      ]);
+    } finally {
+      stdout.restore();
     }
   });
 
   test("createApp falls back to it", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const stdout = captureConsole();
     try {
       const app = createApp({
         verifyOrder: async () => {
@@ -153,9 +185,15 @@ describe("default logger", () => {
         submitOrder: async () => ({ kind: "unavailable", attempts: 1 }),
       });
       expect((await post(app, "/api/v1/orders/verify", verifyBody)).status).toBe(500);
-      expect(spy).toHaveBeenCalledOnce();
+      expect(stdout.records()).toMatchObject([
+        {
+          level: "error",
+          msg: "Unhandled error while handling a request",
+          error: { type: "Error" },
+        },
+      ]);
     } finally {
-      spy.mockRestore();
+      stdout.restore();
     }
   });
 });
@@ -213,8 +251,14 @@ describe("mounting keeps each endpoint's error handling", () => {
     expect(verify.body + submit.body).not.toContain("secret");
     expect(logger.error).toHaveBeenCalledTimes(2);
     expect(
-      logger.error.mock.calls.map(([, details]) => (details as { path: string }).path),
-    ).toStrictEqual(["/api/v1/orders/verify", "/api/v1/orders"]);
+      logger.error.mock.calls.map(([, details]) => [
+        (details as Record<string, unknown>)["url.path"],
+        (details as Record<string, unknown>)["http.route"],
+      ]),
+    ).toStrictEqual([
+      ["/api/v1/orders/verify", "/api/v1/orders/verify"],
+      ["/api/v1/orders", "/api/v1/orders"],
+    ]);
   });
 });
 
