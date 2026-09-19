@@ -328,7 +328,11 @@ the documented responses against a freshly seeded database (send the repeat and
 conflict examples after the acceptance example); after other orders, stock and
 therefore amounts can differ.
 
-The specification is a build artifact, not a committed file. `pnpm build`
+The specification is a build artifact, not a committed file. The route
+contracts and their Zod schemas are the single source of truth: the same
+schemas validate requests and generate the document. A committed copy would
+be a second source that can drift from them, so the document is always
+generated, never stored. `pnpm build`
 writes `apps/api/dist/openapi.json` after bundling the server: `build.mjs`
 bundles the exporter CLI (`scripts/openapi.ts`) with the server's esbuild
 settings to a temporary file outside `dist/`, and runs it with Node.js without
