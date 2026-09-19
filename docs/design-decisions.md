@@ -7,7 +7,7 @@
 - Deadline: next Monday, interpreted as September 21, 2026, Bangkok time.
 - Budget: approximately four hours for core implementation, with separate review time.
 - AWS deployment provisioning has a separate budget from the four-hour core implementation.
-- Stack: TypeScript 7 (required), Hono, Prisma, PostgreSQL; deploy on AWS Lambda. The database connection approach is RDS Proxy (see Agreed architecture). Because RDS Proxy fronts Amazon RDS for PostgreSQL or Aurora PostgreSQL, hosting is narrowed to those two; the engine and instance choice remains open.
+- Stack: TypeScript 7 (required), Hono, Prisma, PostgreSQL; deploy on AWS Lambda. The database connection approach is RDS Proxy (see Agreed architecture). Because RDS Proxy fronts Amazon RDS for PostgreSQL or Aurora PostgreSQL, hosting is narrowed to those two. Decided 2026-09-19: Amazon RDS for PostgreSQL, db.t4g.micro, Single-AZ, 20 GB gp3, in ap-southeast-1, exposed through one API Gateway HTTP API. See [Lambda deployment](deployment/lambda.md).
 - Use a pnpm workspace and Turborepo monorepo. Oxlint is the selected linter and Oxfmt is the selected formatter. Type-aware lint rule configuration remains an implementation choice to finalize.
 - Use hexagonal architecture and domain-driven design (DDD), with one Ordering bounded context covering pricing, shipping allocation, orders, and available inventory.
 - Do not use the experimental, non-standard Idempotency-Key HTTP header. Use a required client-generated submissionId in the JSON request body to prevent duplicate Orders. See [ADR 0004](adr/0004-deduplicate-accepted-orders.md).
@@ -43,7 +43,7 @@
 - Inventory is persisted separately. The SubmitOrder application use case coordinates inventory changes and order creation atomically.
 - Hono is an inbound adapter calling VerifyOrder and SubmitOrder application use cases. Lambda starts the application.
 - Each endpoint is a separately constructible Hono app with its own composition root (`GET /health`, `POST /api/v1/orders/verify`, `POST /api/v1/orders`), building only the adapters it needs, so each can be deployed as its own Lambda function. A combined app mounts all three for local serving and the API documentation routes, with identical responses.
-- Lambda functions reach PostgreSQL through RDS Proxy, which pools connections across all per-endpoint functions and bounds the connections reaching the database. Nothing sets the in-process pool size yet (pg defaults to 10); the recommendation for deployment (#14) is to apply and verify a pool of at most one connection per execution environment, which serves one request at a time. Deployment must also check whether session settings or prepared statements pin connections, and verify IAM or Secrets Manager authentication and proxy timeouts.
+- Lambda functions reach PostgreSQL through RDS Proxy, which pools connections across all per-endpoint functions and bounds the connections reaching the database. Each Lambda execution environment serves one request at a time and uses a pg pool of at most one connection (`apps/api/src/lambda/pool.ts`). Lambda authenticates to the proxy with IAM database authentication, minting a fresh token for every new connection over verified TLS; the proxy reaches PostgreSQL with a Secrets Manager secret. Whether session settings or prepared statements pin proxy connections, and how proxy timeouts behave, must be verified with hosted evidence (#16). See [Lambda deployment](deployment/lambda.md).
 - Application use cases depend on the domain model and application-owned persistence interfaces. The Prisma outbound adapter implements persistence and transaction locking.
 - Prisma types and HTTP objects stay outside the domain and application use cases.
 - A transaction interface encompasses the duplicate-key lookup, stock reads, order and allocation persistence, and inventory updates together.
@@ -142,6 +142,6 @@ sequenceDiagram
 
 ## Unresolved
 
-- Monthly demo budget; deployment starts from scratch.
-- PostgreSQL engine and instance choice: Amazon RDS for PostgreSQL or Aurora PostgreSQL (the two that RDS Proxy fronts). The connection approach itself is decided: RDS Proxy.
-- Deployment exposure and packaging, subject to Q26 infrastructure and budget constraints.
+- Monthly demo budget: fixed charges estimated at about $47.74 per month (about $47.80 including demo traffic) in [Lambda deployment](deployment/lambda.md#11-cost-estimate); approval pending in #16. Terraform state uses the shared Cloudflare R2 bucket defined in #15, so the AWS track also needs a Cloudflare account.
+- How to expose `GET /openapi.json` and `GET /docs` in the hosted deployment; the three-route HTTP API does not serve them.
+- Whether the master and `scos_app` passwords may live in encrypted Terraform state (approval 14 in [Lambda deployment](deployment/lambda.md#15-remaining-provisioning-approvals-for-16)).

@@ -19,6 +19,7 @@ src/
   config.ts        shared env parsing, DATABASE_URL config, local-server config
   routes.ts        the route/status table assembled from the endpoint contracts
   server.ts        Node.js entrypoint: validate config, listen, graceful shutdown
+  lambda/          AWS Lambda entrypoints (one per endpoint), config, pool
   index.ts         public exports
   testing/         unit-test support (fixtures, request cases, spies, black hole)
 ```
@@ -72,23 +73,43 @@ as its own Lambda function (#14):
   request/response schemas. `routes[*].servedBy` names the app that serves
   each route.
 
-### Notes for Lambda deployment (#14)
+### Lambda handlers (#14)
 
-- The in-process pg pool belongs to one Lambda execution environment. An
-  environment serves one request at a time, so the pool never shares
-  connections across environments. Nothing sets the pool size yet (pg
-  defaults to 10); the recommendation is for #14 to apply and verify `max: 1`
-  per Lambda environment.
-- The connection approach is **RDS Proxy**. It pools connections across all
-  per-endpoint functions and bounds the connections that reach PostgreSQL.
-- Open checks for #14 (not yet verified):
-  - Connection pinning with this stack. The submission transaction runs
-    `set_config('lock_timeout' | 'statement_timeout', ..., true)`. Check
-    whether that pins the client connection, and whether pg/Prisma prepared
-    statements do.
-  - IAM or Secrets Manager authentication for RDS Proxy.
-  - RDS Proxy timeouts (connection borrow and idle client timeouts) versus
-    our 5 s connect timeout (`connectionTimeoutMillis`).
+`src/lambda/` is a second driving adapter over the same per-endpoint
+compositions: `health.ts`, `verify-order.ts` and `submit-order.ts` each export
+`handler`, built with Hono's `hono/aws-lambda` `handle` for API Gateway HTTP
+API (payload format 2.0) events on the `$default` stage.
+
+- Each module validates its environment once per execution environment, at
+  initialization, before building any client (`lambda/config.ts`). Invalid
+  variables fail initialization with a `LambdaConfigurationError` whose
+  message is only `NAME: reason` lines. Health requires nothing; verify and
+  submit require `DATABASE_URL` and accept `DATABASE_AUTH_MODE` (`password`,
+  default, or `iam`; `iam` also requires `AWS_REGION`, which Lambda sets, and a
+  `DATABASE_URL` with user and database but no password or query
+  parameters). `withLambdaTelemetryEnvironment` is where #17's telemetry
+  schema is merged.
+- The pool (`lambda/pool.ts`) has `max: 1` and `idleTimeoutMillis: 0` (kept
+  across warm invocations; the module comment explains why) with the same
+  5 s connect timeout. In `iam` mode pg's `password` is a function that mints
+  a new RDS IAM token (`@aws-sdk/rds-signer`) for each new physical
+  connection, and TLS is required with certificate verification against
+  Node.js's bundled roots (RDS Proxy uses ACM certificates that chain to the
+  Amazon Root CAs).
+- `pnpm build` bundles each handler to `dist/lambda/<name>/index.mjs`
+  (Prisma's query compiler is inlined; nothing is loaded from node_modules).
+  `pnpm package:lambda` (root) builds and zips them deterministically to
+  `dist/lambda/<name>.zip` with `dist/lambda/manifest.json` (handler
+  `index.handler`, `nodejs24.x`, `arm64`, bytes, sha256, Git commit).
+- `test/lambda-artifacts.integration.test.ts` extracts the zips outside the
+  workspace and invokes them with Lambda's Node.js flags: health with no
+  environment, verify and submit against PostgreSQL, and iam-mode TLS
+  (declined TLS, trusted certificate, host name mismatch) against a fake
+  PostgreSQL front end. It also rebuilds and repackages to check the zips
+  are byte-identical.
+- Still to verify on AWS: whether the submission transaction's
+  `set_config(..., true)` or Prisma's prepared statements pin proxy
+  connections, and proxy timeouts against the 5 s connect timeout.
 
 ## Endpoints
 
@@ -351,6 +372,10 @@ pnpm --filter @scos/api test
 DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
   pnpm exec turbo run test:integration --filter=@scos/api
 ```
+
+The Lambda tests need the `openssl` binary (unit tests generate throwaway TLS
+certificates) and `unzip` (the integration tests extract the built artifacts);
+`test:integration` packages the artifacts first (`package:lambda`).
 
 The integration tests (`test/*.integration.test.ts`) create an isolated,
 migrated and seeded database per file beside `scos_test` and drop it

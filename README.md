@@ -117,6 +117,10 @@ pnpm db:seed      # apply migrations, then insert missing seed warehouses
 
 Seeding never replenishes consumed stock. The destructive `db:reset` requires `SCOS_CONFIRM_DATABASE_RESET` to match the target database name. See [database schema](docs/database-schema.md) for the entity relationships and schema decisions, and [local development](docs/local-development.md) for command details.
 
+## Lambda artifacts and deployment design
+
+`pnpm package:lambda` builds the API and writes deterministic Lambda zips for `health`, `verify-order`, and `submit-order`, plus `manifest.json` with each artifact's SHA-256, to `apps/api/dist/lambda/`. Nothing is provisioned. The AWS deployment design (region, RDS Proxy pooling, IAM database authentication, Terraform and GitHub Actions inputs, costs, and teardown) is in [Lambda deployment](docs/deployment/lambda.md).
+
 ## Continuous integration
 
 The `CI` workflow runs for pull requests targeting `main` and pushes to `main`. The pull-request policy workflows run only against `main`. Validation jobs have read-only repository access, cancel superseded pull-request runs, have bounded timeouts, and do not deploy.
@@ -125,7 +129,7 @@ The workflow exposes these stable check names:
 
 - `Workspace checks`: frozen install followed by separate Turbo build, typecheck, Oxlint, Oxfmt, and test steps
 - `Coverage comment`: aggregate Vitest coverage reporting on same-repository pull requests
-- `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached Turbo `test:integration` connectivity smoke test plus migration, schema, seed, and inventory-reader integration tests in `packages/persistence`, and the full-stack ordering tests through the composed API in `apps/api`
+- `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached Turbo `test:integration` connectivity smoke test plus migration, schema, seed, and inventory-reader integration tests in `packages/persistence`, and the full-stack ordering tests through the composed API in `apps/api`, plus a smoke test of the packaged Lambda artifacts
 - `PR title`: Conventional Commit title validation on opened, edited, reopened, and synchronized pull requests
 - `Code scanner`: verified-secret scanning across the pull request's explicit base and head revisions
 - `Actionlint`: workflow validation when `.github/workflows/**` or `.github/actions/**` changes; local-action changes trigger the workflow but actionlint validates workflow files

@@ -4,8 +4,19 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "build.mjs", "tsconfig.json", "package.json"],
+      "inputs": ["src/**", "build.mjs", "build.config.mjs", "tsconfig.json", "package.json"],
       "outputs": ["dist/**"]
+    },
+    "package:lambda": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "outputs": ["dist/lambda/*.zip", "dist/lambda/manifest.json"]
+    },
+    "test:integration": {
+      "dependsOn": ["build", "^build", "package:lambda"],
+      "cache": false,
+      "env": ["DATABASE_TEST_URL", "DATABASE_URL"],
+      "persistent": false
     }
   }
 }
