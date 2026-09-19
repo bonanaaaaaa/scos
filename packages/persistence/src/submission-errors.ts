@@ -135,6 +135,35 @@ function isUncommittedTransactionTimeout(error: Prisma.PrismaClientKnownRequestE
 }
 
 /**
+ * pg-pool's connection timeouts (`connectionTimeoutMillis`). PrismaPg passes
+ * these non-PostgreSQL errors through unchanged, so they arrive as plain
+ * `Error`s recognisable only by message (pinned to pg 8.23.0 / pg-pool 3;
+ * re-check after upgrading pg):
+ *
+ * - "timeout exceeded when trying to connect": every pooled client was busy
+ *   for the whole wait.
+ * - "Connection terminated due to connection timeout": a new connection was
+ *   not established in time.
+ *
+ * Either way no statement was sent on that connection, so nothing can have
+ * committed and a new attempt is safe. No client-side query timeout is
+ * configured or classified: pg abandons a timed-out query without closing the
+ * connection, which can leave a transaction open on a pooled connection.
+ */
+export const PG_CONNECTION_TIMEOUT_MESSAGES: ReadonlySet<string> = new Set([
+  "timeout exceeded when trying to connect",
+  "Connection terminated due to connection timeout",
+]);
+
+function isPgConnectionTimeout(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    !(error instanceof Prisma.PrismaClientKnownRequestError) &&
+    PG_CONNECTION_TIMEOUT_MESSAGES.has(error.message)
+  );
+}
+
+/**
  * Maps a failure inside, or at the boundary of, the submission transaction to
  * the port's typed errors:
  *
@@ -142,6 +171,8 @@ function isUncommittedTransactionTimeout(error: Prisma.PrismaClientKnownRequestE
  * - `23505` on `orders_order_number_key` → {@link TransientSubmissionError}
  * - `40001`, `40P01`, `55P03`, `57014`, Prisma `P2034`, and the uncommitted
  *   P2028 timeouts → {@link TransientSubmissionError}
+ * - pg connection timeouts ({@link PG_CONNECTION_TIMEOUT_MESSAGES}) →
+ *   {@link TransientSubmissionError}
  *
  * The original error is kept as `cause`. Anything else, including errors that
  * are already typed, is returned unchanged: it is never swallowed.
@@ -149,6 +180,12 @@ function isUncommittedTransactionTimeout(error: Prisma.PrismaClientKnownRequestE
 export function classifySubmissionError(error: unknown): unknown {
   if (error instanceof SubmissionKeyTakenError || error instanceof TransientSubmissionError) {
     return error;
+  }
+  if (isPgConnectionTimeout(error)) {
+    return new TransientSubmissionError(
+      "No database connection was available in time; nothing was sent or committed.",
+      { cause: error },
+    );
   }
   const details = databaseErrorDetails(error);
   if (details !== undefined) {

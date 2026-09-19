@@ -146,10 +146,11 @@ As implemented by `createPrismaSubmissionStore` in `src/submission-store.ts`:
   | `23505` on `orders_order_number_key`                                                                                                      | `TransientSubmissionError`                             |
   | `40001`, `40P01`, `55P03`, `57014`, `P2034`                                                                                               | `TransientSubmissionError`                             |
   | `P2028` for an expired transaction or one that could not start (no commit was sent)                                                       | `TransientSubmissionError`                             |
+  | pg-pool connection timeout (`connectionTimeoutMillis`; no statement was sent), also for the unlocked lookup                               | `TransientSubmissionError`                             |
   | anything else, including a `COMMIT` failure without one of the SQLSTATEs above (such as a deferred-trigger error) or a dropped connection | propagated unchanged                                   |
 
 - The classifier does not distinguish the statement that failed: a `COMMIT` that fails with a transient SQLSTATE is retried like any other statement. This is safe because a `COMMIT` that returns an error did not commit.
-- SubmitOrder makes at most `MAX_SUBMISSION_ATTEMPTS` (3) attempts for transient failures and then reports `unavailable`. Nothing was committed, so the key remains unused. Business rejections are returned at once and never retried. If a failure leaves the outcome unknown to the caller (for example a lost response or a failed `COMMIT`), repeating the same `submissionId` returns the Order if it was committed and otherwise evaluates the request again.
+- SubmitOrder makes at most `MAX_SUBMISSION_ATTEMPTS` (3) attempts for transient failures and then reports `unavailable`. A transient failure of an unlocked lookup (a read) also reports `unavailable`. No client-side query timeout is used: pg abandons a timed-out query without closing its connection, which could return a connection with an open transaction to the pool. Nothing was committed, so the key remains unused. Business rejections are returned at once and never retried. If a failure leaves the outcome unknown to the caller (for example a lost response or a failed `COMMIT`), repeating the same `submissionId` returns the Order if it was committed and otherwise evaluates the request again.
 
 ### Timestamps
 

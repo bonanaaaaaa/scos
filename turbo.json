@@ -54,13 +54,13 @@
     "dev": {
       "dependsOn": ["^build"],
       "cache": false,
-      "env": ["PORT"],
+      "env": ["DATABASE_URL", "PORT"],
       "persistent": true
     },
     "start": {
       "dependsOn": ["build", "^build"],
       "cache": false,
-      "env": ["PORT"],
+      "env": ["DATABASE_URL", "PORT"],
       "persistent": true
     },
     "//#lint:root": {

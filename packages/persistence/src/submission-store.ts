@@ -164,7 +164,7 @@ async function findOrder(
   return row === null ? null : toDomainOrder(row);
 }
 
-/** Runs a database call inside the transaction, classifying its failure. */
+/** Runs a database call, classifying its failure. */
 async function classified<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
@@ -262,7 +262,8 @@ export function createPrismaSubmissionStore(
 
   return {
     findOrderBySubmissionKey(key) {
-      return findOrder(prisma, key);
+      // A read outside any transaction; a connection timeout here is transient.
+      return classified(() => findOrder(prisma, key));
     },
 
     async runInTransaction(work) {
@@ -270,9 +271,11 @@ export function createPrismaSubmissionStore(
         return await prisma.$transaction(
           async (tx) => {
             // SET LOCAL equivalents: they end with the transaction.
-            await tx.$queryRaw`
+            await classified(
+              () => tx.$queryRaw`
               SELECT set_config('lock_timeout', ${`${lockTimeoutMs}ms`}, true),
-                     set_config('statement_timeout', ${`${timeoutMs}ms`}, true)`;
+                     set_config('statement_timeout', ${`${timeoutMs}ms`}, true)`,
+            );
             return work(createTransaction(tx));
           },
           {

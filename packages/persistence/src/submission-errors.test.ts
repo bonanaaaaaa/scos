@@ -188,6 +188,37 @@ describe("classifySubmissionError", () => {
     }
   });
 
+  test("pg connection timeouts are transient", () => {
+    // Messages observed from pg 8.23.0 through PrismaPg (plain Errors).
+    const errors = [
+      new Error("Connection terminated due to connection timeout", {
+        cause: new Error("Connection terminated unexpectedly"),
+      }),
+      new Error("timeout exceeded when trying to connect"),
+    ];
+    for (const error of errors) {
+      const classified = classifySubmissionError(error);
+      expect(classified).toBeInstanceOf(TransientSubmissionError);
+      expect((classified as Error).cause).toBe(error);
+    }
+  });
+
+  test("a pg query timeout is never transient (no client-side query timeout is used)", () => {
+    const timeout = new Error("Query read timeout");
+    expect(classifySubmissionError(timeout)).toBe(timeout);
+  });
+
+  test("timeout messages on Prisma errors or non-errors are not treated as pg timeouts", () => {
+    const failures = [
+      prismaError("P1001", {}, "timeout exceeded when trying to connect"),
+      "timeout exceeded when trying to connect",
+      new Error("timeout exceeded when trying to connect: extra"),
+    ];
+    for (const error of failures) {
+      expect(classifySubmissionError(error)).toBe(error);
+    }
+  });
+
   test("already typed port errors pass through as they are", () => {
     const taken = new SubmissionKeyTakenError("taken");
     const transient = new TransientSubmissionError("transient");

@@ -56,9 +56,10 @@ Each package's `turbo.json` declares its build configuration (`tsdown.config.ts`
 
 ## Local API
 
-Start the API in watch mode during development. Turbo builds its workspace dependencies first:
+The API serves `POST /orders/verify`, `POST /orders`, and `GET /health`; see [apps/api/README.md](apps/api/README.md) for request and response shapes, status codes, and retry guidance. `./dev.sh` is the easiest way to run it. To start it directly, export `DATABASE_URL` (required; the server validates it at startup and exits nonzero without listening if it is missing or malformed). Turbo builds the workspace dependencies first:
 
 ```sh
+export DATABASE_URL=postgresql://scos:scos@localhost:5432/scos
 corepack pnpm api:dev
 ```
 
@@ -74,7 +75,7 @@ For a production-style local start, Turbo builds the API and its workspace depen
 PORT=8080 corepack pnpm api:start
 ```
 
-Check application liveness with `curl http://localhost:8080/health`. The endpoint returns HTTP 200 with `{"status":"ok"}` and does not require PostgreSQL to be running.
+Check application liveness with `curl http://localhost:8080/health`. The endpoint returns HTTP 200 with `{"status":"ok"}` and does not require PostgreSQL to be reachable.
 
 ## Local PostgreSQL
 
@@ -124,7 +125,7 @@ The workflow exposes these stable check names:
 
 - `Workspace checks`: frozen install followed by separate Turbo build, typecheck, Oxlint, Oxfmt, and test steps
 - `Coverage comment`: aggregate Vitest coverage reporting on same-repository pull requests
-- `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached Turbo `test:integration` connectivity smoke test plus migration, schema, seed, and inventory-reader integration tests in `packages/persistence`
+- `PostgreSQL integration`: a disposable PostgreSQL 18 service and the uncached Turbo `test:integration` connectivity smoke test plus migration, schema, seed, and inventory-reader integration tests in `packages/persistence`, and the full-stack ordering tests through the composed API in `apps/api`
 - `PR title`: Conventional Commit title validation on opened, edited, reopened, and synchronized pull requests
 - `Code scanner`: verified-secret scanning across the pull request's explicit base and head revisions
 - `Actionlint`: workflow validation when `.github/workflows/**` or `.github/actions/**` changes; local-action changes trigger the workflow but actionlint validates workflow files

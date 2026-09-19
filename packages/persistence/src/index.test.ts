@@ -32,4 +32,25 @@ describe("@scos/persistence", () => {
       await pool.end();
     }
   });
+
+  test("database pools accept pg options, and the explicit connection string wins", async () => {
+    const connectionString = "postgresql://example:example@localhost:5432/example";
+    const pool = createDatabasePool(connectionString, {
+      connectionTimeoutMillis: 5_000,
+      idleTimeoutMillis: 16_000,
+      max: 4,
+      ...({ connectionString: "postgresql://ignored@elsewhere/other" } as object),
+    });
+
+    try {
+      expect(pool.options).toMatchObject({
+        connectionString,
+        connectionTimeoutMillis: 5_000,
+        idleTimeoutMillis: 16_000,
+        max: 4,
+      });
+    } finally {
+      await pool.end();
+    }
+  });
 });

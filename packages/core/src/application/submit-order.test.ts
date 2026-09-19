@@ -441,6 +441,52 @@ describe("SubmitOrder transient failures", () => {
   });
 });
 
+describe("SubmitOrder unlocked lookup failures", () => {
+  const failingLookup = (store: FakeSubmissionStore, failOnCall: number) => {
+    const real = store.findOrderBySubmissionKey.bind(store);
+    let calls = 0;
+    store.findOrderBySubmissionKey = async (key) => {
+      calls += 1;
+      if (calls === failOnCall) {
+        store.calls.push("find");
+        throw new TransientSubmissionError("no connection available in time");
+      }
+      return real(key);
+    };
+  };
+
+  test("a transient failure of the initial lookup is unavailable, with no transaction", async () => {
+    const { store, submitOrder } = setup();
+    failingLookup(store, 1);
+    expect(await submitOrder(input())).toStrictEqual({ kind: "unavailable", attempts: 0 });
+    expect(store.calls).toStrictEqual(["find"]);
+    expect(store.orders).toStrictEqual([]);
+    // The key is not consumed.
+    expect(acceptedOrder(await submitOrder(input())).submissionKey).toBe("key-1");
+  });
+
+  test("a transient failure of the lookup that resolves a taken key is unavailable", async () => {
+    const { store, submitOrder } = setup();
+    failingLookup(store, 2);
+    store.beforeSave.push(() => {
+      throw new SubmissionKeyTakenError("duplicate submission_key");
+    });
+    expect(await submitOrder(input())).toStrictEqual({ kind: "unavailable", attempts: 1 });
+    expect(store.calls).toStrictEqual(["find", "begin", "lock", "tx.find", "save", "find"]);
+    expect(store.orders).toStrictEqual([]);
+    expect(store.stock()).toStrictEqual({ a: 20, b: 20 });
+  });
+
+  test("other lookup errors still propagate", async () => {
+    const { store, submitOrder } = setup();
+    const failure = new Error("unexpected");
+    store.findOrderBySubmissionKey = async () => {
+      throw failure;
+    };
+    await expect(submitOrder(input())).rejects.toBe(failure);
+  });
+});
+
 describe("SubmitOrder unexpected errors", () => {
   test("a DomainError propagates and is not retried", async () => {
     const { store, submitOrder } = setup([

@@ -60,6 +60,10 @@ export interface SubmissionStore {
    * short-circuit for repeats and for resolving a
    * {@link SubmissionKeyTakenError}; the locked lookup is authoritative.
    * Returns `null` when no Order has the key.
+   *
+   * Throws {@link TransientSubmissionError} when the lookup could not run but
+   * may succeed later (for example no database connection became available
+   * in time). It is a read, so nothing was written.
    */
   findOrderBySubmissionKey(key: SubmissionKey): Promise<Order | null>;
 
@@ -69,7 +73,8 @@ export interface SubmissionStore {
    *
    * Database failures that may succeed on a new attempt (serialization
    * failure, deadlock, lock or statement timeout, order-number collision,
-   * or a failed commit that did not take effect) must be thrown as
+   * no connection available in time, or a failed commit that did not take
+   * effect) must be thrown as
    * {@link TransientSubmissionError}. Other unexpected failures propagate
    * unchanged.
    */
@@ -77,11 +82,15 @@ export interface SubmissionStore {
 }
 
 /**
- * A failure that rolled the transaction back and may succeed if the whole
- * transaction is attempted again: serialization failure (`40001`), deadlock
- * (`40P01`), lock or statement timeout (`55P03`, `57014`), or a unique
- * violation on `order_number` (a random order-number collision). SubmitOrder
- * retries it within its bounded number of attempts.
+ * A failure after which nothing was committed and a new attempt may succeed:
+ * serialization failure (`40001`), deadlock (`40P01`), lock or statement
+ * timeout (`55P03`, `57014`), a unique violation on `order_number` (a random
+ * order-number collision), or no database connection available in time.
+ *
+ * Thrown by {@link SubmissionStore.runInTransaction} (the transaction rolled
+ * back or never started; SubmitOrder retries it within its bounded number of
+ * attempts) and by the unlocked {@link SubmissionStore.findOrderBySubmissionKey}
+ * (a read that could not run; SubmitOrder returns `unavailable`).
  */
 export class TransientSubmissionError extends Error {
   constructor(message: string, options?: ErrorOptions) {

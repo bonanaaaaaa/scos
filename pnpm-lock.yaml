@@ -203,15 +203,24 @@ importers:
       '@hono/node-server':
         specifier: 2.1.1
         version: 2.1.1(hono@4.13.8)
+      '@hono/standard-validator':
+        specifier: 0.4.0
+        version: 0.4.0(@standard-schema/spec@1.1.0)(hono@4.13.8)
       '@scos/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@scos/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
+      '@standard-schema/spec':
+        specifier: 1.1.0
+        version: 1.1.0
       hono:
         specifier: 4.13.8
         version: 4.13.8
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@scos/typescript-config':
         specifier: workspace:*
@@ -219,12 +228,21 @@ importers:
       '@types/node':
         specifier: 24.13.5
         version: 24.13.5
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
       '@vitest/coverage-v8':
         specifier: 5.0.1
         version: 5.0.1(vitest@5.0.1)
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
+      tsx:
+        specifier: 4.23.13
+        version: 4.23.13
       vitest:
         specifier: 5.0.1
         version: 5.0.1(@types/node@24.13.5)(@vitest/coverage-v8@5.0.1)(vite@8.3.0(@types/node@24.13.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -491,6 +509,12 @@ packages:
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4
+
+  '@hono/standard-validator@0.4.0':
+    resolution: {integrity: sha512-MxOm1asDh9j7c1D0KiWwppSbFgAQxTRO4YEhjMrJn3lF1BIcXenPdgjSGKDRfQmZdaTaMA8slQLETgVOKyJxFw==}
+    peerDependencies:
+      '@standard-schema/spec': ^1.0.0
+      hono: '>=4.11.2'
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -2368,6 +2392,11 @@ snapshots:
 
   '@hono/node-server@2.1.1(hono@4.13.8)':
     dependencies:
+      hono: 4.13.8
+
+  '@hono/standard-validator@0.4.0(@standard-schema/spec@1.1.0)(hono@4.13.8)':
+    dependencies:
+      '@standard-schema/spec': 1.1.0
       hono: 4.13.8
 
   '@jridgewell/resolve-uri@3.1.2': {}

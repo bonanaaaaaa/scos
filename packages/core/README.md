@@ -118,7 +118,7 @@ adapter maps them as in [design decisions](../../docs/design-decisions.md):
 | `accepted` with `order`, `replayed: true`  | The key already belongs to an Order with the same quantity and Destination; it is returned unchanged, with no recalculation or deduction | the success status chosen by the API contract |
 | `rejected` with `reason` and `estimate`    | `INSUFFICIENT_STOCK` or `SHIPPING_EXCEEDS_LIMIT` against current stock; nothing stored, key unused                                       | 422                                           |
 | `conflict`                                 | The key belongs to an Order with a different quantity or Destination; that Order is unchanged and none of its details are returned       | 409                                           |
-| `unavailable` with `attempts`              | Every attempt failed transiently; nothing committed, key unused, safe to repeat                                                          | the documented transient-failure response     |
+| `unavailable` with `attempts`              | Every attempt, or an unlocked lookup, failed transiently; nothing committed, key unused, safe to repeat                                  | the documented transient-failure response     |
 
 Inputs are compared after parsing, so JSON property order and `-0` versus `0`
 do not matter. Transient failures are retried at most `MAX_SUBMISSION_ATTEMPTS`

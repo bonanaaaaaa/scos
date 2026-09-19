@@ -379,6 +379,24 @@ describe("findOrderBySubmissionKey", () => {
     ).toBeNull();
   });
 
+  test("classifies a connection timeout of the unlocked lookup and of the transaction", async () => {
+    const { prisma, tx } = fakePrisma();
+    const store = createPrismaSubmissionStore(prisma);
+    tx.order.findUnique.mockRejectedValueOnce(
+      new Error("Connection terminated due to connection timeout"),
+    );
+    await expect(store.findOrderBySubmissionKey(key("k"))).rejects.toBeInstanceOf(
+      TransientSubmissionError,
+    );
+
+    prisma.$transaction = vi.fn(async () => {
+      throw new Error("timeout exceeded when trying to connect");
+    }) as unknown as PrismaClient["$transaction"];
+    await expect(store.runInTransaction(async () => null)).rejects.toBeInstanceOf(
+      TransientSubmissionError,
+    );
+  });
+
   test("classifies a failed locked lookup", async () => {
     const { prisma, tx } = fakePrisma();
     tx.order.findUnique.mockRejectedValueOnce(

@@ -5,7 +5,7 @@ export const persistencePackage = Object.freeze({
   supports: corePackage.name,
 });
 
-export { createDatabasePool, readDatabaseUrl } from "./database";
+export { createDatabasePool, type DatabasePoolOptions, readDatabaseUrl } from "./database";
 export { createPrismaInventoryReader, type InventoryReaderClient } from "./inventory-reader";
 export { createPrismaClient, Prisma, type PrismaClient } from "./prisma";
 export * from "./records";
@@ -16,4 +16,4 @@ export {
   DEFAULT_SUBMISSION_TRANSACTION_OPTIONS,
   type PrismaSubmissionStoreOptions,
 } from "./submission-store";
-export { classifySubmissionError } from "./submission-errors";
+export { classifySubmissionError, PG_CONNECTION_TIMEOUT_MESSAGES } from "./submission-errors";

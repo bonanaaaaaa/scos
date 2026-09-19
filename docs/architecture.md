@@ -49,10 +49,12 @@ flowchart LR
    stored for this submission key, or save the new order". Core defines their shape and never implements
    them.
 4. **Adapters** are the plugs on the outside.
-   - **Driving adapters** call into the application. The Hono API turns an HTTP
-     request into a use-case call and maps the typed outcome to a status code
-     (200, 201, 400, 409, 422 or 500). A Lambda handler is a second driving
-     adapter for the same use cases.
+   - **Driving adapters** call into the application. The Hono API validates
+     the HTTP request with Zod, turns it into a use-case call and maps the typed
+     outcome to a status code (200, 201, 400, 409, 422, 500 or 503; 404 for
+     unknown routes). See [apps/api/README.md](../apps/api/README.md) for the
+     contract. A Lambda handler is a second driving adapter for the same use
+     cases.
    - **Driven adapters** are called by the application. `packages/persistence`
      implements the ports with Prisma and SQL.
 
@@ -69,8 +71,9 @@ Dependencies point inward only:
 
 The database is reached through dependency inversion. The use case needs
 persistence, but instead of importing it, core declares a port and
-`packages/persistence` implements it. The composition root in `apps/api` wires
-the adapter into the use case at startup.
+`packages/persistence` implements it. The composition root in `apps/api`
+(`src/composition.ts`) wires the adapter into the use case at startup, after
+`src/server.ts` has validated the environment.
 
 ## Where does code go?
 

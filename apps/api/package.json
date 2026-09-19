@@ -7,21 +7,28 @@
     "build": "node build.mjs",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "oxlint --deny-warnings src build.mjs",
-    "test": "vitest run --coverage"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "lint": "oxlint --deny-warnings src test build.mjs vitest.config.mjs vitest.integration.config.mjs",
+    "test": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
     "@hono/node-server": "2.1.1",
+    "@hono/standard-validator": "0.4.0",
     "@scos/core": "workspace:*",
     "@scos/persistence": "workspace:*",
-    "hono": "4.13.8"
+    "@standard-schema/spec": "1.1.0",
+    "hono": "4.13.8",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@scos/typescript-config": "workspace:*",
     "@types/node": "24.13.5",
+    "@types/pg": "8.23.1",
     "@vitest/coverage-v8": "5.0.1",
     "esbuild": "0.28.2",
+    "pg": "8.23.0",
+    "tsx": "4.23.13",
     "vitest": "5.0.1"
   }
 }
