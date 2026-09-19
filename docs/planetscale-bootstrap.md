@@ -222,7 +222,7 @@ user's decision, within these limits:
   runner. It is the same class of exposure as the saved Terraform plan, which
   holds the same values.
 - **Only as long as needed.** The store step right after the bootstrap
-  clears both credential names, so no other step (settings check, plan,
+  clears both credential names, so no other step (the database settings check, plan,
   apply, migrations, the Worker configuration, `wrangler deploy`, the health
   check) has them in its environment. Backend init and the state backup run
   before the bootstrap.

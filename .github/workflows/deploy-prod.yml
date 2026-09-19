@@ -99,7 +99,6 @@ jobs:
       # seeds.
       rotate_credentials: ${{ github.event_name == 'workflow_dispatch' && inputs.rotate_credentials || 'none' }}
       seed_demo_data: ${{ github.event_name == 'workflow_dispatch' && inputs.seed_demo_data }}
-    secrets:
-      r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
-      r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      planetscale_service_token: ${{ secrets.PLANETSCALE_SERVICE_TOKEN }}
+    # The shared workflow needs the repository secrets and the prod
+    # environment's secrets; only `inherit` makes both visible to it.
+    secrets: inherit

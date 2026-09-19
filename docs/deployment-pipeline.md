@@ -13,8 +13,10 @@ The pipeline is committed, but nothing is provisioned yet:
 
 - `infra-check.yml` runs on pull requests with no secret and no environment.
 - `Deploy Prod` (`deploy-prod.yml`) runs on every merge to `main` and deploys
-  to `prod`. While the settings are incomplete it stops at "Check required
-  settings" before creating anything. As of 2026-09-20 every required
+  to `prod`. While the settings are incomplete it fails before creating
+  anything: GitHub should reject a missing required repository secret before
+  the job starts (unverified until #33; without the R2 keys
+  `backend-init.sh` stops anyway), and a missing `prod` setting fails the first step that uses it. As of 2026-09-20 every required
   setting is present, so the next merge deploys and, on the first run,
   creates the database and starts billing. Disable the workflow first if
   that is not wanted yet.
@@ -250,7 +252,7 @@ GitHub secret or variable, and needs no token that could
   later run, needs no credential input. A new value is taken only with
   `-replace`.
 - **Why a separate, targeted apply.** The full plan and apply come later,
-  after the settings check and with a `main`-head check right before the
+  after the database settings check and with a `main`-head check right before the
   apply. Anything failing in between (a transient plan error, a second merge
   that makes the head check stop this run, a cancellation or a timeout) would
   otherwise discard the only copy of a credential PlanetScale will not show
@@ -262,7 +264,7 @@ GitHub secret or variable, and needs no token that could
   ([below](#backups-and-recovery)).
 - **Where the fresh values are visible.** Only in the bootstrap step, which
   issues them, and the store step, which clears them. The earlier steps
-  ("Check required settings", backend init, backup) run before they exist,
+  (checkout, build, backend init, backup) run before they exist,
   and every later step ("Check the database settings", plan, apply,
   migrations, Worker) runs after they are cleared.
 - **Consumers.** Hyperdrive's origin password reads the stored runtime
@@ -402,8 +404,8 @@ Its permissions are the union of what the three uses need:
 
 | Credential                                                              | Kind                               | Scope                                                                                                                          | Used by                                                                                                                        |
 | ----------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`                              | Repository secrets                 | R2 Object Read & Write on the state bucket                                                                                     | Passed by `deploy-prod.yml` to `deploy.yml` only (the bootstrap does not need them)                                            |
-| `PLANETSCALE_SERVICE_TOKEN` (+ variable `PLANETSCALE_SERVICE_TOKEN_ID`) | Repository secret                  | Create the database, manage its roles ([accesses](planetscale-bootstrap.md#before-the-first-run))                              | Passed by `deploy-prod.yml` to `deploy.yml` (`planetscale_service_token`), bootstrap step; `planetscale-bootstrap.yml`         |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`                              | Repository secrets                 | R2 Object Read & Write on the state bucket                                                                                     | Inherited by `deploy.yml` from `deploy-prod.yml` only (the bootstrap does not need them)                                       |
+| `PLANETSCALE_SERVICE_TOKEN` (+ variable `PLANETSCALE_SERVICE_TOKEN_ID`) | Repository secret                  | Create the database, manage its roles ([accesses](planetscale-bootstrap.md#before-the-first-run))                              | Inherited by `deploy.yml` from `deploy-prod.yml` (bootstrap step); `planetscale-bootstrap.yml`                                 |
 | `CLOUDFLARE_API_TOKEN`                                                  | `prod` secret                      | The one Cloudflare token: Hyperdrive Edit, Workers Scripts Edit, DNS Edit if a custom host is added, and the billing signature | `deploy.yml`: bootstrap step (only while the database is missing), Terraform steps, Wrangler step; `planetscale-bootstrap.yml` |
 | Runtime role password                                                   | Terraform state                    | Hyperdrive's origin credential ([role credentials](#role-credentials-in-the-state))                                            | Terraform (Hyperdrive origin)                                                                                                  |
 | Migration role URL                                                      | Terraform state (sensitive output) | The migration role, direct to the branch host on 5432, `sslmode=require`                                                       | `deploy.yml` migration step (migrations and the optional seed)                                                                 |
@@ -419,10 +421,11 @@ Its permissions are the union of what the three uses need:
 - `infra-check.yml` references no secret and no environment, and pull
   requests from forks never reach the deploy workflows: `Deploy Prod` runs on
   a **push** to `main` in this repository (or a manual run on `main`), and
-  `deploy.yml` only as its callee. The caller passes only repository secrets:
-  the R2 key pair (`r2_access_key_id`, `r2_secret_access_key`) and the
-  PlanetScale service token (`planetscale_service_token`); the `prod` secrets
-  are read by the shared workflow's `prod`-bound jobs, never passed. The Worker never sees a PlanetScale credential; it only has the
+  `deploy.yml` only as its callee. The caller uses `secrets: inherit`, so the
+  shared workflow sees the repository secrets (the R2 key pair, the
+  PlanetScale service token) and, in its `prod`-bound job, the `prod`
+  environment's secrets. Only these two deploy workflows reference the R2 key
+  pair and the service token. The Worker never sees a PlanetScale credential; it only has the
   Hyperdrive binding.
 - The deploy job does not use the Turbo remote cache, so the uploaded bundle
   is always built from source, from the merge commit being deployed. It is
@@ -456,22 +459,39 @@ token. One rotation covers Terraform, Wrangler and the billing signature.
 | Shell scripts                          | ShellCheck 0.11.0 (pinned image) on every `infra/**/*.sh` and the PlanetScale test stubs; the PlanetScale bootstrap tests                                                                                                                                   |
 | Worker bundle and deploy configuration | The deploy's own scripts with a fake Hyperdrive ID: build once, size budget (8 MiB, 3 MiB gzip, as `worker.bundle.test.ts`), checksums, generated config validated by the Worker schema, and a `--no-bundle` dry run whose modules must match the checksums |
 
-Actionlint (`actionlint.yml`, configured by `.github/actionlint.yaml`) checks the workflows on any change under
+Actionlint (`actionlint.yml`) checks the workflows on any change under
 `.github/workflows/`.
 
 ### Deploy workflows: a shared workflow and one caller per environment
 
-| Workflow                          | Role                                                                                                                                                                                                                                                                                                                  |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deploy.yml` ("Deploy (shared)")  | Reusable (`on: workflow_call` only). Inputs `environment`, `sha`, `terraform_working_dir` (default `infra/cloudflare`), `rotate_credentials`, `seed_demo_data`; secrets `r2_access_key_id`, `r2_secret_access_key`, `planetscale_service_token`. One job, `deploy`, bound to `environment: ${{ inputs.environment }}` |
-| `deploy-prod.yml` ("Deploy Prod") | Thin caller for `prod`: triggers, the `deploy-prod` concurrency group, the gate, and one call with `environment: prod`                                                                                                                                                                                                |
+| Workflow                          | Role                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deploy.yml` ("Deploy (shared)")  | Reusable (`on: workflow_call` only). Inputs `environment`, `sha`, `terraform_working_dir` (default `infra/cloudflare`), `rotate_credentials`, `seed_demo_data`; secrets inherited from the caller; it declares the three repository secrets (the R2 key pair, the PlanetScale service token) as `required`. One job, `deploy`, bound to `environment: ${{ inputs.environment }}` |
+| `deploy-prod.yml` ("Deploy Prod") | Thin caller for `prod`: triggers, the `deploy-prod` concurrency group, the gate, and one call with `environment: prod`                                                                                                                                                                                                                                                           |
 
-Nothing pauses for an approval: `prod` has no required reviewers. A caller
-passes only repository secrets: GitHub does
-not let a caller pass environment secrets, and a job with `environment:` reads
-that environment's secrets and variables itself. actionlint only knows the
-declared `workflow_call` secrets, so `.github/actionlint.yaml` ignores exactly
-those seven environment secret names in `deploy.yml`.
+Nothing pauses for an approval: `prod` has no required reviewers. The caller
+passes secrets with `secrets: inherit`. The first real run (35459265564)
+showed that with named secrets passed, the `prod` environment's own secrets
+(such as `CLOUDFLARE_API_TOKEN`) came through empty even though the job binds
+`environment: prod`; it failed at a settings check before changing anything.
+`inherit` is the documented way to make them visible; the next deploy getting
+past its first Cloudflare step is the proof (#33).
+
+The shared workflow declares the three repository secrets it needs (the R2
+key pair and the PlanetScale service token) as `required`, so GitHub rejects
+the call before any job starts when one is missing. There is no separate
+settings-check step any more, by the user's decision. The environment's
+secrets and variables (`CLOUDFLARE_API_TOKEN`, `TF_STATE_*`,
+`CLOUDFLARE_ACCOUNT_ID`) cannot be declared, because the caller has no
+environment, so a missing one fails the first step that uses it, with that
+tool's own error. The trade-off:
+`deploy.yml` can now read every repository secret, including the Turbo
+ones, though it references only the R2 key pair, the PlanetScale token and
+the `prod` secrets. The "Shell scripts" job in `infra-check.yml` runs
+`infra/cloudflare/scripts/check-deploy-secrets.mjs`, which fails on any secret
+read in a `deploy.yml` expression outside that allow-list, or on a read of
+the whole secrets context, so a new reference needs a deliberate change
+there.
 
 ![The deployment pipeline after a merge to main](images/deployment-pipeline.svg)
 
@@ -570,7 +590,7 @@ merge or on failure.
 2. Add a thin caller, `deploy-staging.yml`, modelled on `deploy-prod.yml`:
    its own trigger and gate, its own concurrency group (`deploy-staging`),
    and `uses: ./.github/workflows/deploy.yml` with `environment: staging`,
-   passing the R2 key pair and the PlanetScale service token. Note that the shared job's main-head checks
+   with `secrets: inherit`. Note that the shared job's main-head checks
    deploy only `main`'s head; an environment fed from another branch needs
    that check parameterized first.
 3. Add the caller to `planetscale-bootstrap.yml`'s active-deploy check if
