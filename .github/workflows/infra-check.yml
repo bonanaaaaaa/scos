@@ -130,6 +130,10 @@ jobs:
           docker run --rm -v "$PWD:/mnt" -w /mnt "$SHELLCHECK_IMAGE" "${scripts[@]}"
       - name: Test the PlanetScale bootstrap (stubbed CLIs)
         run: bash infra/planetscale/test/bootstrap.test.sh
+      - name: Allow-list the secrets the shared deploy workflow reads
+        # deploy-prod.yml passes `secrets: inherit`, so deploy.yml could read
+        # any repository secret; a new one must be a deliberate change there.
+        run: node infra/cloudflare/scripts/check-deploy-secrets.mjs
 
   worker-bundle:
     name: Worker bundle and deploy configuration

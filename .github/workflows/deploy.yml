@@ -16,12 +16,15 @@ name: Deploy (shared)
 # state, not in GitHub secrets (the user's decision):
 # docs/deployment-pipeline.md#role-credentials-in-the-state.
 #
-# Secrets differ from a plain "pass everything" reusable workflow: the caller
-# passes only the repository secrets (the R2 key pair and the PlanetScale
-# service token). The environment secrets and variables (the Cloudflare API
-# token, the optional OTLP headers, TF_STATE_*, CLOUDFLARE_ACCOUNT_ID, ...)
-# cannot be passed by a caller; each job here binds
-# `environment: ${{ inputs.environment }}` and reads them itself.
+# Secrets: the caller uses `secrets: inherit`. Deploy Prod run 35459265564
+# showed that with three named secrets passed, the environment's own secrets
+# (the Cloudflare API token) came through empty even though the job binds
+# `environment: ${{ inputs.environment }}`; `inherit` is the documented way to
+# make them visible. The repository secrets (the R2 key pair, the PlanetScale
+# service token) arrive under their own names. `inherit` also exposes every
+# other repository secret (the Turbo ones), so infra-check.yml fails on any
+# `secrets.` name here outside an allow-list. Environment variables (TF_STATE_*,
+# CLOUDFLARE_ACCOUNT_ID, ...) are read through the bound environment.
 
 on:
   workflow_call:
@@ -46,15 +49,21 @@ on:
         description: After the migrations, insert the demo warehouses that are missing (idempotent; never resets stock).
         type: boolean
         default: false
+    # Repository secrets, required: with `secrets: inherit` GitHub rejects the
+    # call up front when one is missing. The environment's secrets
+    # (CLOUDFLARE_API_TOKEN, the optional OTEL_EXPORTER_OTLP_HEADERS) cannot be
+    # declared: the caller has no environment, so GitHub would count them as
+    # missing. They and the environment's variables are read by the bound job;
+    # a missing one fails the first step that uses it.
     secrets:
-      r2_access_key_id:
-        description: R2 state bucket access key ID (repository secret R2_ACCESS_KEY_ID).
+      R2_ACCESS_KEY_ID:
+        description: R2 state bucket access key ID (repository secret).
         required: true
-      r2_secret_access_key:
-        description: R2 state bucket secret access key (repository secret R2_SECRET_ACCESS_KEY).
+      R2_SECRET_ACCESS_KEY:
+        description: R2 state bucket secret access key (repository secret).
         required: true
-      planetscale_service_token:
-        description: PlanetScale service token (repository secret PLANETSCALE_SERVICE_TOKEN), for the database bootstrap step.
+      PLANETSCALE_SERVICE_TOKEN:
+        description: PlanetScale service token (repository secret), for the database bootstrap step.
         required: true
 
 permissions: {}
@@ -107,6 +116,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Inputs first. This cannot stop GitHub creating an unknown
+          # environment (the job is already bound to it), only this job going
+          # on; the caller names the environment. ROTATE drives role resets.
+          if [[ ! $ENVIRONMENT =~ ^[a-z][a-z0-9-]*$ || ! $SHA =~ ^[0-9a-f]{40}$ ||
+            ! $ROTATE =~ ^(none|runtime|migration|both)$ ]]; then
+            echo "::error::Unexpected environment name, commit SHA or rotate_credentials input."
+            exit 1
+          fi
           head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq '.sha')
           if [[ $head != "$SHA" ]]; then
             echo "::error title=Stale deploy stopped::main is at $head, not $SHA. Nothing was changed; the newer commit's CI run deploys it."
@@ -115,38 +132,6 @@ jobs:
       - name: Prepare scratch space
         # For the saved plan and generated files; removed at the end.
         run: echo "WORK=$RUNNER_TEMP/deploy" >>"$GITHUB_ENV"
-
-      - name: Check required settings
-        # The database settings (branch host, runtime username) come from the
-        # PlanetScale step below; the role credentials from the Terraform
-        # state. CLOUDFLARE_API_TOKEN is the one Cloudflare token (Terraform,
-        # Wrangler and the billing signature).
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          PLANETSCALE_ORG: ${{ vars.PLANETSCALE_ORG }}
-          PLANETSCALE_SERVICE_TOKEN_ID: ${{ vars.PLANETSCALE_SERVICE_TOKEN_ID }}
-          HAS_R2_KEYS: ${{ secrets.r2_access_key_id != '' && secrets.r2_secret_access_key != '' }}
-          HAS_PLANETSCALE_TOKEN: ${{ secrets.planetscale_service_token != '' }}
-          HAS_CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
-        run: |
-          set -euo pipefail
-          if [[ ! $ENVIRONMENT =~ ^[a-z][a-z0-9-]{0,15}$ || ! $SHA =~ ^[0-9a-f]{40}$ ||
-            ! $ROTATE =~ ^(none|runtime|migration|both)$ ]]; then
-            echo "::error::Unexpected environment name, commit SHA or rotate_credentials input."
-            exit 1
-          fi
-          missing=()
-          for name in TF_STATE_BUCKET TF_STATE_ENDPOINT TF_STATE_REGION TF_STATE_KEY \
-            TF_STATE_WORKSPACE_PREFIX CLOUDFLARE_ACCOUNT_ID PLANETSCALE_ORG PLANETSCALE_SERVICE_TOKEN_ID; do
-            [[ -n ${!name} ]] || missing+=("variable $name")
-          done
-          [[ $HAS_R2_KEYS == true ]] || missing+=("secrets R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY")
-          [[ $HAS_PLANETSCALE_TOKEN == true ]] || missing+=("secret PLANETSCALE_SERVICE_TOKEN")
-          [[ $HAS_CLOUDFLARE_TOKEN == true ]] || missing+=("secret CLOUDFLARE_API_TOKEN")
-          if [[ ${#missing[@]} -gt 0 ]]; then
-            printf '::error::Missing %s setting: %s\n' "$ENVIRONMENT" "${missing[@]}"
-            exit 1
-          fi
 
       - name: Check out the merge commit
         uses: actions/checkout@v7.0.1
@@ -206,21 +191,21 @@ jobs:
       #    backend's lock file (use_lockfile) guards the state.
       - name: Initialize Terraform against the R2 state
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: infra/cloudflare/scripts/backend-init.sh "$TF_DIR"
       - name: Back up the current state
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: infra/cloudflare/scripts/state-backup.sh backup "${SHA:0:12}-run${GITHUB_RUN_ID}"
       - name: Read the stored database name
         # Only the non-secret database name from the stored migration URL, as
         # the fallback for a migration-role reset (bootstrap.sh). The URL is
         # masked and never leaves this step. Empty on a first run.
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
           url=$(terraform -chdir="$TF_DIR" output -raw migration_database_url 2>/dev/null || true)
@@ -247,7 +232,7 @@ jobs:
         env:
           PLANETSCALE_ORG: ${{ vars.PLANETSCALE_ORG }}
           PLANETSCALE_SERVICE_TOKEN_ID: ${{ vars.PLANETSCALE_SERVICE_TOKEN_ID }}
-          PLANETSCALE_SERVICE_TOKEN: ${{ secrets.planetscale_service_token }}
+          PLANETSCALE_SERVICE_TOKEN: ${{ secrets.PLANETSCALE_SERVICE_TOKEN }}
           PLANETSCALE_DATABASE: ${{ vars.PLANETSCALE_DATABASE || 'scos' }}
           PLANETSCALE_BRANCH: ${{ vars.PLANETSCALE_BRANCH || 'main' }}
           PLANETSCALE_REGION: ${{ vars.PLANETSCALE_REGION || 'ap-southeast' }}
@@ -275,8 +260,8 @@ jobs:
         # a timeout) leaves the credentials safe in the state.
         if: always() && (env.BOOTSTRAP_PLANETSCALE_RUNTIME_PASSWORD != '' || env.BOOTSTRAP_MIGRATION_DATABASE_URL != '')
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_account_id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           TF_VAR_environment: ${{ inputs.environment }}
@@ -338,8 +323,8 @@ jobs:
 
       - name: Terraform plan (saved, never printed)
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_account_id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           TF_VAR_environment: ${{ inputs.environment }}
@@ -371,8 +356,8 @@ jobs:
       - name: Terraform apply of the saved plan
         env:
           GH_TOKEN: ${{ github.token }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         # A saved plan is stale if the state changed after it was made;
         # Terraform then refuses it and this step fails. Rerun the job to
@@ -383,8 +368,8 @@ jobs:
           terraform -chdir="$TF_DIR" apply -input=false -lock-timeout=5m -no-color "$WORK/tfplan"
       - name: Read the Hyperdrive ID
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
           id=$(terraform -chdir="$TF_DIR" output -raw hyperdrive_id)
@@ -400,8 +385,8 @@ jobs:
       #    and only in this step's commands).
       - name: Apply database migrations (prisma migrate deploy)
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           PLANETSCALE_HOST: ${{ vars.PLANETSCALE_HOST || env.BOOTSTRAP_PLANETSCALE_HOST }}
           SEED_DEMO_DATA: ${{ inputs.seed_demo_data }}
         run: |
