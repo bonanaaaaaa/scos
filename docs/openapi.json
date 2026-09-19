@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SCOS Ordering API",
-    "version": "1.0.0",
-    "description": "Verify and submit orders for the SCOS device against current Warehouse Inventory.\n\n- Request and response bodies are JSON. Requests must be sent with `Content-Type: application/json`; unknown fields are rejected and strings are never coerced to numbers.\n- Money is a decimal string with exactly two fractional digits, such as `\"150.00\"`; `discountRate` is a two-decimal string such as `\"0.05\"`. `distanceKm` is an unrounded number.\n- Every non-2xx body has an `error` object with a machine-readable `code` and a `message`. Most are exactly `ErrorResponse`; a `422` submission rejection (`RejectedSubmission`) also carries the `estimate` that caused it. Any method or path not listed here is `404 NOT_FOUND` (see `components.responses.NotFound`); the unversioned `/orders` paths are not aliases.\n- `POST /api/v1/orders` is deduplicated by the client's `submissionId` ([ADR 0004](https://github.com/bonanaaaaaa/scos/blob/main/docs/adr/0004-deduplicate-accepted-orders.md)).\n\nThe request examples produce the documented responses against a freshly seeded database when sent in the documented order (the accepted submission before its repeat and the conflicting reuse). After other orders have been accepted, stock differs, so allocations, amounts and outcomes can differ too."
+    "description": "Verify and submit orders for the SCOS device against current Warehouse Inventory.\n\n- Request and response bodies are JSON. Requests must be sent with `Content-Type: application/json`; unknown fields are rejected and strings are never coerced to numbers.\n- Money is a decimal string with exactly two fractional digits, such as `\"150.00\"`; `discountRate` is a two-decimal string such as `\"0.05\"`. `distanceKm` is an unrounded number.\n- Every non-2xx body has an `error` object with a machine-readable `code` and a `message`. Most are exactly `ErrorResponse`; a `422` submission rejection (`RejectedSubmission`) also carries the `estimate` that caused it. Any method or path not listed here is `404 NOT_FOUND` (see `components.responses.NotFound`); the unversioned `/orders` paths are not aliases.\n- `POST /api/v1/orders` is deduplicated by the client's `submissionId` ([ADR 0004](https://github.com/bonanaaaaaa/scos/blob/main/docs/adr/0004-deduplicate-accepted-orders.md)).\n\nThe request examples produce the documented responses against a freshly seeded database when sent in the documented order (the accepted submission before its repeat and the conflicting reuse). After other orders have been accepted, stock differs, so allocations, amounts and outcomes can differ too.",
+    "version": "1.0.0"
   },
   "servers": [
     {
@@ -55,14 +55,8 @@
     "/api/v1/orders/verify": {
       "post": {
         "operationId": "verifyOrder",
-        "tags": [
-          "Orders"
-        ],
-        "summary": "Advisory Order Estimate against current stock; reserves and stores nothing.",
-        "description": "Prices and allocates the requested quantity against current Warehouse Inventory: the volume discount, nearest-first allocation, and the shipping charge with its limit of 15% of the discounted merchandise total.\n\nThe estimate is advisory: no Order is created and no stock is reserved or deducted, so a later submission is recalculated against the stock at that time and may cost more or be rejected. Business rejections are returned as `200` with `valid: false`, never as errors.",
         "requestBody": {
           "required": true,
-          "description": "Send the body as JSON with `Content-Type: application/json` (parameters such as `charset`, and `+json` media types, are accepted). A missing or different Content-Type, malformed JSON or an empty body is `400 INVALID_REQUEST`.\n\nUnknown fields are rejected (`400`). Numbers must be JSON numbers: strings such as `\"10\"` are never coerced.",
           "content": {
             "application/json": {
               "schema": {
@@ -108,8 +102,14 @@
                 }
               }
             }
-          }
+          },
+          "description": "Send the body as JSON with `Content-Type: application/json` (parameters such as `charset`, and `+json` media types, are accepted). A missing or different Content-Type, malformed JSON or an empty body is `400 INVALID_REQUEST`.\n\nUnknown fields are rejected (`400`). Numbers must be JSON numbers: strings such as `\"10\"` are never coerced."
         },
+        "tags": [
+          "Orders"
+        ],
+        "summary": "Advisory Order Estimate against current stock; reserves and stores nothing.",
+        "description": "Prices and allocates the requested quantity against current Warehouse Inventory: the volume discount, nearest-first allocation, and the shipping charge with its limit of 15% of the discounted merchandise total.\n\nThe estimate is advisory: no Order is created and no stock is reserved or deducted, so a later submission is recalculated against the stock at that time and may cost more or be rejected. Business rejections are returned as `200` with `valid: false`, never as errors.",
         "responses": {
           "200": {
             "description": "The estimate, valid or not. `valid: false` with `SHIPPING_EXCEEDS_LIMIT` keeps every amount and allocation; `INSUFFICIENT_STOCK` has null `shippingCost` and `orderTotal` and empty `allocations`.",
@@ -279,14 +279,8 @@
     "/api/v1/orders": {
       "post": {
         "operationId": "submitOrder",
-        "tags": [
-          "Orders"
-        ],
-        "summary": "Submit an Order against current stock, deduplicated by submissionId.",
-        "description": "Accepts or rejects the Order atomically against current stock: pricing and allocation are recalculated under lock, and acceptance saves the Order and deducts stock together.\n\n`submissionId` is a client-generated key that makes retries safe; there is no `Idempotency-Key` header. Generate a new one for each new order and reuse it only to retry that order:\n\n- An accepted Order keeps its submissionId indefinitely: keys are retained as long as their Orders.\n- Repeating an accepted submissionId with the same quantity and destination returns the original Order (`201`, byte-identical body) without deducting stock again, even after stock changes.\n- Reusing it with a different quantity or destination is `409 SUBMISSION_ID_CONFLICT`; the existing Order is unchanged and not disclosed.\n- Business rejections (`422`), malformed requests (`400`) and transient failures (`503`) are not stored and consume no key. A rejected request can be retried with the same submissionId: it is evaluated again against current stock and may be accepted.\n- A `500` means the outcome is unknown (for example, the connection failed after the commit). Retry with the same submissionId and body: a stored Order is returned, never duplicated.\n\nSee [ADR 0004: Deduplicate accepted Orders by submission key](https://github.com/bonanaaaaaa/scos/blob/main/docs/adr/0004-deduplicate-accepted-orders.md).",
         "requestBody": {
           "required": true,
-          "description": "Send the body as JSON with `Content-Type: application/json` (parameters such as `charset`, and `+json` media types, are accepted). A missing or different Content-Type, malformed JSON or an empty body is `400 INVALID_REQUEST`.\n\nUnknown fields are rejected (`400`). Numbers must be JSON numbers: strings such as `\"10\"` are never coerced.",
           "content": {
             "application/json": {
               "schema": {
@@ -355,8 +349,14 @@
                 }
               }
             }
-          }
+          },
+          "description": "Send the body as JSON with `Content-Type: application/json` (parameters such as `charset`, and `+json` media types, are accepted). A missing or different Content-Type, malformed JSON or an empty body is `400 INVALID_REQUEST`.\n\nUnknown fields are rejected (`400`). Numbers must be JSON numbers: strings such as `\"10\"` are never coerced."
         },
+        "tags": [
+          "Orders"
+        ],
+        "summary": "Submit an Order against current stock, deduplicated by submissionId.",
+        "description": "Accepts or rejects the Order atomically against current stock: pricing and allocation are recalculated under lock, and acceptance saves the Order and deducts stock together.\n\n`submissionId` is a client-generated key that makes retries safe; there is no `Idempotency-Key` header. Generate a new one for each new order and reuse it only to retry that order:\n\n- An accepted Order keeps its submissionId indefinitely: keys are retained as long as their Orders.\n- Repeating an accepted submissionId with the same quantity and destination returns the original Order (`201`, byte-identical body) without deducting stock again, even after stock changes.\n- Reusing it with a different quantity or destination is `409 SUBMISSION_ID_CONFLICT`; the existing Order is unchanged and not disclosed.\n- Business rejections (`422`), malformed requests (`400`) and transient failures (`503`) are not stored and consume no key. A rejected request can be retried with the same submissionId: it is evaluated again against current stock and may be accepted.\n- A `500` means the outcome is unknown (for example, the connection failed after the commit). Retry with the same submissionId and body: a stored Order is returned, never duplicated.\n\nSee [ADR 0004: Deduplicate accepted Orders by submission key](https://github.com/bonanaaaaaa/scos/blob/main/docs/adr/0004-deduplicate-accepted-orders.md).",
         "responses": {
           "201": {
             "description": "Accepted. A repeated submissionId with the same inputs returns the original Order unchanged (byte-identical body), without deducting stock again.",
@@ -625,32 +625,42 @@
     }
   },
   "components": {
+    "responses": {
+      "NotFound": {
+        "description": "NOT_FOUND: no route matches this method and path (including the unversioned `/orders` paths).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "notFound": {
+                "summary": "Unknown method or path",
+                "value": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No route matches this method and path."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "schemas": {
-      "Destination": {
+      "ErrorResponse": {
         "type": "object",
         "properties": {
-          "latitude": {
-            "type": "number",
-            "minimum": -90,
-            "maximum": 90
-          },
-          "longitude": {
-            "type": "number",
-            "minimum": -180,
-            "maximum": 180
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
           }
         },
         "required": [
-          "latitude",
-          "longitude"
+          "error"
         ],
         "additionalProperties": false,
-        "description": "The requested destination, echoed back."
-      },
-      "DiscountRate": {
-        "type": "string",
-        "pattern": "^(?:0\\.\\d{2}|1\\.00)$",
-        "description": "The volume discount rate applied, as a two-decimal string from \"0.00\" to \"1.00\", such as \"0.05\"."
+        "description": "The body of every non-2xx response except a `422` submission rejection, which is `RejectedSubmission`: the same `error` object plus the `estimate`."
       },
       "ErrorBody": {
         "type": "object",
@@ -711,18 +721,159 @@
         "additionalProperties": false,
         "description": "One schema failure: `path` locates it in the request body (`[]` is the body itself, for example an unknown field)."
       },
-      "ErrorResponse": {
+      "HealthResponse": {
         "type": "object",
         "properties": {
-          "error": {
-            "$ref": "#/components/schemas/ErrorBody"
+          "status": {
+            "type": "string",
+            "const": "ok"
           }
         },
         "required": [
-          "error"
+          "status"
         ],
         "additionalProperties": false,
-        "description": "The body of every non-2xx response except a `422` submission rejection, which is `RejectedSubmission`: the same `error` object plus the `estimate`."
+        "description": "The process is running."
+      },
+      "VerifyOrderRequest": {
+        "type": "object",
+        "properties": {
+          "quantity": {
+            "$ref": "#/components/schemas/Quantity"
+          },
+          "latitude": {
+            "$ref": "#/components/schemas/Latitude"
+          },
+          "longitude": {
+            "$ref": "#/components/schemas/Longitude"
+          }
+        },
+        "required": [
+          "quantity",
+          "latitude",
+          "longitude"
+        ],
+        "additionalProperties": false,
+        "description": "Quantity and destination to estimate. Unknown fields are rejected."
+      },
+      "Quantity": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 66666666,
+        "description": "Number of units: a JSON integer from 1 to 66666666 inclusive (the largest quantity whose subtotal fits the stored amount). Strings such as \"10\" are rejected, not coerced."
+      },
+      "Latitude": {
+        "type": "number",
+        "minimum": -90,
+        "maximum": 90,
+        "description": "Destination latitude in decimal degrees, -90 to 90 inclusive. A JSON number."
+      },
+      "Longitude": {
+        "type": "number",
+        "minimum": -180,
+        "maximum": 180,
+        "description": "Destination longitude in decimal degrees, -180 to 180 inclusive. A JSON number."
+      },
+      "OrderEstimate": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ValidEstimate"
+          },
+          {
+            "$ref": "#/components/schemas/ShippingExceedsLimitEstimate"
+          },
+          {
+            "$ref": "#/components/schemas/InsufficientStockEstimate"
+          }
+        ],
+        "description": "An advisory Order Estimate: valid, or one of the two business rejections (see `reason`)."
+      },
+      "ValidEstimate": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "const": true
+          },
+          "reason": {
+            "type": "null"
+          },
+          "quantity": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 66666666
+          },
+          "destination": {
+            "$ref": "#/components/schemas/Destination"
+          },
+          "merchandiseSubtotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "discountRate": {
+            "$ref": "#/components/schemas/DiscountRate"
+          },
+          "discountAmount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "discountedMerchandiseTotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "shippingCost": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "orderTotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "allocations": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EstimateAllocation"
+            }
+          }
+        },
+        "required": [
+          "valid",
+          "reason",
+          "quantity",
+          "destination",
+          "merchandiseSubtotal",
+          "discountRate",
+          "discountAmount",
+          "discountedMerchandiseTotal",
+          "shippingCost",
+          "orderTotal",
+          "allocations"
+        ],
+        "additionalProperties": false,
+        "description": "The Order can be fulfilled from current stock within the shipping limit."
+      },
+      "Destination": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "$ref": "#/components/schemas/Latitude"
+          },
+          "longitude": {
+            "$ref": "#/components/schemas/Longitude"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ],
+        "additionalProperties": false,
+        "description": "The requested destination, echoed back."
+      },
+      "Money": {
+        "type": "string",
+        "pattern": "^\\d{1,10}\\.\\d{2}$",
+        "description": "A non-negative USD amount as a decimal string with exactly two fractional digits, such as \"150.00\"; never a JSON number, so no precision is lost. At most \"9999999999.99\"."
+      },
+      "DiscountRate": {
+        "type": "string",
+        "pattern": "^(?:0\\.\\d{2}|1\\.00)$",
+        "description": "The volume discount rate applied, as a two-decimal string from \"0.00\" to \"1.00\", such as \"0.05\"."
       },
       "EstimateAllocation": {
         "type": "object",
@@ -748,19 +899,72 @@
         "additionalProperties": false,
         "description": "Units taken from one warehouse, nearest first, with the unrounded great-circle distance in km used to price shipping."
       },
-      "HealthResponse": {
+      "WarehouseId": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+        "description": "A warehouse's ID in canonical UUID form (8-4-4-4-12 hex digits). Warehouses are created with UUIDv7 IDs (the seeded warehouses and the database default), but the version is not guaranteed: treat it as an opaque identifier."
+      },
+      "ShippingExceedsLimitEstimate": {
         "type": "object",
         "properties": {
-          "status": {
+          "valid": {
+            "type": "boolean",
+            "const": false
+          },
+          "reason": {
             "type": "string",
-            "const": "ok"
+            "const": "SHIPPING_EXCEEDS_LIMIT"
+          },
+          "quantity": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 66666666
+          },
+          "destination": {
+            "$ref": "#/components/schemas/Destination"
+          },
+          "merchandiseSubtotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "discountRate": {
+            "$ref": "#/components/schemas/DiscountRate"
+          },
+          "discountAmount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "discountedMerchandiseTotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "shippingCost": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "orderTotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "allocations": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EstimateAllocation"
+            }
           }
         },
         "required": [
-          "status"
+          "valid",
+          "reason",
+          "quantity",
+          "destination",
+          "merchandiseSubtotal",
+          "discountRate",
+          "discountAmount",
+          "discountedMerchandiseTotal",
+          "shippingCost",
+          "orderTotal",
+          "allocations"
         ],
         "additionalProperties": false,
-        "description": "The process is running."
+        "description": "Shipping exceeds 15% of the discounted merchandise total. Every amount and allocation is kept."
       },
       "InsufficientStockEstimate": {
         "type": "object",
@@ -823,22 +1027,36 @@
         "additionalProperties": false,
         "description": "All warehouses together cannot supply the quantity. Merchandise and discount amounts are kept; `shippingCost` and `orderTotal` are null and `allocations` is empty."
       },
-      "Latitude": {
-        "type": "number",
-        "minimum": -90,
-        "maximum": 90,
-        "description": "Destination latitude in decimal degrees, -90 to 90 inclusive. A JSON number."
+      "SubmitOrderRequest": {
+        "type": "object",
+        "properties": {
+          "submissionId": {
+            "$ref": "#/components/schemas/SubmissionId"
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/Quantity"
+          },
+          "latitude": {
+            "$ref": "#/components/schemas/Latitude"
+          },
+          "longitude": {
+            "$ref": "#/components/schemas/Longitude"
+          }
+        },
+        "required": [
+          "submissionId",
+          "quantity",
+          "latitude",
+          "longitude"
+        ],
+        "additionalProperties": false,
+        "description": "The order to submit and its submissionId. Unknown fields are rejected. The same submissionId with the same quantity and destination is a repeat."
       },
-      "Longitude": {
-        "type": "number",
-        "minimum": -180,
-        "maximum": 180,
-        "description": "Destination longitude in decimal degrees, -180 to 180 inclusive. A JSON number."
-      },
-      "Money": {
+      "SubmissionId": {
         "type": "string",
-        "pattern": "^\\d{1,10}\\.\\d{2}$",
-        "description": "A non-negative USD amount as a decimal string with exactly two fractional digits, such as \"150.00\"; never a JSON number, so no precision is lost. At most \"9999999999.99\"."
+        "minLength": 1,
+        "maxLength": 255,
+        "description": "Client-generated retry key for one order: any string of 1 to 255 characters (Unicode code points, as JSON Schema counts them) chosen by the client. It does not have to be a UUID. Generate a new one for each new order and reuse it only to retry that order.\n\nThe server also enforces these rules, which JSON Schema cannot express (a violation is `400 INVALID_REQUEST`):\n\n- No leading or trailing whitespace, so blank, tab-only or newline-only keys are rejected. The key is stored exactly as sent, never trimmed.\n- No NUL character (U+0000).\n- Well-formed Unicode: no lone UTF-16 surrogates."
       },
       "Order": {
         "type": "object",
@@ -923,26 +1141,6 @@
         "additionalProperties": false,
         "description": "Units of an accepted Order taken from one warehouse."
       },
-      "OrderEstimate": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/ValidEstimate"
-          },
-          {
-            "$ref": "#/components/schemas/ShippingExceedsLimitEstimate"
-          },
-          {
-            "$ref": "#/components/schemas/InsufficientStockEstimate"
-          }
-        ],
-        "description": "An advisory Order Estimate: valid, or one of the two business rejections (see `reason`)."
-      },
-      "Quantity": {
-        "type": "integer",
-        "exclusiveMinimum": 0,
-        "maximum": 66666666,
-        "description": "Number of units: a JSON integer from 1 to 66666666 inclusive (the largest quantity whose subtotal fits the stored amount). Strings such as \"10\" are rejected, not coerced."
-      },
       "RejectedSubmission": {
         "type": "object",
         "properties": {
@@ -989,208 +1187,6 @@
         ],
         "additionalProperties": false,
         "description": "A business rejection and the estimate that caused it. Nothing was stored and no submissionId was consumed."
-      },
-      "ShippingExceedsLimitEstimate": {
-        "type": "object",
-        "properties": {
-          "valid": {
-            "type": "boolean",
-            "const": false
-          },
-          "reason": {
-            "type": "string",
-            "const": "SHIPPING_EXCEEDS_LIMIT"
-          },
-          "quantity": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 66666666
-          },
-          "destination": {
-            "$ref": "#/components/schemas/Destination"
-          },
-          "merchandiseSubtotal": {
-            "$ref": "#/components/schemas/Money"
-          },
-          "discountRate": {
-            "$ref": "#/components/schemas/DiscountRate"
-          },
-          "discountAmount": {
-            "$ref": "#/components/schemas/Money"
-          },
-          "discountedMerchandiseTotal": {
-            "$ref": "#/components/schemas/Money"
-          },
-          "shippingCost": {
-            "$ref": "#/components/schemas/Money"
-          },
-          "orderTotal": {
-            "$ref": "#/components/schemas/Money"
-          },
-          "allocations": {
-            "minItems": 1,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EstimateAllocation"
-            }
-          }
-        },
-        "required": [
-          "valid",
-          "reason",
-          "quantity",
-          "destination",
-          "merchandiseSubtotal",
-          "discountRate",
-          "discountAmount",
-          "discountedMerchandiseTotal",
-          "shippingCost",
-          "orderTotal",
-          "allocations"
-        ],
-        "additionalProperties": false,
-        "description": "Shipping exceeds 15% of the discounted merchandise total. Every amount and allocation is kept."
-      },
-      "SubmissionId": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 255,
-        "description": "Client-generated retry key for one order: any string of 1 to 255 characters (Unicode code points, as JSON Schema counts them) chosen by the client. It does not have to be a UUID. Generate a new one for each new order and reuse it only to retry that order.\n\nThe server also enforces these rules, which JSON Schema cannot express (a violation is `400 INVALID_REQUEST`):\n\n- No leading or trailing whitespace, so blank, tab-only or newline-only keys are rejected. The key is stored exactly as sent, never trimmed.\n- No NUL character (U+0000).\n- Well-formed Unicode: no lone UTF-16 surrogates."
-      },
-      "SubmitOrderRequest": {
-        "type": "object",
-        "properties": {
-          "submissionId": {
-            "$ref": "#/components/schemas/SubmissionId"
-          },
-          "quantity": {
-            "$ref": "#/components/schemas/Quantity"
-          },
-          "latitude": {
-            "$ref": "#/components/schemas/Latitude"
-          },
-          "longitude": {
-            "$ref": "#/components/schemas/Longitude"
-          }
-        },
-        "required": [
-          "submissionId",
-          "quantity",
-          "latitude",
-          "longitude"
-        ],
-        "additionalProperties": false,
-        "description": "The order to submit and its submissionId. Unknown fields are rejected. The same submissionId with the same quantity and destination is a repeat."
-      },
-      "ValidEstimate": {
-        "type": "object",
-        "properties": {
-          "valid": {
-            "type": "boolean",
-            "const": true
-          },
-          "reason": {
-            "type": "null"
-          },
-          "quantity": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 66666666
-          },
-          "destination": {
-            "$ref": "#/components/schemas/Destination"
-          },
-          "merchandiseSubtotal": {
-            "$ref": "#/components/schemas/Money"
-          },
-          "discountRate": {
-            "$ref": "#/components/schemas/DiscountRate"
-          },
-          "discountAmount": {
-            "$ref": "#/components/schemas/Money"
-          },
-          "discountedMerchandiseTotal": {
-            "$ref": "#/components/schemas/Money"
-          },
-          "shippingCost": {
-            "$ref": "#/components/schemas/Money"
-          },
-          "orderTotal": {
-            "$ref": "#/components/schemas/Money"
-          },
-          "allocations": {
-            "minItems": 1,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EstimateAllocation"
-            }
-          }
-        },
-        "required": [
-          "valid",
-          "reason",
-          "quantity",
-          "destination",
-          "merchandiseSubtotal",
-          "discountRate",
-          "discountAmount",
-          "discountedMerchandiseTotal",
-          "shippingCost",
-          "orderTotal",
-          "allocations"
-        ],
-        "additionalProperties": false,
-        "description": "The Order can be fulfilled from current stock within the shipping limit."
-      },
-      "VerifyOrderRequest": {
-        "type": "object",
-        "properties": {
-          "quantity": {
-            "$ref": "#/components/schemas/Quantity"
-          },
-          "latitude": {
-            "$ref": "#/components/schemas/Latitude"
-          },
-          "longitude": {
-            "$ref": "#/components/schemas/Longitude"
-          }
-        },
-        "required": [
-          "quantity",
-          "latitude",
-          "longitude"
-        ],
-        "additionalProperties": false,
-        "description": "Quantity and destination to estimate. Unknown fields are rejected."
-      },
-      "WarehouseId": {
-        "type": "string",
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
-        "description": "A warehouse's ID in canonical UUID form (8-4-4-4-12 hex digits). Warehouses are created with UUIDv7 IDs (the seeded warehouses and the database default), but the version is not guaranteed: treat it as an opaque identifier."
-      }
-    },
-    "responses": {
-      "NotFound": {
-        "description": "NOT_FOUND: no route matches this method and path (including the unversioned `/orders` paths).",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            },
-            "examples": {
-              "notFound": {
-                "summary": "Unknown method or path",
-                "value": {
-                  "error": {
-                    "code": "NOT_FOUND",
-                    "message": "No route matches this method and path."
-                  }
-                }
-              }
-            }
-          }
-        }
       }
     }
   }

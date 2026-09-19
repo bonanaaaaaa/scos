@@ -12,10 +12,14 @@ import type { Hono } from "hono";
 import { createEndpointApp } from "../http/endpoint-app";
 import type { Logger } from "../http/logger";
 import { MESSAGES } from "../http/messages";
-import { renderOpenApiDocument } from "./document";
+import {
+  DOCS_PATH,
+  OPENAPI_PATH,
+  generateOpenApiDocument,
+  serializeOpenApiDocument,
+} from "./document";
 
-export const OPENAPI_PATH = "/openapi.json";
-export const DOCS_PATH = "/docs";
+export { DOCS_PATH, OPENAPI_PATH };
 
 /**
  * The swagger-ui-dist release the page loads from the jsDelivr CDN. Pinned so
@@ -24,17 +28,26 @@ export const DOCS_PATH = "/docs";
 export const SWAGGER_UI_VERSION = "5.33.0";
 
 /**
- * The document is rendered once, on the first request, and served as the
- * exact bytes of the offline export (`docs/openapi.json`). Swagger UI loads
- * it from {@link OPENAPI_PATH} and sends "Try it out" requests to the same
- * origin (the document's server URL is `/`).
+ * hono-openapi generates the document of `documented` (the combined app) at
+ * runtime, once, on the first request; it is served as the exact bytes of the
+ * offline export (`docs/openapi.json`), which is generated the same way from
+ * the same routes. Swagger UI loads it from {@link OPENAPI_PATH} and sends
+ * "Try it out" requests to the same origin (the document's server URL is `/`).
  */
-export function createDocsApp(logger: Logger): Hono {
+export function createDocsApp(logger: Logger, documented: Hono): Hono {
   const app = createEndpointApp(logger, () => MESSAGES.internal);
-  let document: string | undefined;
-  app.get(OPENAPI_PATH, (c) => {
-    document ??= renderOpenApiDocument();
-    return c.body(document, 200, { "Content-Type": "application/json; charset=UTF-8" });
+  // Shared by concurrent first requests; forgotten on failure so the next
+  // request generates again instead of failing forever (the failed request
+  // itself is a 500 through the error handler).
+  let document: Promise<string> | undefined;
+  app.get(OPENAPI_PATH, async (c) => {
+    document ??= generateOpenApiDocument(documented)
+      .then(serializeOpenApiDocument)
+      .catch((error: unknown) => {
+        document = undefined;
+        throw error;
+      });
+    return c.body(await document, 200, { "Content-Type": "application/json; charset=UTF-8" });
   });
   app.get(
     DOCS_PATH,

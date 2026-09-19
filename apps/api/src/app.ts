@@ -41,6 +41,6 @@ export function createApp(dependencies: AppDependencies): Hono {
   app.route("/", createHealthApp({ logger }));
   app.route("/", createVerifyOrderApp({ verifyOrder, logger }));
   app.route("/", createSubmitOrderApp({ submitOrder, logger }));
-  app.route("/", createDocsApp(logger));
+  app.route("/", createDocsApp(logger, app));
   return app;
 }

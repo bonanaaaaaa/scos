@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { renderOpenApiDocument } from "./document";
+import { renderOpenApiDocument } from "./offline";
 import {
   OPENAPI_EXPORT_FILE,
   OPENAPI_EXPORT_PATH,
@@ -32,7 +32,7 @@ describe("committed export", () => {
     expect(OPENAPI_EXPORT_PATH.endsWith(OPENAPI_EXPORT_FILE)).toBe(true);
     const committed = await readFile(OPENAPI_EXPORT_PATH, "utf8");
     expect(
-      committed === renderOpenApiDocument(),
+      committed === (await renderOpenApiDocument()),
       `${OPENAPI_EXPORT_FILE} is out of date: run \`pnpm openapi:export\` and commit it.`,
     ).toBe(true);
     await expect(runOpenApiCommand("check", OPENAPI_EXPORT_PATH)).resolves.toMatchObject({
@@ -58,12 +58,12 @@ describe("openapi command", () => {
     const first = files.contents.get("a.json");
     await runOpenApiCommand("export", "a.json", files);
     expect(files.contents.get("a.json")).toBe(first);
-    expect(first).toBe(renderOpenApiDocument());
+    expect(first).toBe(await renderOpenApiDocument());
     expect(first?.endsWith("}\n")).toBe(true);
   });
 
   test("check passes on the exported file", async () => {
-    const files = memoryFiles({ "a.json": renderOpenApiDocument() });
+    const files = memoryFiles({ "a.json": await renderOpenApiDocument() });
     await expect(runOpenApiCommand("check", "a.json", files)).resolves.toStrictEqual({
       exitCode: 0,
       message: "a.json is up to date.",
@@ -71,7 +71,7 @@ describe("openapi command", () => {
   });
 
   test("check fails on a mutated file and names the first differing line", async () => {
-    const lines = renderOpenApiDocument().split("\n");
+    const lines = (await renderOpenApiDocument()).split("\n");
     lines[3] = `${lines[3]} `;
     const files = memoryFiles({ "a.json": lines.join("\n") });
     const result = await runOpenApiCommand("check", "a.json", files);
@@ -81,8 +81,8 @@ describe("openapi command", () => {
   });
 
   test("check fails when content is only reformatted or truncated", async () => {
-    const reformatted = `${JSON.stringify(JSON.parse(renderOpenApiDocument()))}\n`;
-    const truncated = renderOpenApiDocument().trimEnd();
+    const reformatted = `${JSON.stringify(JSON.parse(await renderOpenApiDocument()))}\n`;
+    const truncated = (await renderOpenApiDocument()).trimEnd();
     for (const content of [reformatted, truncated]) {
       const result = await runOpenApiCommand("check", "a.json", memoryFiles({ "a.json": content }));
       expect(result.exitCode).toBe(1);

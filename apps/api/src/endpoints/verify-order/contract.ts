@@ -13,11 +13,16 @@ import { latitudeFieldSchema, longitudeFieldSchema, quantityFieldSchema } from "
 import { verifyOrderRequestExamples, verifyOrderResponseExamples } from "./examples";
 
 /** Body of `POST /api/v1/orders/verify`. Unknown fields are rejected. */
-export const verifyOrderRequestSchema = z.strictObject({
-  quantity: quantityFieldSchema,
-  latitude: latitudeFieldSchema,
-  longitude: longitudeFieldSchema,
-});
+export const verifyOrderRequestSchema = z
+  .strictObject({
+    quantity: quantityFieldSchema,
+    latitude: latitudeFieldSchema,
+    longitude: longitudeFieldSchema,
+  })
+  .meta({
+    id: "VerifyOrderRequest",
+    description: "Quantity and destination to estimate. Unknown fields are rejected.",
+  });
 
 export type VerifyOrderRequest = z.input<typeof verifyOrderRequestSchema>;
 
@@ -28,6 +33,7 @@ export type VerifyOrderResponse = z.output<typeof verifyOrderResponseSchema>;
 
 export const verifyOrderRoute = {
   servedBy: "createVerifyOrderApp",
+  operationId: "verifyOrder",
   method: "post",
   path: `${API_PREFIX}/orders/verify`,
   summary: "Advisory Order Estimate against current stock; reserves and stores nothing.",

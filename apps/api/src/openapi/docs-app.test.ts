@@ -1,3 +1,5 @@
+import { Hono } from "hono";
+import { describeRoute, type resolver } from "hono-openapi";
 import { describe, expect, test } from "vitest";
 
 import { createApp } from "../app";
@@ -7,8 +9,8 @@ import { createVerifyOrderApp } from "../endpoints/verify-order/app";
 import { errorResponseSchema } from "../http/errors";
 import { fakeLogger, json } from "../testing/fixtures.test-support";
 import { noSubmit, noVerify } from "../testing/requests.test-support";
-import { SWAGGER_UI_VERSION } from "./docs-app";
-import { renderOpenApiDocument } from "./document";
+import { SWAGGER_UI_VERSION, createDocsApp } from "./docs-app";
+import { renderOpenApiDocument } from "./offline";
 
 function app() {
   return createApp({ verifyOrder: noVerify, submitOrder: noSubmit, logger: fakeLogger() });
@@ -21,7 +23,7 @@ describe("documentation routes", () => {
       const response = await combined.request("/openapi.json");
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toBe("application/json; charset=UTF-8");
-      expect(await response.text()).toBe(renderOpenApiDocument());
+      expect(await response.text()).toBe(await renderOpenApiDocument());
     }
   });
 
@@ -59,5 +61,76 @@ describe("documentation routes", () => {
         expect((await standalone.request(path)).status).toBe(404);
       }
     }
+  });
+
+  describe("generation failure is not cached", () => {
+    /**
+     * An app whose only route documents its response with a stand-in
+     * resolver: the conversion fails `failures` times, then succeeds.
+     */
+    function documentedApp(failures: number) {
+      let calls = 0;
+      const schema: ReturnType<typeof resolver> = {
+        vendor: "test",
+        validate: () => ({ value: undefined }),
+        toJSONSchema: () => ({ type: "string" }),
+        async toOpenAPISchema() {
+          calls += 1;
+          // Yield first, so concurrent requests overlap the generation.
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          if (calls <= failures) {
+            throw new Error("conversion failed");
+          }
+          return { schema: { type: "string" as const }, components: undefined };
+        },
+      };
+      const documented = new Hono();
+      documented.get(
+        "/probe",
+        describeRoute({
+          responses: { 200: { description: "OK", content: { "application/json": { schema } } } },
+        }),
+        (c) => c.text("ok"),
+      );
+      return { documented, calls: () => calls };
+    }
+
+    test("a failed generation is a 500 and the next request generates again", async () => {
+      const logger = fakeLogger();
+      const { documented, calls } = documentedApp(1);
+      const docs = createDocsApp(logger, documented);
+
+      const failed = await docs.request("/openapi.json");
+      expect(failed.status).toBe(500);
+      expect((await json(failed, errorResponseSchema)).error.code).toBe("INTERNAL_ERROR");
+      expect(logger.error).toHaveBeenCalledTimes(1);
+
+      const retried = await docs.request("/openapi.json");
+      expect(retried.status).toBe(200);
+      expect(await retried.json()).toMatchObject({ paths: { "/probe": { get: {} } } });
+      expect(calls()).toBe(2);
+
+      // Success is cached: no third generation.
+      expect((await docs.request("/openapi.json")).status).toBe(200);
+      expect(calls()).toBe(2);
+    });
+
+    test("concurrent first requests share one generation", async () => {
+      const { documented, calls } = documentedApp(0);
+      const docs = createDocsApp(fakeLogger(), documented);
+      const responses = await Promise.all([1, 2, 3].map(() => docs.request("/openapi.json")));
+      expect(responses.map((response) => response.status)).toStrictEqual([200, 200, 200]);
+      expect(calls()).toBe(1);
+    });
+
+    test("concurrent requests during a failed generation all fail; the next one retries", async () => {
+      const { documented, calls } = documentedApp(1);
+      const docs = createDocsApp(fakeLogger(), documented);
+      const responses = await Promise.all([1, 2].map(() => docs.request("/openapi.json")));
+      expect(responses.map((response) => response.status)).toStrictEqual([500, 500]);
+      expect(calls()).toBe(1);
+      expect((await docs.request("/openapi.json")).status).toBe(200);
+      expect(calls()).toBe(2);
+    });
   });
 });

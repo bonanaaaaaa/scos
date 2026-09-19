@@ -22,9 +22,10 @@ import { routes } from "../routes";
 import { post } from "../testing/fixtures.test-support";
 import { ajvAccepts, specValidator } from "../testing/openapi.test-support";
 import { type SeededAppOptions, seededApp } from "../testing/seeded-use-cases.test-support";
-import { type JsonObject, buildOpenApiDocument } from "./document";
+import type { JsonObject } from "./document";
+import { buildOpenApiDocument } from "./offline";
 
-const document = buildOpenApiDocument();
+const document = await buildOpenApiDocument();
 const validator = specValidator(document);
 
 /** Request examples that are deliberately invalid (they document a 400). */

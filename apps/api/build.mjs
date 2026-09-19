@@ -18,7 +18,22 @@ const entryPoints = ["src/server.ts"];
 //   copy would bypass that hook and lose trace correlation. This entry is
 //   only a backstop in case pino is ever imported statically (the output is
 //   identical without it today).
-const external = ["pg-native", "pino"];
+// - hono-openapi converts schemas through @standard-community adapters that
+//   lazily import() the converter of each schema library they support. The
+//   API uses Zod 4 only (converted by Zod itself), so the other adapters never
+//   run; left external, `effect` (installed for Prisma) is not bundled for
+//   nothing.
+const optionalSchemaVendors = [
+  "effect",
+  "arktype",
+  "typebox",
+  "valibot",
+  "@valibot/to-json-schema",
+  "sury",
+  "zod-openapi",
+  "zod-to-json-schema",
+];
+const external = ["pg-native", "pino", ...optionalSchemaVendors];
 
 await rm("dist", { recursive: true, force: true });
 

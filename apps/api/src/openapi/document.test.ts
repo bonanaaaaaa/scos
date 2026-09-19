@@ -2,16 +2,22 @@ import SwaggerParser from "@apidevtools/swagger-parser";
 import { MAX_QUANTITY } from "@scos/core";
 import type { OpenAPIV3_1 } from "openapi-types";
 import { describe, expect, test, vi } from "vitest";
-import { z } from "zod";
+import { resolver } from "hono-openapi";
 
-import { SUBMISSION_ADR_URL, notFoundResponse } from "../http/route-contract";
+import { SUBMISSION_ID_DESCRIPTION } from "../endpoints/submit-order/contract";
+import {
+  type ResponseContract,
+  type RouteContract,
+  SUBMISSION_ADR_URL,
+  notFoundResponse,
+} from "../http/route-contract";
 import { warehouseIdSchema } from "../http/schemas";
 import { routes } from "../routes";
 import { ajvAccepts, specValidator } from "../testing/openapi.test-support";
-import { SUBMISSION_ID_DESCRIPTION, requestComponentRegistry } from "./components";
-import { type JsonObject, buildOpenApiDocument, renderOpenApiDocument } from "./document";
+import type { JsonObject } from "./document";
+import { buildOpenApiDocument, renderOpenApiDocument } from "./offline";
 
-const document = buildOpenApiDocument();
+const document = await buildOpenApiDocument();
 const schemas = document.components.schemas;
 
 function operation(path: string, method: string): JsonObject {
@@ -201,37 +207,142 @@ describe("OpenAPI document", () => {
     }
   });
 
-  test("components carry no per-schema $schema, $id or brand artefacts", () => {
+  test("no schema anywhere is empty (an unrepresentable schema published as {})", () => {
+    const empty: string[] = [];
+    let checked = 0;
+    const schemaPositions = new Set(["schema", "items", "additionalProperties", "not"]);
+    const schemaMaps = new Set(["properties", "patternProperties", "$defs"]);
+    const schemaLists = new Set(["anyOf", "oneOf", "allOf", "prefixItems"]);
+    const visitSchema = (value: unknown, path: string) => {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        return;
+      }
+      checked += 1;
+      if (Object.keys(value).length === 0) {
+        empty.push(path);
+      }
+      walk(value as JsonObject, path);
+    };
+    function walk(node: JsonObject, path: string) {
+      for (const [key, value] of Object.entries(node)) {
+        // Example values are data, not schemas.
+        if (key === "examples" || key === "example") {
+          continue;
+        }
+        const at = `${path}/${key}`;
+        if (schemaPositions.has(key)) {
+          visitSchema(value, at);
+        } else if (schemaMaps.has(key) && value !== null && typeof value === "object") {
+          for (const [name, schema] of Object.entries(value)) {
+            visitSchema(schema, `${at}/${name}`);
+          }
+        } else if (schemaLists.has(key) && Array.isArray(value)) {
+          value.forEach((schema, index) => visitSchema(schema, `${at}/${index}`));
+        } else if (value !== null && typeof value === "object") {
+          walk(value as JsonObject, at);
+        }
+      }
+    }
+    for (const [name, schema] of Object.entries(schemas)) {
+      visitSchema(schema, `#/components/schemas/${name}`);
+    }
+    walk({ paths: document.paths, responses: document.components.responses }, "#");
+    expect(empty).toStrictEqual([]);
+    expect(checked).toBeGreaterThan(100);
+  });
+
+  test("every request and response body is a $ref to a named component", () => {
+    for (const route of Object.values(routes) as RouteContract[]) {
+      const found = operation(route.path, route.method);
+      const bodies: [string, JsonObject][] = Object.entries(
+        found.responses as Record<string, JsonObject>,
+      ).map(([status, response]) => [status, response]);
+      if (route.requestBody !== undefined) {
+        bodies.push(["request", found.requestBody as JsonObject]);
+      }
+      expect(bodies.map(([status]) => status)).toStrictEqual([
+        ...Object.keys(route.responses),
+        ...(route.requestBody === undefined ? [] : ["request"]),
+      ]);
+      for (const [status, body] of bodies) {
+        const schema = (body.content as Record<string, JsonObject>)["application/json"]?.schema;
+        expect(schema, `${route.operationId} ${status}`).toStrictEqual({
+          $ref: expect.stringMatching(/^#\/components\/schemas\/[A-Za-z]+$/),
+        });
+        const name =
+          String((schema as JsonObject).$ref)
+            .split("/")
+            .pop() ?? "";
+        expect(schemas, `${route.operationId} ${status}`).toHaveProperty(name);
+      }
+    }
+  });
+
+  test("components carry no per-schema $schema, $id or brand artefacts", async () => {
     for (const schema of Object.values(schemas)) {
       expect(schema).not.toHaveProperty("$schema");
       expect(schema).not.toHaveProperty("$id");
     }
-    const rendered = renderOpenApiDocument();
+    const rendered = await renderOpenApiDocument();
     expect(rendered).not.toMatch(/brand|~standard/i);
   });
 
-  test("request and response component names never overlap", () => {
-    const requestNames = Object.keys(
-      z.toJSONSchema(requestComponentRegistry(), { io: "input" }).schemas,
-    );
-    expect(requestNames.sort()).toStrictEqual([
+  test("every named component is the same whether reached from a request or a response", async () => {
+    // A Zod id shared by an input and an output schema would be merged into one
+    // component; each schema is resolved alone, in its own io mode, and every
+    // component it yields must equal the published one.
+    const resolved = new Map<string, unknown>();
+    const collect = async (result: { components?: { schemas?: object } | undefined }) => {
+      for (const [name, schema] of Object.entries(result.components?.schemas ?? {})) {
+        expect(schemas[name], name).toStrictEqual(schema);
+        resolved.set(name, schema);
+      }
+    };
+    for (const route of Object.values(routes) as RouteContract[]) {
+      if (route.requestBody !== undefined) {
+        await collect(await resolver(route.requestBody).toOpenAPISchema());
+      }
+      for (const response of Object.values(route.responses) as ResponseContract[]) {
+        await collect(
+          await resolver(response.schema, { options: { io: "output" } }).toOpenAPISchema(),
+        );
+      }
+    }
+    expect([...resolved.keys()].sort()).toStrictEqual(Object.keys(schemas).sort());
+    expect(Object.keys(schemas).sort()).toStrictEqual([
+      "Destination",
+      "DiscountRate",
+      "ErrorBody",
+      "ErrorCode",
+      "ErrorIssue",
+      "ErrorResponse",
+      "EstimateAllocation",
+      "HealthResponse",
+      "InsufficientStockEstimate",
       "Latitude",
       "Longitude",
+      "Money",
+      "Order",
+      "OrderAllocation",
+      "OrderEstimate",
       "Quantity",
+      "RejectedSubmission",
+      "ShippingExceedsLimitEstimate",
       "SubmissionId",
       "SubmitOrderRequest",
+      "ValidEstimate",
       "VerifyOrderRequest",
+      "WarehouseId",
     ]);
-    expect(Object.keys(schemas)).toStrictEqual(Object.keys(schemas).sort());
   });
 
-  test("is deterministic and needs no environment", () => {
+  test("is deterministic, including key order, and needs no environment", async () => {
     vi.stubEnv("DATABASE_URL", undefined);
     vi.stubEnv("PORT", undefined);
     try {
-      expect(renderOpenApiDocument()).toBe(renderOpenApiDocument());
-      expect(buildOpenApiDocument()).toStrictEqual(document);
-      expect(renderOpenApiDocument()).toBe(`${JSON.stringify(document, null, 2)}\n`);
+      expect(await renderOpenApiDocument()).toBe(await renderOpenApiDocument());
+      expect(await buildOpenApiDocument()).toStrictEqual(document);
+      expect(await renderOpenApiDocument()).toBe(`${JSON.stringify(document, null, 2)}\n`);
     } finally {
       vi.unstubAllEnvs();
     }

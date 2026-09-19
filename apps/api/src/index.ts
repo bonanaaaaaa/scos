@@ -120,13 +120,15 @@ export {
 } from "./http/schemas";
 
 // OpenAPI
-export { DOCS_PATH, OPENAPI_PATH } from "./openapi/docs-app";
 export {
+  DOCS_PATH,
+  OPENAPI_PATH,
   type JsonObject,
   type OpenApiDocument,
-  buildOpenApiDocument,
-  renderOpenApiDocument,
+  generateOpenApiDocument,
+  serializeOpenApiDocument,
 } from "./openapi/document";
+export { buildOpenApiDocument, renderOpenApiDocument } from "./openapi/offline";
 
 export function workspaceComposition(): readonly string[] {
   return [corePackage.name, persistencePackage.name];

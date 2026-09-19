@@ -10,14 +10,16 @@ import { describe, expect, test } from "vitest";
 import type { z } from "zod";
 
 import { createApp } from "../app";
-import { submitOrderRequestSchema } from "../endpoints/submit-order/contract";
+import {
+  SUBMISSION_ID_DESCRIPTION,
+  submitOrderRequestSchema,
+} from "../endpoints/submit-order/contract";
 import { verifyOrderRequestSchema } from "../endpoints/verify-order/contract";
 import { fakeLogger, post } from "../testing/fixtures.test-support";
 import { ajvAccepts, specValidator } from "../testing/openapi.test-support";
-import { SUBMISSION_ID_DESCRIPTION } from "./components";
-import { buildOpenApiDocument } from "./document";
+import { buildOpenApiDocument } from "./offline";
 
-const validator = specValidator(buildOpenApiDocument());
+const validator = specValidator(await buildOpenApiDocument());
 
 /** Any well-formed request reaches the use case; these answer 200 and 201. */
 const app = createApp({

@@ -8,10 +8,13 @@ import { z } from "zod";
 
 import type { RouteContract } from "../../http/route-contract";
 
-export const healthResponseSchema = z.object({ status: z.literal("ok") });
+export const healthResponseSchema = z
+  .object({ status: z.literal("ok") })
+  .meta({ id: "HealthResponse", description: "The process is running." });
 
 export const healthRoute = {
   servedBy: "createHealthApp",
+  operationId: "health",
   method: "get",
   path: "/health",
   summary: "Liveness check; does not touch the database.",

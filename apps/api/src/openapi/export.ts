@@ -12,7 +12,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import { renderOpenApiDocument } from "./document";
+import { renderOpenApiDocument } from "./offline";
 
 /** The export's location relative to the repository root. */
 export const OPENAPI_EXPORT_FILE = "docs/openapi.json";
@@ -76,7 +76,7 @@ export async function runOpenApiCommand(
   path: string,
   files: OpenApiFiles = nodeOpenApiFiles,
 ): Promise<OpenApiCommandResult> {
-  const expected = renderOpenApiDocument();
+  const expected = await renderOpenApiDocument();
   if (command === "export") {
     await files.write(path, expected);
     return { exitCode: 0, message: `Wrote ${path}` };

@@ -22,12 +22,13 @@ describe("API package surface", () => {
     expect(await response.json()).toStrictEqual({ status: "ok" });
   });
 
-  test("the OpenAPI document is built from the exported route contract", () => {
-    const document = api.buildOpenApiDocument();
+  test("the OpenAPI document is built from the exported route contract", async () => {
+    const document = await api.buildOpenApiDocument();
     expect(Object.keys(document.paths)).toStrictEqual(
       Object.values(api.routes).map((route) => route.path),
     );
-    expect(api.renderOpenApiDocument()).toBe(`${JSON.stringify(document, null, 2)}\n`);
+    expect(await api.renderOpenApiDocument()).toBe(api.serializeOpenApiDocument(document));
+    expect(api.serializeOpenApiDocument(document)).toBe(`${JSON.stringify(document, null, 2)}\n`);
     expect([api.OPENAPI_PATH, api.DOCS_PATH]).toStrictEqual(["/openapi.json", "/docs"]);
   });
 });

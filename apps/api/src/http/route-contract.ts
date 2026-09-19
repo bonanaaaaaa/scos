@@ -1,7 +1,9 @@
 /**
  * The shape of a route contract and the responses every endpoint shares, so
  * each endpoint folder can declare its own route, with its documentation and
- * examples, for OpenAPI generation (`src/openapi/`).
+ * examples. Each endpoint app attaches its contract to its Hono route
+ * (`http/describe-route.ts`), and hono-openapi generates the document from
+ * the app (`src/openapi/`).
  *
  * @module
  */
@@ -55,6 +57,8 @@ export interface RouteContract {
    * deployable function per endpoint). `createApp` mounts all of them.
    */
   readonly servedBy: EndpointApp;
+  /** The OpenAPI `operationId`; also the route's key in `routes`. */
+  readonly operationId: string;
   readonly method: "get" | "post";
   readonly path: string;
   readonly summary: string;
