@@ -32,20 +32,22 @@ either in this repository or reachable at the hosted URL.
 
 **Pricing and shipping rules, as implemented**
 
-```ini
+```python
 subtotal   = 150 * quantity
 discount   = subtotal * rate
 discounted = subtotal - discount
 
 # rate is 0% below 25 units, 5% at 25+, 10% at 50+, 15% at 100+, 20% at 250+
 
-# one cost per warehouse in the plan, summed, then rounded once to cents
-cost       = units * 0.365 kg * 0.01 per kg per km * distance_km
-shipping   = round(sum of those costs, 2 decimals)
+# 0.365 kg per unit, $0.01 per kg per km; the sum is rounded half-up to cents,
+# once, at the end — never per warehouse
+shipping = 0
+for warehouse in plan:
+    shipping += warehouse.units * 0.365 * 0.01 * warehouse.distance_km
+shipping = round(shipping, 2)
 
-total      = discounted + shipping
-
-valid      = every unit is allocated, and shipping <= 0.15 * discounted
+total = discounted + shipping
+valid = every_unit_allocated and shipping <= 0.15 * discounted
 ```
 
 For example, 150 units to Berlin served from Warsaw (515 km): subtotal
