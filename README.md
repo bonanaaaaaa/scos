@@ -1,8 +1,8 @@
 # SCOS Ordering
 
-Backend for ordering SCOS Station P1 Pro devices. A Hono API verifies orders (`POST /api/v1/orders/verify`), accepts them idempotently by client `submissionId` (`POST /api/v1/orders`), and serves `GET /health`, the generated OpenAPI 3.1 specification at `GET /openapi.json`, and Swagger UI at `GET /docs`. Business rules live in a framework-independent core, and orders, allocations and warehouse stock are stored in PostgreSQL through Prisma. The API runs locally as a Node.js server and has a Cloudflare Worker entry point (`apps/api/src/entrypoints/worker.ts`), which is tested locally in workerd but not yet deployed (see [Limitations and next steps](#limitations-and-next-steps)).
+Backend for ordering SCOS Station P1 Pro devices. A Hono API verifies orders (`POST /api/v1/orders/verify`), accepts them idempotently by client `submissionId` (`POST /api/v1/orders`), and serves `GET /health`, the generated OpenAPI 3.1 specification at `GET /openapi.json`, and Swagger UI at `GET /docs`. Business rules live in a framework-independent core, and orders, allocations and warehouse stock are stored in PostgreSQL through Prisma. The API runs locally as a Node.js server and is deployed to Cloudflare Workers from its Worker entry point (`apps/api/src/entrypoints/worker.ts`). It is live at <https://scos-api.bonanaaaaaa-scos.workers.dev> — public, unauthenticated, and stocked with inventory that is never replenished, so read [hosted demonstration](docs/hosted-demonstration.md) and [Limitations and next steps](#limitations-and-next-steps) before submitting an order there.
 
-New here? Follow the [evaluator walkthrough](#evaluator-walkthrough) from a fresh checkout.
+New here? [SUBMISSION.md](SUBMISSION.md) maps the challenge's requirements to the code that satisfies them, and explains the decisions behind it. To find your way around the repository, start with the [repository map](docs/architecture.md#repository-map), which names every directory's job and says which document answers which question. To run the API yourself, follow the [evaluator walkthrough](#evaluator-walkthrough) from a fresh checkout.
 
 ## Prerequisites
 
