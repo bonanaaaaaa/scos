@@ -5,18 +5,16 @@
  * collector that neither changes results nor holds database locks.
  */
 
-import { MAX_SUBMISSION_ATTEMPTS } from "@scos/core";
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace";
+import { MAX_SUBMISSION_ATTEMPTS } from "@scos/core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
+import { parseHealthConfig } from "#endpoints/health/config";
 import { composeSubmitOrderApplication } from "#endpoints/submit-order/composition";
 import { composeVerifyOrderApplication } from "#endpoints/verify-order/composition";
-import { parseHealthConfig } from "#endpoints/health/config";
 import { createTelemetryRuntime } from "#telemetry/node/sdk";
 import { SUBMISSIONS_METRIC } from "#telemetry/telemetry";
-import { startBlackHole } from "#testing/black-hole.test-support";
-import { type TestTelemetry, testTelemetry } from "#testing/telemetry.test-support";
 import {
   AT_PARIS,
   Applications,
@@ -31,6 +29,8 @@ import {
   holdWarehouseLocks,
   stockById,
 } from "#test/support/database";
+import { startBlackHole } from "#testing/black-hole.test-support";
+import { type TestTelemetry, testTelemetry } from "#testing/telemetry.test-support";
 
 let db: TestDatabase;
 let harness: TestTelemetry;

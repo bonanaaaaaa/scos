@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 
+import { harness } from "#endpoints/submit-order/harness.test-support";
 import { errorResponseSchema } from "#http/errors";
 import { MESSAGES } from "#http/messages";
 import { json, post, submitBody, verifyBody } from "#testing/fixtures.test-support";
-import { harness } from "#endpoints/submit-order/harness.test-support";
 
 describe("request validation before the use case", () => {
   const cases: readonly [string, unknown, string, string][] = [

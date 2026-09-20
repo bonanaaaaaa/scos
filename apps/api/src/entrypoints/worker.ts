@@ -19,9 +19,9 @@
 
 import type { ExecutionContext } from "hono";
 
-import { type Environment, type WorkerConfig, parseWorkerConfig } from "#config";
 import type { ComposedApplication } from "#composition/composed-application";
 import { type WorkerCompositionOptions, composeWorkerApplication } from "#composition/worker";
+import { type Environment, type WorkerConfig, parseWorkerConfig } from "#config";
 import { errorBody } from "#http/errors";
 import { MESSAGES } from "#http/messages";
 import type { WorkersTelemetryConfig } from "#telemetry/config";

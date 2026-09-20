@@ -7,20 +7,20 @@
  * response and holds no lock.
  */
 
-import { env } from "cloudflare:workers";
 import { SpanKind } from "@opentelemetry/api";
-import type { ExecutionContext } from "hono";
-import { describe, expect, test } from "vitest";
-
-import { type WorkerRuntime, createWorkerHandler, workersRuntime } from "#entrypoints/worker";
-import { createWorkersTelemetry } from "#telemetry/workers/sdk";
-import { accumulateDeltas } from "#testing/workers-telemetry.test-support";
 import {
   InMemoryMetricExporter,
   AggregationTemporality,
   type MetricData,
 } from "@opentelemetry/sdk-metrics";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
+import { env } from "cloudflare:workers";
+import type { ExecutionContext } from "hono";
+import { describe, expect, test } from "vitest";
+
+import { type WorkerRuntime, createWorkerHandler, workersRuntime } from "#entrypoints/worker";
+import { createWorkersTelemetry } from "#telemetry/workers/sdk";
+import { accumulateDeltas } from "#testing/workers-telemetry.test-support";
 
 const AT_PARIS = { latitude: 49.009722, longitude: 2.547778 } as const;
 const FAR_AWAY = { latitude: -45, longitude: 170 } as const;

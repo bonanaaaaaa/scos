@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 
 import { DomainDecimal } from "#domain/shared/decimal";
 import { Money } from "#domain/shared/money";
-
 import type { WarehouseAllocation } from "#domain/shipping/allocation";
 import {
   isShippingWithinLimit,

@@ -23,9 +23,6 @@ import { afterAll, describe, expect, test, vi } from "vitest";
 
 import { createVerifyOrderApp } from "#endpoints/verify-order/app";
 import { createConsoleJsonLogger } from "#http/logger";
-import { startBlackHole } from "#testing/black-hole.test-support";
-import { validEstimate, verifyBody } from "#testing/fixtures.test-support";
-import { captureLogs, parseTelemetryConfig } from "#testing/telemetry.test-support";
 import { traceVerifyOrder } from "#telemetry/decorators/verify-order";
 import { instrumentApp } from "#telemetry/http";
 import {
@@ -34,6 +31,9 @@ import {
   startTelemetry,
   summarizeDiagnostic,
 } from "#telemetry/node/sdk";
+import { startBlackHole } from "#testing/black-hole.test-support";
+import { validEstimate, verifyBody } from "#testing/fixtures.test-support";
+import { captureLogs, parseTelemetryConfig } from "#testing/telemetry.test-support";
 
 const environment = {
   OTEL_SERVICE_NAME: "scos-api-test",

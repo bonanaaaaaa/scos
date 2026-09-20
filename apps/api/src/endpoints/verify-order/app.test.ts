@@ -7,6 +7,8 @@ import {
 } from "@scos/core";
 import { describe, expect, test, vi } from "vitest";
 
+import { createVerifyOrderApp } from "#endpoints/verify-order/app";
+import { verifyOrderResponseSchema, verifyOrderRoute } from "#endpoints/verify-order/contract";
 import { errorResponseSchema } from "#http/errors";
 import { MESSAGES } from "#http/messages";
 import {
@@ -20,8 +22,6 @@ import {
   validEstimate,
   verifyBody,
 } from "#testing/fixtures.test-support";
-import { createVerifyOrderApp } from "#endpoints/verify-order/app";
-import { verifyOrderResponseSchema, verifyOrderRoute } from "#endpoints/verify-order/contract";
 
 function harness(
   verify: (request: OrderRequest) => Promise<OrderEstimate> = async () => validEstimate,

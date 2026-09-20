@@ -15,9 +15,9 @@ import {
   submitOrderRequestSchema,
 } from "#endpoints/submit-order/contract";
 import { verifyOrderRequestSchema } from "#endpoints/verify-order/contract";
+import { buildOpenApiDocument } from "#openapi/offline";
 import { fakeLogger, post } from "#testing/fixtures.test-support";
 import { ajvAccepts, specValidator } from "#testing/openapi.test-support";
-import { buildOpenApiDocument } from "#openapi/offline";
 
 const validator = specValidator(await buildOpenApiDocument());
 

@@ -22,8 +22,8 @@
 import { readFile } from "node:fs/promises";
 
 import SwaggerParser from "@apidevtools/swagger-parser";
-import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
 import addFormatsModule from "ajv-formats";
+import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
 import type { OpenAPI } from "openapi-types";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";

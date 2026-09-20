@@ -1,11 +1,5 @@
 import { describe, expect, test } from "vitest";
 
-import { type NewOrder, type Order, restoreOrder } from "#domain/ordering/order";
-import { ORDER_NUMBER_PATTERN } from "#domain/ordering/order-number";
-import type { SubmissionKey } from "#domain/ordering/submission-key";
-import { DomainError } from "#domain/shared/errors";
-import type { WarehouseStock } from "#domain/shipping/allocation";
-
 import {
   type SubmissionStore,
   type SubmissionTransaction,
@@ -17,6 +11,11 @@ import {
   type SubmitOrderOutcome,
   createSubmitOrder,
 } from "#application/submit-order";
+import { type NewOrder, type Order, restoreOrder } from "#domain/ordering/order";
+import { ORDER_NUMBER_PATTERN } from "#domain/ordering/order-number";
+import type { SubmissionKey } from "#domain/ordering/submission-key";
+import { DomainError } from "#domain/shared/errors";
+import type { WarehouseStock } from "#domain/shipping/allocation";
 
 /**
  * In-memory SubmissionStore. A transaction works on a copy of the state and

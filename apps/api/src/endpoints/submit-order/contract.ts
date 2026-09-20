@@ -10,6 +10,10 @@
 import { ORDER_NUMBER_PATTERN, submissionKeySchema } from "@scos/core";
 import { z } from "zod";
 
+import {
+  submitOrderRequestExamples,
+  submitOrderResponseExamples,
+} from "#endpoints/submit-order/examples";
 import { errorResponseSchema, rejectionErrorBodySchema } from "#http/errors";
 import {
   insufficientStockEstimateSchema,
@@ -31,10 +35,6 @@ import {
   responseQuantitySchema,
   warehouseIdSchema,
 } from "#http/schemas";
-import {
-  submitOrderRequestExamples,
-  submitOrderResponseExamples,
-} from "#endpoints/submit-order/examples";
 
 /**
  * The submissionId rules JSON Schema cannot express. They are enforced by the

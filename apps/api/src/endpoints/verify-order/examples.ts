@@ -10,7 +10,6 @@
  */
 
 import { errorBody } from "#http/errors";
-import { MESSAGES } from "#http/messages";
 import {
   insufficientStockEstimateExample,
   insufficientStockRequest,
@@ -19,6 +18,7 @@ import {
   validEstimateExample,
   validRequest,
 } from "#http/estimate-examples";
+import { MESSAGES } from "#http/messages";
 import { type ExampleMap, invalidRequestExamples } from "#http/route-contract";
 
 /** A string quantity, an out-of-range latitude and an unknown field. */

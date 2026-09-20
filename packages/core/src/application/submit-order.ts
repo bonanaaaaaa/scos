@@ -17,6 +17,12 @@
 import { z } from "zod";
 
 import {
+  type SubmissionStore,
+  type SubmissionTransaction,
+  SubmissionKeyTakenError,
+  TransientSubmissionError,
+} from "#application/ports/submission-store";
+import {
   type InsufficientStockEstimate,
   type ShippingExceedsLimitEstimate,
   estimateOrder,
@@ -27,13 +33,6 @@ import { type OrderRequest, orderRequestSchema } from "#domain/ordering/order-re
 import { type SubmissionKey, submissionKeySchema } from "#domain/ordering/submission-key";
 import { latitudeSchema, longitudeSchema } from "#domain/shared/destination";
 import { quantitySchema } from "#domain/shared/quantity";
-
-import {
-  type SubmissionStore,
-  type SubmissionTransaction,
-  SubmissionKeyTakenError,
-  TransientSubmissionError,
-} from "#application/ports/submission-store";
 
 /**
  * Total transaction attempts per submission when an attempt fails with a

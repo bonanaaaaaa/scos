@@ -15,7 +15,6 @@ import {
   SHIPPING_RATE_PER_KG_KM,
   UNIT_WEIGHT_KG,
 } from "#domain/shared/product";
-
 import type { WarehouseAllocation } from "#domain/shipping/allocation";
 
 /** Exact, unrounded sum of units x 0.365 kg x $0.01/kg/km x distance. */

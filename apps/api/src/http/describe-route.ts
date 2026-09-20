@@ -13,8 +13,8 @@
  * @module
  */
 
-import { type DescribeRouteOptions, describeRoute, resolver } from "hono-openapi";
 import type { MiddlewareHandler } from "hono";
+import { type DescribeRouteOptions, describeRoute, resolver } from "hono-openapi";
 import type { OpenAPIV3_1 } from "openapi-types";
 import { z } from "zod";
 

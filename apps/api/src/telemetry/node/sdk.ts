@@ -62,8 +62,8 @@ import type { DestinationStream } from "pino";
 import type { StructuredLogger } from "#http/logger";
 import type { TelemetryConfig } from "#telemetry/config";
 import { resourceAttributes } from "#telemetry/log-record";
-import { type Telemetry, createTelemetry } from "#telemetry/telemetry";
 import { createPinoLogger } from "#telemetry/node/pino-logger";
+import { type Telemetry, createTelemetry } from "#telemetry/telemetry";
 
 /** Bounds of the span export queue (see docs/observability.md). */
 export const SPAN_BATCH_LIMITS = Object.freeze({

@@ -11,8 +11,18 @@ import { type DataPoint, type Histogram, type MetricData } from "@opentelemetry/
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { composeHealthApplication } from "#endpoints/health/composition";
 import { createApp } from "#app";
+import { composeHealthApplication } from "#endpoints/health/composition";
+import { traceSubmitOrder } from "#telemetry/decorators/submit-order";
+import { traceVerifyOrder } from "#telemetry/decorators/verify-order";
+import { instrumentApp } from "#telemetry/http";
+import { SUBMISSIONS_METRIC } from "#telemetry/telemetry";
+import { failureReason, postOtlp } from "#telemetry/workers/otlp-exporter";
+import {
+  RequestFlushSpanProcessor,
+  WORKERS_SPAN_LIMITS,
+  createWorkersTelemetry,
+} from "#telemetry/workers/sdk";
 import {
   acceptedOrder,
   fakeLogger,
@@ -25,16 +35,6 @@ import {
   workerTelemetryConfig,
   workersTestTelemetry,
 } from "#testing/workers-telemetry.test-support";
-import { instrumentApp } from "#telemetry/http";
-import { traceSubmitOrder } from "#telemetry/decorators/submit-order";
-import { traceVerifyOrder } from "#telemetry/decorators/verify-order";
-import { SUBMISSIONS_METRIC } from "#telemetry/telemetry";
-import { failureReason, postOtlp } from "#telemetry/workers/otlp-exporter";
-import {
-  RequestFlushSpanProcessor,
-  WORKERS_SPAN_LIMITS,
-  createWorkersTelemetry,
-} from "#telemetry/workers/sdk";
 
 const DURATION = "http.server.request.duration";
 const TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";

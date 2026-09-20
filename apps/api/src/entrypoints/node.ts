@@ -12,8 +12,9 @@
  * @module
  */
 
-import { serve } from "@hono/node-server";
 import { pathToFileURL } from "node:url";
+
+import { serve } from "@hono/node-server";
 
 import {
   type ComposedApplication,

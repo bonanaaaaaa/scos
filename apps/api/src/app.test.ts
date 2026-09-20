@@ -9,8 +9,6 @@ import {
 import { describe, expect, test, vi } from "vitest";
 
 import { createApp } from "#app";
-import { API_PREFIX } from "#http/route-contract";
-import { routes } from "#routes";
 import { createHealthApp } from "#endpoints/health/app";
 import { createSubmitOrderApp } from "#endpoints/submit-order/app";
 import { rejectedSubmissionResponseSchema } from "#endpoints/submit-order/contract";
@@ -19,6 +17,8 @@ import { createVerifyOrderApp } from "#endpoints/verify-order/app";
 import { errorResponseSchema } from "#http/errors";
 import { defaultLogger } from "#http/logger";
 import { MESSAGES } from "#http/messages";
+import { API_PREFIX } from "#http/route-contract";
+import { routes } from "#routes";
 import {
   acceptedOrder,
   fakeLogger,

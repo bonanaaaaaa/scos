@@ -3,10 +3,10 @@ import { resolver } from "hono-openapi";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
-import { generateOpenApiDocument } from "#openapi/document";
 import { SPEC_CONVERSION, describeContract } from "#http/describe-route";
 import { jsonBody } from "#http/json";
 import type { RouteContract } from "#http/route-contract";
+import { generateOpenApiDocument } from "#openapi/document";
 
 /** A transform's output and a bigint have no JSON Schema. */
 const unrepresentableOutput = z.object({ total: z.string().transform((value) => value.length) });

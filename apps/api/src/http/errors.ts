@@ -5,8 +5,8 @@
  * @module
  */
 
-import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { SubmitOrderIssue } from "@scos/core";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { Context } from "hono";
 import { z } from "zod";
 

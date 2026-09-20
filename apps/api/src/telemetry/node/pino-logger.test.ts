@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import { type StructuredLogger, createConsoleJsonLogger } from "#http/logger";
-import { describeLoggerContract } from "#testing/logger-contract.test-support";
-import { captureLogs } from "#testing/telemetry.test-support";
 import { createPinoLogger } from "#telemetry/node/pino-logger";
 import { registerLogCorrelation } from "#telemetry/node/sdk";
+import { describeLoggerContract } from "#testing/logger-contract.test-support";
+import { captureLogs } from "#testing/telemetry.test-support";
 
 const base = {
   "service.name": "scos-api",

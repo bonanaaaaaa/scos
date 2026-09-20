@@ -19,6 +19,7 @@
  */
 
 import { connect } from "node:net";
+
 import type { TestProject } from "vitest/node";
 
 import { type ApiProcess, spawnApi } from "#test/support/api-process";

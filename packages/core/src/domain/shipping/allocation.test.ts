@@ -3,7 +3,6 @@ import { describe, expect, test } from "vitest";
 import type { Destination } from "#domain/shared/destination";
 import { DomainError } from "#domain/shared/errors";
 import type { Quantity } from "#domain/shared/quantity";
-
 import { type WarehouseStock, allocateNearestFirst } from "#domain/shipping/allocation";
 
 const destination = { latitude: 0, longitude: 0 } as Destination;

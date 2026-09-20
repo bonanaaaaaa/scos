@@ -165,6 +165,12 @@ rules below. Tool configuration and build scripts (`vitest.*.mjs`,
 `*.config.mjs`, `build.mjs`) are exempt: their tool loads them by path, outside
 the module graph, and they address their siblings relatively.
 
+Import order is part of the format rather than a review topic: Oxfmt sorts
+every import list (`sortImports` in `.oxfmtrc.json`) into Node built-ins,
+then packages, then this package's own `#...` modules, each group alphabetical
+and separated by a blank line. Side-effect imports keep their position, because
+for them the order is the meaning.
+
 What this buys us: a specifier reads the same in every file, so it says where
 code lives rather than how far away it is; moving a file changes only its own
 path and never the `../../..` chains of the files that import it; and nothing

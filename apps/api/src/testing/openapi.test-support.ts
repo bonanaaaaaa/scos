@@ -3,8 +3,8 @@
  * Schema 2020-12, the OpenAPI 3.1 dialect), independently of Zod.
  */
 
-import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
 import addFormatsModule from "ajv-formats";
+import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
 
 import type { JsonObject, OpenApiDocument } from "#openapi/document";
 

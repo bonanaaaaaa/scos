@@ -1,8 +1,8 @@
 import SwaggerParser from "@apidevtools/swagger-parser";
 import { MAX_QUANTITY } from "@scos/core";
+import { resolver } from "hono-openapi";
 import type { OpenAPIV3_1 } from "openapi-types";
 import { describe, expect, test, vi } from "vitest";
-import { resolver } from "hono-openapi";
 
 import { SUBMISSION_ID_DESCRIPTION } from "#endpoints/submit-order/contract";
 import {
@@ -12,10 +12,10 @@ import {
   notFoundResponse,
 } from "#http/route-contract";
 import { warehouseIdSchema } from "#http/schemas";
-import { routes } from "#routes";
-import { ajvAccepts, specValidator } from "#testing/openapi.test-support";
 import type { JsonObject } from "#openapi/document";
 import { buildOpenApiDocument, renderOpenApiDocument } from "#openapi/offline";
+import { routes } from "#routes";
+import { ajvAccepts, specValidator } from "#testing/openapi.test-support";
 
 const document = await buildOpenApiDocument();
 const schemas = document.components.schemas;

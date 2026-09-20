@@ -4,7 +4,6 @@ import { describe, expect, test } from "vitest";
 
 import { parseConfig, parseDatabaseConfig, parseWorkerConfig } from "#config";
 import { parseHealthConfig } from "#endpoints/health/config";
-import { DEFAULT_TELEMETRY_CONFIG } from "#testing/telemetry.test-support";
 import {
   DEFAULT_WORKERS_OTLP_TIMEOUT_MS,
   PACKAGE_VERSION,
@@ -12,6 +11,7 @@ import {
   parseOtlpHeaders,
 } from "#telemetry/config";
 import { SEMCONV_VERSION } from "#telemetry/telemetry";
+import { DEFAULT_TELEMETRY_CONFIG } from "#testing/telemetry.test-support";
 
 const databaseUrl = "postgresql://scos:secret-password@localhost:5432/scos";
 

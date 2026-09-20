@@ -13,7 +13,6 @@ import type { MiddlewareHandler } from "hono";
 import { validator } from "hono-openapi";
 
 import { SPEC_CONVERSION } from "#http/describe-route";
-
 import { invalidRequest, toIssues } from "#http/errors";
 import { MESSAGES } from "#http/messages";
 

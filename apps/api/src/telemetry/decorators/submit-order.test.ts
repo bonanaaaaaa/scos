@@ -1,13 +1,13 @@
-import { type SubmissionStore, TransientSubmissionError, createSubmitOrder } from "@scos/core";
 import { SpanStatusCode } from "@opentelemetry/api";
+import { type SubmissionStore, TransientSubmissionError, createSubmitOrder } from "@scos/core";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { submitBody } from "#testing/fixtures.test-support";
-import { memorySubmissionStore } from "#testing/telemetry-contract.test-support";
-import { attributesOf, testTelemetry } from "#testing/telemetry.test-support";
 import { traceSubmissionStore } from "#telemetry/decorators/submission-store";
 import { traceSubmitOrder } from "#telemetry/decorators/submit-order";
 import { SUBMISSIONS_METRIC } from "#telemetry/telemetry";
+import { submitBody } from "#testing/fixtures.test-support";
+import { memorySubmissionStore } from "#testing/telemetry-contract.test-support";
+import { attributesOf, testTelemetry } from "#testing/telemetry.test-support";
 
 let harness = testTelemetry();
 

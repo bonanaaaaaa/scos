@@ -14,10 +14,10 @@ import {
   composeOverDatabase,
   withLogger,
 } from "#composition/database";
+import { createVerifyOrderApp } from "#endpoints/verify-order/app";
 import { traceInventoryReader } from "#telemetry/decorators/inventory-reader";
 import { traceVerifyOrder } from "#telemetry/decorators/verify-order";
 import type { Telemetry } from "#telemetry/telemetry";
-import { createVerifyOrderApp } from "#endpoints/verify-order/app";
 
 export type VerifyOrderCompositionOptions = DatabaseCompositionOptions;
 
