@@ -8,8 +8,9 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "oxlint --deny-warnings test vitest.config.mjs",
-    "test:integration": "vitest run"
+    "lint": "oxlint --deny-warnings test vitest.config.mjs vitest.hosted.config.mjs",
+    "test:integration": "vitest run",
+    "test:hosted": "vitest run --config vitest.hosted.config.mjs"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.0.0",

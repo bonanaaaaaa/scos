@@ -57,8 +57,10 @@ the readiness check is a log line.
 > you name it: set `SCOS_CONFIRM_ACCEPTANCE_RESET` to that database's name, the
 > same way `SCOS_CONFIRM_DATABASE_RESET` guards `pnpm db:reset`. Setting
 > `API_BASE_URL` alone is not consent to lose the data behind it. It is for a
-> disposable database only — the read-only variant for a hosted environment
-> whose data must survive is issue #33.
+> disposable database only. For a hosted environment whose data must survive,
+> use the read-only hosted suite in [`test/hosted/`](test/hosted/) instead
+> (`pnpm --filter @scos/api-acceptance run test:hosted`, driven by
+> `HOSTED_BASE_URL`); it never connects to a database and never resets stock.
 
 ### Tests that need a different server
 
