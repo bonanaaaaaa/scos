@@ -9,7 +9,7 @@
  * @module
  */
 
-import { expect } from "vitest";
+import { expect } from "@playwright/test";
 
 /** Anything the suite can send requests to: the shared served API or an extra process. */
 export interface ApiUnderTest {

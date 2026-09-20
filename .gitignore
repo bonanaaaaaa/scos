@@ -30,3 +30,7 @@ packages/persistence/src/generated/
 tfplan
 crash.log
 crash.*.log
+
+# Playwright reports and artifacts (apps/api-acceptance)
+test-results/
+playwright-report/

@@ -14,7 +14,8 @@ Follow the [evaluator walkthrough](../README.md#evaluator-walkthrough) for insta
 ```sh
 pnpm test                # unit suites with 80% coverage gates, plus the Worker in workerd
 export DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test
-pnpm test:integration    # persistence, full-stack API, QA API, OpenAPI conformance, Worker over Hyperdrive
+pnpm test:integration    # persistence, full-stack API, Worker over Hyperdrive (developer tests, Vitest)
+pnpm test:acceptance     # QA black-box tests of the served API, incl. OpenAPI conformance (Playwright)
 ```
 
 The integration suites need `DATABASE_TEST_URL`. Without it, or without a reachable test database, they fail rather than skip: [`test/support/database.ts`][db-support] throws for the developer suite and [`environment.ts`][qa-environment] for the acceptance suite, and CI rejects `.skip`, `.skipIf`, `.runIf`, `.todo` and `.only` in integration suites ([`ci.yml`][ci], step "Reject skipped or focused integration tests").

@@ -22,11 +22,11 @@
 import { readFile } from "node:fs/promises";
 
 import SwaggerParser from "@apidevtools/swagger-parser";
+import { expect, test } from "@playwright/test";
 import addFormatsModule from "ajv-formats";
-import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
+import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import type { OpenAPI } from "openapi-types";
 import type { Pool } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
 import { type ApiProcess, spawnApi, stopAllApiProcesses } from "#test/support/api-process";
 import {
@@ -37,6 +37,7 @@ import {
   setStock,
   stockById,
 } from "#test/support/database";
+import { formatTitle } from "#test/support/each";
 import { openApiArtifact } from "#test/support/environment";
 import {
   type ApiUnderTest,
@@ -203,13 +204,13 @@ const api = sharedApi();
 let pool: Pool;
 let spec: ServedSpec;
 
-beforeAll(async () => {
+test.beforeAll(async () => {
   pool = openPool(acceptanceDatabaseUrl());
   await resetDatabase(pool);
   spec = await loadServedSpec(api);
 });
 
-afterAll(async () => {
+test.afterAll(async () => {
   // No API process this file started may outlive the run.
   await stopAllApiProcesses();
   await pool.end();
@@ -218,7 +219,7 @@ afterAll(async () => {
 const verify = (body: unknown) => postJson(api, VERIFY, body);
 const submit = (body: unknown) => postJson(api, SUBMIT, body);
 
-describe("GET /openapi.json", () => {
+test.describe("GET /openapi.json", () => {
   test("200 JSON, OpenAPI 3.1.x, valid per swagger-parser", async () => {
     const response = await get(api, "/openapi.json");
     const document = expectJson(response, 200) as JsonRecord;
@@ -268,8 +269,8 @@ describe("GET /openapi.json", () => {
   });
 });
 
-describe("response conformance: real responses against the served schemas", () => {
-  beforeEach(async () => {
+test.describe("response conformance: real responses against the served schemas", () => {
+  test.beforeEach(async () => {
     await resetDatabase(pool);
   });
 
@@ -305,7 +306,7 @@ describe("response conformance: real responses against the served schemas", () =
     expect(far).toMatchObject({ valid: false, reason: "SHIPPING_EXCEEDS_LIMIT" });
   });
 
-  test.each([
+  for (const testCase of [
     ["malformed JSON", { body: '{"quantity": 1,' }],
     [
       "wrong content type",
@@ -317,12 +318,15 @@ describe("response conformance: real responses against the served schemas", () =
       "an out-of-range value",
       { body: JSON.stringify({ quantity: 1, latitude: 90.5, longitude: 0 }) },
     ],
-  ] as const)("verify 400: %s", async (_case, raw) => {
-    const response = await request(api, VERIFY, raw);
-    expect(response.status).toBe(400);
-    expectConforms(spec, VERIFY, "post", response);
-    expectErrorEnvelope(response, 400, "INVALID_REQUEST");
-  });
+  ] as const) {
+    const [_case, raw] = testCase;
+    test(formatTitle("verify 400: %s", testCase), async () => {
+      const response = await request(api, VERIFY, raw);
+      expect(response.status).toBe(400);
+      expectConforms(spec, VERIFY, "post", response);
+      expectErrorEnvelope(response, 400, "INVALID_REQUEST");
+    });
+  }
 
   test("submit 201 accepted, then a byte-identical replay with no second deduction", async () => {
     const order = { submissionId: "qa-openapi-accept", quantity: 40, ...MANHATTAN };
@@ -381,7 +385,7 @@ describe("response conformance: real responses against the served schemas", () =
     expectConforms(spec, SUBMIT, "post", retried);
   });
 
-  test.each([
+  for (const testCase of [
     ["malformed JSON", { body: "not json" }],
     ["wrong content type", { body: "{}", contentType: "application/x-www-form-urlencoded" }],
     ["a missing submissionId", { body: JSON.stringify({ quantity: 1, ...AT_PARIS }) }],
@@ -393,16 +397,19 @@ describe("response conformance: real responses against the served schemas", () =
       "an unknown field",
       { body: JSON.stringify({ submissionId: "qa-400", quantity: 1, ...AT_PARIS, x: 1 }) },
     ],
-  ] as const)("submit 400: %s, nothing stored", async (_case, raw) => {
-    const before = await readState(pool);
-    const response = await request(api, SUBMIT, raw);
-    expect(response.status).toBe(400);
-    expectConforms(spec, SUBMIT, "post", response);
-    expectErrorEnvelope(response, 400, "INVALID_REQUEST");
-    expect(await readState(pool)).toStrictEqual(before);
-  });
+  ] as const) {
+    const [_case, raw] = testCase;
+    test(formatTitle("submit 400: %s, nothing stored", testCase), async () => {
+      const before = await readState(pool);
+      const response = await request(api, SUBMIT, raw);
+      expect(response.status).toBe(400);
+      expectConforms(spec, SUBMIT, "post", response);
+      expectErrorEnvelope(response, 400, "INVALID_REQUEST");
+      expect(await readState(pool)).toStrictEqual(before);
+    });
+  }
 
-  test.each([
+  for (const testCase of [
     ["GET", "/"],
     ["GET", "/orders"],
     ["POST", "/orders"],
@@ -411,24 +418,27 @@ describe("response conformance: real responses against the served schemas", () =
     ["POST", HEALTH],
     ["POST", "/openapi.json"],
     ["POST", "/docs"],
-  ])("404 for %s %s matches components.responses.NotFound", async (method, path) => {
-    const hasBody = method === "POST";
-    const response = await request(api, path, {
-      method,
-      contentType: hasBody ? "application/json" : null,
-      ...(hasBody ? { body: "{}" } : {}),
+  ] as const) {
+    const [method, path] = testCase;
+    test(formatTitle("404 for %s %s matches components.responses.NotFound", testCase), async () => {
+      const hasBody = method === "POST";
+      const response = await request(api, path, {
+        method,
+        contentType: hasBody ? "application/json" : null,
+        ...(hasBody ? { body: "{}" } : {}),
+      });
+      expect(response.status).toBe(404);
+      const notFound = dig(spec.resolved, "components", "responses", "NotFound");
+      // Any operation will do as the lookup context: the override supplies the response.
+      expectConforms(spec, HEALTH, "get", response, notFound);
+      expectErrorEnvelope(response, 404, "NOT_FOUND", { issues: "absent" });
     });
-    expect(response.status).toBe(404);
-    const notFound = dig(spec.resolved, "components", "responses", "NotFound");
-    // Any operation will do as the lookup context: the override supplies the response.
-    expectConforms(spec, HEALTH, "get", response, notFound);
-    expectErrorEnvelope(response, 404, "NOT_FOUND", { issues: "absent" });
-  });
+  }
 
-  describe("database unreachable: 500/503 as documented", () => {
+  test.describe("database unreachable: 500/503 as documented", () => {
     let downApi: ApiProcess;
 
-    beforeAll(async () => {
+    test.beforeAll(async () => {
       // A server of its own, from the same built artifact: the shared one must
       // keep its working database. Port 1 refuses connections at once.
       downApi = await spawnApi({
@@ -436,7 +446,7 @@ describe("response conformance: real responses against the served schemas", () =
       });
     });
 
-    afterAll(async () => {
+    test.afterAll(async () => {
       await downApi?.stop();
     });
 
@@ -456,7 +466,7 @@ describe("response conformance: real responses against the served schemas", () =
   });
 });
 
-describe("documented examples are usable against a freshly seeded database", () => {
+test.describe("documented examples are usable against a freshly seeded database", () => {
   interface Example {
     readonly name: string;
     readonly value: unknown;
@@ -504,7 +514,7 @@ describe("documented examples are usable against a freshly seeded database", () 
     return example.response;
   }
 
-  beforeAll(async () => {
+  test.beforeAll(async () => {
     await resetDatabase(pool);
   });
 
@@ -557,8 +567,8 @@ describe("documented examples are usable against a freshly seeded database", () 
   });
 });
 
-describe("request constraints in the spec match the server at the boundaries", () => {
-  beforeAll(async () => {
+test.describe("request constraints in the spec match the server at the boundaries", () => {
+  test.beforeAll(async () => {
     await resetDatabase(pool);
   });
 
@@ -588,18 +598,21 @@ describe("request constraints in the spec match the server at the boundaries", (
     ["longitude -180 - 1 ulp", { ...base, longitude: -180 - ULP_180 }, false],
   ];
 
-  test.each(cases)("verify, %s", async (_case, body, accepted) => {
-    const validate = requestSchema(spec, VERIFY);
-    const specAccepts = validate(body) === true;
-    const response = await verify(body);
-    expect(specAccepts, "spec verdict").toBe(accepted);
-    expect(response.status !== 400, `server verdict (${response.status}): ${response.text}`).toBe(
-      specAccepts,
-    );
-    expectConforms(spec, VERIFY, "post", response);
-  });
+  for (const testCase of cases) {
+    const [_case, body, accepted] = testCase;
+    test(formatTitle("verify, %s", testCase), async () => {
+      const validate = requestSchema(spec, VERIFY);
+      const specAccepts = validate(body) === true;
+      const response = await verify(body);
+      expect(specAccepts, "spec verdict").toBe(accepted);
+      expect(response.status !== 400, `server verdict (${response.status}): ${response.text}`).toBe(
+        specAccepts,
+      );
+      expectConforms(spec, VERIFY, "post", response);
+    });
+  }
 
-  test.each([
+  for (const testCase of [
     ...cases,
     ["submissionId of 1 character", { ...base, submissionId: "a" }, true],
     ["submissionId of 255 characters", { ...base, submissionId: "b".repeat(255) }, true],
@@ -607,20 +620,23 @@ describe("request constraints in the spec match the server at the boundaries", (
     ["empty submissionId", { ...base, submissionId: "" }, false],
     ["submissionId of 256 characters", { ...base, submissionId: "c".repeat(256) }, false],
     ["submissionId of 256 astral code points", { ...base, submissionId: "😀".repeat(256) }, false],
-  ] as [string, JsonRecord, boolean][])("submit, %s", async (name, body, accepted) => {
-    const withKey = { submissionId: `qa-boundary ${name}`, ...body };
-    const validate = requestSchema(spec, SUBMIT);
-    const specAccepts = validate(withKey) === true;
-    const response = await submit(withKey);
-    expect(specAccepts, "spec verdict").toBe(accepted);
-    expect(response.status !== 400, `server verdict (${response.status}): ${response.text}`).toBe(
-      specAccepts,
-    );
-    expectConforms(spec, SUBMIT, "post", response);
-  });
+  ] as [string, JsonRecord, boolean][]) {
+    const [name, body, accepted] = testCase;
+    test(formatTitle("submit, %s", testCase), async () => {
+      const withKey = { submissionId: `qa-boundary ${name}`, ...body };
+      const validate = requestSchema(spec, SUBMIT);
+      const specAccepts = validate(withKey) === true;
+      const response = await submit(withKey);
+      expect(specAccepts, "spec verdict").toBe(accepted);
+      expect(response.status !== 400, `server verdict (${response.status}): ${response.text}`).toBe(
+        specAccepts,
+      );
+      expectConforms(spec, SUBMIT, "post", response);
+    });
+  }
 });
 
-describe("GET /docs", () => {
+test.describe("GET /docs", () => {
   test("200 text/html booting Swagger UI on /openapi.json", async () => {
     const response = await get(api, "/docs");
     expect(response.status).toBe(200);

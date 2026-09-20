@@ -20,8 +20,8 @@
  * @module
  */
 
+import { expect, test } from "@playwright/test";
 import type { Pool } from "pg";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
 import { type ApiProcess, spawnApi, stopAllApiProcesses } from "#test/support/api-process";
 import {
@@ -57,16 +57,16 @@ const REQUEST_DURATION = "http.server.request.duration";
 let databaseUrl: string;
 let pool: Pool;
 
-beforeAll(() => {
+test.beforeAll(() => {
   databaseUrl = acceptanceDatabaseUrl();
   pool = openPool(databaseUrl);
 });
 
-beforeEach(async () => {
+test.beforeEach(async () => {
   await resetDatabase(pool);
 });
 
-afterAll(async () => {
+test.afterAll(async () => {
   await pool?.end();
   // No process this file started may survive the run.
   await stopAllApiProcesses();
@@ -84,7 +84,7 @@ interface TelemetryApi {
 /** Everything started by a test, stopped even when the test failed. */
 const started: TelemetryApi[] = [];
 
-afterEach(async () => {
+test.afterEach(async () => {
   // A collector is an open HTTP server: it must be closed even when stopping
   // the process it served rejects, or the worker's event loop stays alive.
   const results = await Promise.allSettled(
@@ -424,7 +424,7 @@ function expectNoRequestData(observed: Observed, secrets: readonly string[]): vo
 // Scenarios
 // ---------------------------------------------------------------------------
 
-describe("W3C trace context through the served API", () => {
+test.describe("W3C trace context through the served API", () => {
   test("an inbound traceparent is continued by the SERVER span and carried by the request log", async () => {
     const telemetry = await startTelemetryApi(databaseUrl);
     const context = caller();
@@ -506,7 +506,7 @@ describe("W3C trace context through the served API", () => {
   });
 });
 
-describe("submission outcomes, correlation and sanitizing through the served API", () => {
+test.describe("submission outcomes, correlation and sanitizing through the served API", () => {
   test("201, 422, replay and 400: correlated, counted with bounded attributes, no request data", async () => {
     const telemetry = await startTelemetryApi(databaseUrl);
     const accepted = { submissionId: "qa-tel-accept-4d1c", quantity: 30, ...MANHATTAN };
@@ -601,7 +601,7 @@ describe("submission outcomes, correlation and sanitizing through the served API
   });
 });
 
-describe("an unexpected error through the served API", () => {
+test.describe("an unexpected error through the served API", () => {
   const password = "qa-tel-secret-pw";
   const user = "qa_tel_user";
   // Port 1 is privileged and not listening: connections are refused at once.
@@ -638,7 +638,7 @@ describe("an unexpected error through the served API", () => {
       const errors = logsOf(observed, context.traceId).filter((record) => record.level === "error");
       expect(errors.length).toBeGreaterThanOrEqual(1);
       for (const record of errors) {
-        expect(record.span_id).toBeTypeOf("string");
+        expect(typeof record.span_id).toBe("string");
       }
     }
 

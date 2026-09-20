@@ -24,10 +24,50 @@ tiers, allocation order and shipping limit come from an oracle written from the
 `@scos/core`. If the product and the oracle disagree, the suite fails — which
 is the point.
 
+## The runner
+
+Playwright Test, over HTTP only. **No browser is involved and none needs to be
+downloaded**: nothing here asks for Playwright's `page`, `browser` or `context`
+fixtures, so `playwright install` is not part of this app's setup. `pnpm
+install` is enough — pnpm does not run a dependency's build scripts unless it
+is listed in `allowBuilds` (`pnpm-workspace.yaml`), and `playwright` is not
+listed. To be explicit about it anywhere else, `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`
+says the same thing to the package directly.
+
+`playwright.config.ts` declares two projects, and the separation between them
+is a safety property rather than a convenience:
+
+| Project      | Files                          | Global setup | Retries | Target                                         |
+| ------------ | ------------------------------ | ------------ | ------- | ---------------------------------------------- |
+| `acceptance` | `test/*.acceptance.test.ts`    | yes          | 0       | a server and database this run provisions      |
+| `hosted`     | `test/hosted/*.hosted.test.ts` | **no**       | 1       | the live deployment named by `HOSTED_BASE_URL` |
+
+The acceptance project has **no retries on purpose**: it asserts on stock
+deltas and on "nothing was stored", and a silent retry could hide a real
+oversell behind a green run. The hosted project retries once, because every
+assertion is a round trip to a remote Worker; that retry costs no stock,
+because a run's submissionIds are stable (`SCOS_HOSTED_RUN_ID`), so a repeated
+submission is a replay of the same Order rather than a second one.
+
+Everything runs in a single worker (`workers: 1`): the acceptance run shares
+one served API and one database, and the hosted scenarios observe one
+deployment in order.
+
+Reports are written under `test-results/<project>/`, which is gitignored:
+`junit.xml` for CI, `html/` to browse a failure with its full context, and
+`artifacts/` for per-test attachments. Progress goes to the `list` reporter
+locally and to the `github` reporter on CI.
+
 ## How it runs the API
 
-A Vitest global setup (`test/global-setup.ts`) prepares the whole run before
-any test executes, in one of two modes.
+A Playwright global setup (`test/global-setup.ts`) prepares the whole run
+before any test executes, in one of two modes. It runs in Playwright's main
+process and hands the base URL, the database URL and the mode to the test
+files through environment variables of this app's own
+(`test/support/shared-api.ts`); a worker starts after the setup has resolved
+and inherits them, which is what lets a test file name the API under test at
+module scope. It is wired only when the `acceptance` project is selected, so
+`run test:hosted` loads no global setup at all.
 
 ### Default: the suite starts the server
 
@@ -77,20 +117,32 @@ built artifact, in both modes:
 Telemetry is asserted **after the process has stopped**, because shutdown
 flushes batched spans and metrics.
 
-Test files run one at a time (`fileParallelism: false`) against the shared
-server and database, and any test that needs controlled stock resets it
-**through the database**, never through the API.
+Test files run one at a time (the acceptance project runs in a single worker)
+against the shared server and database, and any test that needs controlled
+stock resets it **through the database**, never through the API.
 
 ## Running it
 
 ```bash
 # Default: the suite starts and stops its own server.
 DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
-  pnpm exec turbo run test:integration --filter=@scos/api-acceptance
+  pnpm exec turbo run test:acceptance --filter=@scos/api-acceptance
 
 # The same thing, from the repository root.
 DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
   pnpm test:acceptance
+```
+
+The task is called **`test:acceptance`**, not `test:integration`: `apps/api`
+and `packages/persistence` own `test:integration`, which is the developers'
+full-stack and database suites. This one is the independent acceptance run,
+and is named for what it is.
+
+Listing what would run needs no database and starts nothing:
+
+```bash
+pnpm --filter @scos/api-acceptance exec playwright test --project=acceptance --list
+pnpm --filter @scos/api-acceptance exec playwright test --project=hosted --list
 ```
 
 Against a server you started yourself:
@@ -104,7 +156,7 @@ DATABASE_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test pnpm api:
 API_BASE_URL=http://localhost:3000 \
 DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
 SCOS_CONFIRM_ACCEPTANCE_RESET=scos_test \
-  pnpm exec turbo run test:integration --filter=@scos/api-acceptance
+  pnpm exec turbo run test:acceptance --filter=@scos/api-acceptance
 ```
 
 Turbo builds `@scos/api` before this suite runs (`turbo.json` declares
@@ -114,8 +166,11 @@ on `@scos/api`).
 ## It fails; it never skips
 
 `DATABASE_TEST_URL` is required. Without it the run fails rather than quietly
-passing, and CI rejects the Vitest modifiers that skip, defer or focus tests in
-the integration trees. Each of these produces a message that says what to do:
+passing, and CI rejects the modifiers that skip, defer or focus tests in the
+integration trees — `.skip`, `.skipIf`, `.runIf`, `.todo` and `.only`.
+Playwright adds two more of its own, `test.fixme()` and `test.fail()`; neither
+appears anywhere in this app, and `forbidOnly` in `playwright.config.ts` fails
+a run that smuggles in a focused test. Each of these produces a message that says what to do:
 
 | Situation                                         | What you see                                                                                                                        |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -141,6 +196,7 @@ test/
     http.ts                requests and the documented error envelope
     prd.ts                 the PRD warehouse table and contract constants
     oracle.ts              the independent expectations, written from the PRD
+    each.ts                the titles of table-driven tests (Playwright has no test.each)
     logs.ts                the server's Pino JSON records
     otlp/                  a fake OTLP collector and a minimal protobuf decoder
 ```

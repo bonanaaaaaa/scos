@@ -48,10 +48,10 @@
 import { randomUUID } from "node:crypto";
 
 import SwaggerParser from "@apidevtools/swagger-parser";
+import { expect } from "@playwright/test";
 import addFormatsModule from "ajv-formats";
-import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
+import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import type { OpenAPI } from "openapi-types";
-import { expect } from "vitest";
 
 import { type ApiUnderTest, type HttpResult, get, postJson } from "#test/support/http";
 import { afterDeducting } from "#test/support/oracle";
@@ -116,12 +116,23 @@ export function hostedApi(): ApiUnderTest {
 }
 
 /**
+ * One identifier for this whole run, so a submissionId is fresh between runs
+ * but **stable within one** — including across a worker that Playwright starts
+ * for a retry, which is a new process that would otherwise mint a new id and
+ * so buy a second Order out of a finite, never-replenished inventory.
+ * ../../playwright.config.ts seeds it in the main process; every worker
+ * inherits it through the environment.
+ */
+const RUN_ID = process.env.SCOS_HOSTED_RUN_ID ?? randomUUID();
+
+/**
  * A submissionId no earlier run can have used, so re-running this suite never
  * collides with its own history. Only a scenario that deliberately tests replay
- * or conflict reuses one.
+ * or conflict reuses one — and a retry of this run reuses the same one, which
+ * makes it a replay rather than a second Order.
  */
 export function freshSubmissionId(label: string): string {
-  return `qa-hosted-${label}-${randomUUID()}`;
+  return `qa-hosted-${label}-${RUN_ID}`;
 }
 
 // ---------------------------------------------------------------------------
