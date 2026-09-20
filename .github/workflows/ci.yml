@@ -142,20 +142,20 @@ jobs:
         run: |
           set +e
           grep -rnE --include='*.ts' '\.(skip|skipIf|runIf|todo|only)\b' \
-            apps/api/test packages/persistence/test
+            apps/api/test apps/api-acceptance/test packages/persistence/test
           status=$?
           set -e
           if [ "$status" -ne 1 ]; then
             echo "::error::Integration tests must not use .skip, .skipIf, .runIf, .todo or .only (grep exit $status)."
             exit 1
           fi
-      - name: Run persistence integration, API acceptance, OpenAPI conformance and Worker (workerd) tests
+      - name: Run persistence integration, API integration, API acceptance and Worker (workerd) tests
         run: pnpm exec turbo run test:integration
       - name: Check the generated OpenAPI specification is not committed
         # test:integration depends on build, which writes the specification.
         # It is a build artifact; the served /openapi.json equality, document
         # validity and response conformance are checked by
-        # apps/api/test/api/openapi.integration.test.ts above. dist/ is
+        # apps/api-acceptance/test/openapi.acceptance.test.ts above. dist/ is
         # ignored, so the tracking check guards against a forced `git add -f`.
         run: |
           test -s apps/api/dist/openapi.json || {

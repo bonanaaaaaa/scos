@@ -47,10 +47,13 @@ pnpm api:start
    pnpm build && pnpm typecheck && pnpm lint && pnpm format:check
    pnpm test               # unit tests with coverage gates, and the Worker in workerd
    pnpm test:integration   # real PostgreSQL via DATABASE_TEST_URL: persistence,
-                           # full-stack API acceptance, OpenAPI conformance, Worker
+                           # the full-stack API developer suite, the QA acceptance
+                           # suite against the served API, and the Worker
    ```
 
    The integration suites fail, never skip, when `DATABASE_TEST_URL` is unset or the test database is unreachable.
+
+   Two suites cover the API, and the split is deliberate. `apps/api` holds the developer suite, which composes the application in the test process. [`apps/api-acceptance`](apps/api-acceptance/README.md) holds the QA-owned acceptance suite, which never imports API source: it starts the built artifact as a real server and talks to it only over HTTP. Run it alone with `pnpm test:acceptance`, or point it at a server you started yourself with `API_BASE_URL`. That mode migrates, seeds and resets whatever database `DATABASE_TEST_URL` names, so it refuses to run until `SCOS_CONFIRM_ACCEPTANCE_RESET` names that database too.
 
 10. Tear down with Ctrl+C for the API, then `docker compose down` (see [Stopping and removing local data](#stopping-and-removing-local-data) to delete the development data too).
 
@@ -306,8 +309,8 @@ The workflow exposes these stable check names:
 - `Workspace checks`: frozen install followed by separate Turbo build, typecheck, Oxlint, Oxfmt, and test steps
 - `Coverage comment`: aggregate Vitest coverage reporting on same-repository pull requests
 - `PostgreSQL integration`: a disposable PostgreSQL 18 service and these steps:
-  - a guard that fails if any integration test under `apps/api/test` or `packages/persistence/test` uses `.skip`, `.skipIf`, `.runIf`, `.todo` or `.only`;
-  - the uncached Turbo `test:integration` task, which builds first and then runs the persistence integration tests in `packages/persistence` (connectivity, migrations, schema, seed, inventory reader), the full-stack ordering and API acceptance tests through the composed API in `apps/api`, the OpenAPI conformance test (the served document is a valid OpenAPI 3.1 document, real responses conform to its schemas, and `dist/openapi.json` equals the served `/openapi.json`), and the Worker suite in workerd against the same database;
+  - a guard that fails if any integration test under `apps/api/test`, `apps/api-acceptance/test` or `packages/persistence/test` uses `.skip`, `.skipIf`, `.runIf`, `.todo` or `.only`;
+  - the uncached Turbo `test:integration` task, which builds first and then runs the persistence integration tests in `packages/persistence` (connectivity, migrations, schema, seed, inventory reader), the full-stack ordering tests through the composed API in `apps/api`, the QA acceptance suite in `apps/api-acceptance` against the built API served as a real process (including the OpenAPI conformance tests: the served document is a valid OpenAPI 3.1 document, real responses conform to its schemas, and `dist/openapi.json` equals the served `/openapi.json`), and the Worker suite in workerd against the same database;
   - a check that the build generated `apps/api/dist/openapi.json` and that it is not tracked by Git (the specification is generated, never committed), and an upload of it as the `openapi-specification` artifact, kept for 7 days
 - `PR title`: Conventional Commit title validation on opened, edited, reopened, and synchronized pull requests
 - `Code scanner`: verified-secret scanning across the pull request's explicit base and head revisions

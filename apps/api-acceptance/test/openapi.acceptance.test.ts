@@ -9,6 +9,14 @@
  * responses are then validated against the schema the document declares for
  * their path, method and status, and the documented request examples are sent
  * to the server to show they produce the documented outcome.
+ *
+ * This app never imports API source, so the served document is pinned to the
+ * built `apps/api/dist/openapi.json` artifact — the file a deployment ships.
+ * The developer suite owns the matching "served document is
+ * `renderOpenApiDocument()`" and "standalone endpoint apps serve no
+ * documentation" checks, in `apps/api/src/openapi/docs-app.test.ts`.
+ *
+ * @module
  */
 
 import { readFile } from "node:fs/promises";
@@ -17,38 +25,39 @@ import SwaggerParser from "@apidevtools/swagger-parser";
 import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
 import addFormatsModule from "ajv-formats";
 import type { OpenAPI } from "openapi-types";
+import type { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { createHealthApp } from "../../src/endpoints/health/app";
-import { createSubmitOrderApp } from "../../src/endpoints/submit-order/app";
-import { createVerifyOrderApp } from "../../src/endpoints/verify-order/app";
-import { renderOpenApiDocument } from "../../src/openapi/offline";
+import { type ApiProcess, spawnApi, stopAllApiProcesses } from "./support/api-process";
 import {
-  type TestDatabase,
-  createTestDatabase,
+  openPool,
   readState,
+  resetDatabase,
   setAllStock,
   setStock,
   stockById,
-} from "../support/database";
+} from "./support/database";
+import { openApiArtifact } from "./support/environment";
+import {
+  type ApiUnderTest,
+  type HttpResult,
+  expectErrorEnvelope,
+  expectJson,
+  get,
+  postJson,
+  request,
+} from "./support/http";
 import {
   AT_PARIS,
   FAR_AWAY,
   MANHATTAN,
   MAX_QUANTITY,
   ORDER_NUMBER,
-  type HttpResult,
-  type RunningApi,
   TOTAL_STOCK,
   WAREHOUSES,
-  expectErrorEnvelope,
-  expectJson,
-  get,
-  postJson,
-  request,
-  startApi,
   warehouse,
-} from "./support";
+} from "./support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
 
 // ajv-formats is CommonJS; its default export arrives wrapped under ESM.
 const addFormats = ((addFormatsModule as unknown as { default?: unknown }).default ??
@@ -96,8 +105,8 @@ interface ServedSpec {
   compile(schema: JsonRecord): ValidateFunction;
 }
 
-async function loadServedSpec(api: RunningApi): Promise<ServedSpec> {
-  const response = await get(api, "/openapi.json");
+async function loadServedSpec(target: ApiUnderTest): Promise<ServedSpec> {
+  const response = await get(target, "/openapi.json");
   expect(response.status, response.text).toBe(200);
   const raw = response.json() as JsonRecord;
   const resolved = (await SwaggerParser.dereference(
@@ -190,20 +199,20 @@ function expectConforms(
 // Suite
 // ---------------------------------------------------------------------------
 
-let db: TestDatabase;
-let api: RunningApi;
+const api = sharedApi();
+let pool: Pool;
 let spec: ServedSpec;
 
 beforeAll(async () => {
-  db = await createTestDatabase();
-  await db.reset();
-  api = await startApi(db.url);
+  pool = openPool(acceptanceDatabaseUrl());
+  await resetDatabase(pool);
   spec = await loadServedSpec(api);
 });
 
 afterAll(async () => {
-  await api?.stop();
-  await db?.drop();
+  // No API process this file started may outlive the run.
+  await stopAllApiProcesses();
+  await pool.end();
 });
 
 const verify = (body: unknown) => postJson(api, VERIFY, body);
@@ -220,14 +229,10 @@ describe("GET /openapi.json", () => {
     ).resolves.toBeDefined();
   });
 
-  test("is exactly the offline-generated export", async () => {
-    const served = await get(api, "/openapi.json");
-    expect(served.text).toBe(await renderOpenApiDocument());
-  });
-
   test("is exactly the build artifact dist/openapi.json", async () => {
-    // turbo's test:integration depends on build, which writes this file.
-    const artifact = await readFile(new URL("../../dist/openapi.json", import.meta.url), "utf8");
+    // The global setup refuses to run without this file, which `pnpm --filter
+    // @scos/api build` writes; it is the artifact a deployment ships.
+    const artifact = await readFile(openApiArtifact, "utf8");
     const served = await get(api, "/openapi.json");
     expect(served.text).toBe(artifact);
   });
@@ -265,7 +270,7 @@ describe("GET /openapi.json", () => {
 
 describe("response conformance: real responses against the served schemas", () => {
   beforeEach(async () => {
-    await db.reset();
+    await resetDatabase(pool);
   });
 
   test("health 200", async () => {
@@ -324,15 +329,15 @@ describe("response conformance: real responses against the served schemas", () =
     const first = await submit(order);
     expect(first.status, first.text).toBe(201);
     expectConforms(spec, SUBMIT, "post", first);
-    const afterFirst = await stockById(db.pool);
+    const afterFirst = await stockById(pool);
     expect(afterFirst[warehouse("New York").id]).toBe(578 - 40);
-    const stateAfterFirst = await readState(db.pool);
+    const stateAfterFirst = await readState(pool);
 
     const replay = await submit(order);
     expect(replay.status, replay.text).toBe(201);
     expectConforms(spec, SUBMIT, "post", replay);
     expect(replay.text).toBe(first.text);
-    expect(await readState(db.pool)).toStrictEqual(stateAfterFirst);
+    expect(await readState(pool)).toStrictEqual(stateAfterFirst);
   });
 
   test("submit 409: the same submissionId with a different quantity", async () => {
@@ -346,7 +351,7 @@ describe("response conformance: real responses against the served schemas", () =
 
   test("submit 422 INSUFFICIENT_STOCK, then the same request is re-evaluated after restocking", async () => {
     // Only 3 units left anywhere, all in Paris.
-    await setAllStock(db.pool, { [warehouse("Paris").id]: 3 });
+    await setAllStock(pool, { [warehouse("Paris").id]: 3 });
     const order = { submissionId: "qa-openapi-short", quantity: 5, ...AT_PARIS };
     const rejected = await submit(order);
     expect(rejected.status).toBe(422);
@@ -355,7 +360,7 @@ describe("response conformance: real responses against the served schemas", () =
     expect(dig(body, "estimate")).toMatchObject({ shippingCost: null, orderTotal: null });
 
     // Nothing was stored, so the key is free and the identical request is evaluated afresh.
-    await setStock(db.pool, { [warehouse("Paris").id]: 5 });
+    await setStock(pool, { [warehouse("Paris").id]: 5 });
     const retried = await submit(order);
     expect(retried.status, retried.text).toBe(201);
     expectConforms(spec, SUBMIT, "post", retried);
@@ -389,12 +394,12 @@ describe("response conformance: real responses against the served schemas", () =
       { body: JSON.stringify({ submissionId: "qa-400", quantity: 1, ...AT_PARIS, x: 1 }) },
     ],
   ] as const)("submit 400: %s, nothing stored", async (_case, raw) => {
-    const before = await readState(db.pool);
+    const before = await readState(pool);
     const response = await request(api, SUBMIT, raw);
     expect(response.status).toBe(400);
     expectConforms(spec, SUBMIT, "post", response);
     expectErrorEnvelope(response, 400, "INVALID_REQUEST");
-    expect(await readState(db.pool)).toStrictEqual(before);
+    expect(await readState(pool)).toStrictEqual(before);
   });
 
   test.each([
@@ -421,11 +426,14 @@ describe("response conformance: real responses against the served schemas", () =
   });
 
   describe("database unreachable: 500/503 as documented", () => {
-    let downApi: RunningApi;
+    let downApi: ApiProcess;
 
     beforeAll(async () => {
-      // Port 1 refuses connections at once (see routing.integration.test.ts).
-      downApi = await startApi("postgresql://qa:qa@127.0.0.1:1/scos_unreachable");
+      // A server of its own, from the same built artifact: the shared one must
+      // keep its working database. Port 1 refuses connections at once.
+      downApi = await spawnApi({
+        databaseUrl: "postgresql://qa_user:qa-secret-password@127.0.0.1:1/scos_unreachable",
+      });
     });
 
     afterAll(async () => {
@@ -497,7 +505,7 @@ describe("documented examples are usable against a freshly seeded database", () 
   }
 
   beforeAll(async () => {
-    await db.reset();
+    await resetDatabase(pool);
   });
 
   test("the verify examples", async () => {
@@ -514,7 +522,7 @@ describe("documented examples are usable against a freshly seeded database", () 
   });
 
   test("the submit examples, acceptance first so the repeat and conflict follow it", async () => {
-    await db.reset();
+    await resetDatabase(pool);
     const all = new Map(examples(SUBMIT).map((example) => [example.name, example]));
     const order = [
       "accepted",
@@ -532,7 +540,7 @@ describe("documented examples are usable against a freshly seeded database", () 
       const example = all.get(name) as Example;
       const response = await submit(example.value);
       results.set(name, response);
-      stockAfter.set(name, await stockById(db.pool));
+      stockAfter.set(name, await stockById(pool));
       expect(response.status, `${name}: ${response.text}`).toBe(example.status);
       expectConforms(spec, SUBMIT, "post", response);
       expect(response.json(), name).toStrictEqual(expectedBody(example));
@@ -551,7 +559,7 @@ describe("documented examples are usable against a freshly seeded database", () 
 
 describe("request constraints in the spec match the server at the boundaries", () => {
   beforeAll(async () => {
-    await db.reset();
+    await resetDatabase(pool);
   });
 
   const ULP_90 = 2 ** -46;
@@ -632,25 +640,5 @@ describe("GET /docs", () => {
     expect(url).toBe("/openapi.json");
     const loaded = await get(api, url as string);
     expect(loaded.json()).toStrictEqual(spec.raw);
-  });
-
-  test("the standalone endpoint apps do not serve /docs or /openapi.json", async () => {
-    const logger = { error: () => undefined };
-    const neverCalled = async (): Promise<never> => {
-      throw new Error("must not be called");
-    };
-    const standalone = {
-      health: createHealthApp({ logger }),
-      verify: createVerifyOrderApp({ verifyOrder: neverCalled, logger }),
-      submit: createSubmitOrderApp({ submitOrder: neverCalled, logger }),
-    };
-    for (const [name, app] of Object.entries(standalone)) {
-      for (const path of ["/docs", "/openapi.json"]) {
-        const response = await app.request(path);
-        expect(response.status, `${name} ${path}`).toBe(404);
-        const body = (await response.json()) as JsonRecord;
-        expect(dig(body, "error").code, `${name} ${path}`).toBe("NOT_FOUND");
-      }
-    }
   });
 });

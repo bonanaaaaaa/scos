@@ -2,35 +2,40 @@
  * QA API acceptance: unknown routes, and black-box behavior while the
  * database is unreachable (no failure injection: the server is simply pointed
  * at a port that refuses connections).
+ *
+ * The unreachable-database scenario needs a differently configured server, so
+ * it starts its own process from the built artifact instead of using the
+ * shared one — which also keeps it identical when the run is pointed at an
+ * already-running API.
+ *
+ * @module
  */
 
+import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { type TestDatabase, createTestDatabase } from "../support/database";
-import {
-  AT_PARIS,
-  type RunningApi,
-  expectErrorEnvelope,
-  expectJson,
-  get,
-  postJson,
-  request,
-  startApi,
-} from "./support";
+import { type ApiProcess, spawnApi, stopAllApiProcesses } from "./support/api-process";
+import { openPool, resetDatabase } from "./support/database";
+import { expectErrorEnvelope, expectJson, get, postJson, request } from "./support/http";
+import { AT_PARIS } from "./support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
+
+const api = sharedApi();
+
+// Any extra listener a test started, in case an assertion threw before its
+// own cleanup ran.
+afterAll(stopAllApiProcesses);
 
 describe("unknown routes and methods", () => {
-  let db: TestDatabase;
-  let api: RunningApi;
+  let pool: Pool;
 
   beforeAll(async () => {
-    db = await createTestDatabase();
-    await db.reset();
-    api = await startApi(db.url);
+    pool = openPool(acceptanceDatabaseUrl());
+    await resetDatabase(pool);
   });
 
   afterAll(async () => {
-    await api?.stop();
-    await db?.drop();
+    await pool.end();
   });
 
   test.each([
@@ -55,22 +60,22 @@ describe("unknown routes and methods", () => {
 });
 
 describe("database unreachable", () => {
-  let api: RunningApi;
-  let databaseUrl: string;
+  // Port 1 (tcpmux) is privileged and not listening, so connections are refused
+  // at once. An ephemeral "closed" port could be reused by a parallel test file.
+  const databaseUrl = "postgresql://qa_user:qa-secret-password@127.0.0.1:1/scos_unreachable";
+  let unreachable: ApiProcess;
 
   beforeAll(async () => {
-    // Port 1 (tcpmux) is privileged and not listening, so connections are refused
-    // at once. An ephemeral "closed" port could be reused by a parallel test file.
-    databaseUrl = "postgresql://qa_user:qa-secret-password@127.0.0.1:1/scos_unreachable";
-    api = await startApi(databaseUrl);
+    // The server starts: /health does not touch the database.
+    unreachable = await spawnApi({ databaseUrl });
   });
 
   afterAll(async () => {
-    await api?.stop();
+    await unreachable?.stop();
   });
 
   test('GET /health is still 200 {"status":"ok"}', async () => {
-    expect(expectJson(await get(api, "/health"), 200)).toStrictEqual({ status: "ok" });
+    expect(expectJson(await get(unreachable, "/health"), 200)).toStrictEqual({ status: "ok" });
   });
 
   test.each([
@@ -79,7 +84,7 @@ describe("database unreachable", () => {
   ])(
     "POST %s is a 500 or 503 envelope that exposes no internals and never implies acceptance",
     async (path, body) => {
-      const response = await postJson(api, path, body);
+      const response = await postJson(unreachable, path, body);
       expect([500, 503]).toContain(response.status);
       const code = response.status === 503 ? "SERVICE_UNAVAILABLE" : "INTERNAL_ERROR";
       expectErrorEnvelope(response, response.status, code, { issues: "absent" });

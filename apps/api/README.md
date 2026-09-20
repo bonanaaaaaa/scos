@@ -556,6 +556,20 @@ pnpm api:start      # built bundle
 
 ## Tests
 
+Two suites cover this API, and the boundary between them is deliberate.
+
+- **This package holds the developer suite**, owned by the backend developers:
+  the unit tests beside the source, and the full-stack integration tests in
+  `test/*.integration.test.ts`. They import API source and compose the
+  application in the test process, which is what lets them inject failures and
+  inspect internals.
+- **[`apps/api-acceptance`](../api-acceptance/README.md) holds the QA-owned
+  acceptance suite.** It never imports `@scos/api` or `src/`: it starts the
+  built `dist/node.js` as a real server and reaches it only through HTTP, the
+  built `dist/openapi.json`, environment variables and the process's output.
+  Its expectations come from an oracle written from the PRD, not from
+  `@scos/core`.
+
 ```sh
 # Unit tests (no database): contracts, handlers with fake use cases, config,
 # composition, telemetry with in-memory exporters and captured logs, the
@@ -574,6 +588,10 @@ pnpm --filter @scos/api test:workers
 # Worker in workerd against PostgreSQL through its Hyperdrive binding.
 DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
   pnpm exec turbo run test:integration --filter=@scos/api
+
+# The QA acceptance suite against this API, served as a real process.
+DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
+  pnpm exec turbo run test:integration --filter=@scos/api-acceptance
 ```
 
 The integration tests (`test/*.integration.test.ts`) create an isolated,
@@ -587,6 +605,8 @@ real `lock_timeout` retries ending in `503`, and a lost response after commit),
 and the persistence decorator spans and submission counter against the real
 database, including an unreachable collector.
 
-The OpenAPI integration test also compares the served `/openapi.json` with the
-build artifact `dist/openapi.json`, so run it through turbo (which builds
-first) or after `pnpm build`.
+That the served `/openapi.json` equals `renderOpenApiDocument()` is checked by
+the unit test in `src/openapi/docs-app.test.ts`, which is this package's own
+guarantee because it needs the offline renderer. The acceptance suite cannot
+import that renderer, so it pins the served document to the build artifact
+`dist/openapi.json` instead; run it through turbo, which builds first.

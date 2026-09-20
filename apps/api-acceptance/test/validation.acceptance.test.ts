@@ -4,39 +4,42 @@
  * Every malformed request must return `400 INVALID_REQUEST` in the documented
  * envelope, change no row, and consume no submissionId: a following valid
  * submission with the same submissionId must be accepted (201).
+ *
+ * The run shares one served API and one database, so this file returns the
+ * seed state before every test; stock is only ever changed through the
+ * database, never through the API.
+ *
+ * @module
  */
 
+import type { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { type TestDatabase, createTestDatabase, readState } from "../support/database";
+import { openPool, readState, resetDatabase } from "./support/database";
 import {
-  AT_PARIS,
   type HttpResult,
-  MAX_QUANTITY,
   type RawRequest,
-  type RunningApi,
   expectErrorEnvelope,
   expectJson,
-  expectedOrder,
   request,
-  startApi,
-} from "./support";
+} from "./support/http";
+import { expectedOrder } from "./support/oracle";
+import { AT_PARIS, MAX_QUANTITY } from "./support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
 
-let db: TestDatabase;
-let api: RunningApi;
+const api = sharedApi();
+let pool: Pool;
 
 beforeAll(async () => {
-  db = await createTestDatabase();
-  api = await startApi(db.url);
+  pool = openPool(acceptanceDatabaseUrl());
 });
 
 afterAll(async () => {
-  await api?.stop();
-  await db?.drop();
+  await pool.end();
 });
 
 beforeEach(async () => {
-  await db.reset();
+  await resetDatabase(pool);
 });
 
 const json = (value: unknown): RawRequest => ({ body: JSON.stringify(value) });
@@ -191,10 +194,10 @@ async function expectRejectedWithoutEffect(
   raw: RawRequest,
   issues: "present" | "absent",
 ): Promise<HttpResult> {
-  const before = await readState(db.pool);
+  const before = await readState(pool);
   const response = await request(api, path, raw);
   expectErrorEnvelope(response, 400, "INVALID_REQUEST", { issues });
-  expect(await readState(db.pool)).toStrictEqual(before);
+  expect(await readState(pool)).toStrictEqual(before);
   return response;
 }
 
