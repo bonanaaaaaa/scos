@@ -257,19 +257,7 @@ verified from the outside
 ([evidence](docs/hosted-demonstration.md#verification-evidence)). None of what
 is left is unfinished business logic:
 
-- **Account-credentialed checks on the hosted demonstration.** Actual charges,
-  Hyperdrive origin-connection analytics, Workers Logs ingestion, CPU time per
-  request and PlanetScale's `max_connections` could not be read, because the
-  Cloudflare access available here belongs to a different account than the one
-  hosting the demonstration. They are recorded as blocked rather than passed,
-  and listed in full under
-  [What is not verified](docs/hosted-demonstration.md#what-is-not-verified).
 - **The second cloud target, deliberately postponed.** An AWS account issue
   stopped the Lambda track before the deadline
   ([ADR 0005](docs/adr/0005-cloudflare-first-deployment.md)), so its design is
   kept but unbuilt.
-
-With account access in hand, the first thing to close is the billing and
-connection-budget figures: they are what would show whether the arithmetic in
-[the deployment design](docs/cloudflare-deployment-design.md#connection-budget)
-actually holds under Hyperdrive.
