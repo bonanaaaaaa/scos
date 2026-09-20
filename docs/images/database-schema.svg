@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="964" height="620" viewBox="0 0 964 620" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>The SCOS Ordering database schema</title>
+  <desc>Three tables. orders holds one accepted order with its unique order_number and submission_key, the order request, and the commercial facts; it has no subtotal or total columns because those are derived on read. warehouses holds each warehouse's coordinates and current stock. order_allocations is the junction between them, carrying the quantity taken from one warehouse for one order, with a unique pair of order_id and warehouse_id. One order has one or more allocations; one warehouse has zero or more.</desc>
+  <style>
+    .bg { fill: #ffffff; }
+    .gray rect { fill: #F1EFE8; stroke: #5F5E5A; }
+    .gray .th { fill: #444441; } .gray .ts, .gray .tm { fill: #5F5E5A; } .gray .key { fill: #444441; }
+    .gray .rule { stroke: #5F5E5A; }
+    .purple rect { fill: #EEEDFE; stroke: #534AB7; }
+    .purple .th { fill: #3C3489; } .purple .ts, .purple .tm { fill: #534AB7; } .purple .key { fill: #3C3489; }
+    .purple .rule { stroke: #534AB7; }
+    .amber rect { fill: #FDF0DC; stroke: #A66A00; }
+    .amber .th { fill: #7A4E00; } .amber .ts, .amber .tm { fill: #A66A00; } .amber .key { fill: #7A4E00; }
+    .amber .rule { stroke: #A66A00; }
+    .th { font-size: 14px; font-weight: 600; }
+    .ts { font-size: 12px; }
+    .tm { font-size: 11px; fill-opacity: .78; }
+    .key { font-size: 9.5px; font-weight: 700; letter-spacing: .03em; }
+    .rule { stroke-width: 1; stroke-opacity: .45; }
+    .rel { stroke: #888780; stroke-width: 1.5; fill: none; }
+    .glyph { stroke: #888780; stroke-width: 1.5; fill: none; }
+    .glyph-o { stroke: #888780; stroke-width: 1.5; fill: #ffffff; }
+    .rlabel { font-size: 11px; font-weight: 600; fill: #5F5E5A; }
+    .legend { font-size: 12px; fill: #5F5E5A; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .gray rect { fill: #444441; stroke: #B4B2A9; }
+      .gray .th { fill: #F1EFE8; } .gray .ts, .gray .tm { fill: #D3D1C7; } .gray .key { fill: #F1EFE8; }
+      .gray .rule { stroke: #B4B2A9; }
+      .purple rect { fill: #3C3489; stroke: #AFA9EC; }
+      .purple .th { fill: #EEEDFE; } .purple .ts, .purple .tm { fill: #CECBF6; } .purple .key { fill: #EEEDFE; }
+      .purple .rule { stroke: #AFA9EC; }
+      .amber rect { fill: #7A4E00; stroke: #F0C27B; }
+      .amber .th { fill: #FDF0DC; } .amber .ts, .amber .tm { fill: #F5D9AE; } .amber .key { fill: #FDF0DC; }
+      .amber .rule { stroke: #F0C27B; }
+      .rel, .glyph { stroke: #B4B2A9; }
+      .glyph-o { stroke: #B4B2A9; fill: #0d1117; }
+      .rlabel, .legend { fill: #D3D1C7; }
+    }
+  </style>
+
+  <rect class="bg" width="964" height="620"/>
+
+  <!-- orders -->
+  <g class="amber">
+    <rect x="24" y="80" width="440" height="294" rx="8"/>
+    <text class="th" x="40" y="104">orders</text>
+    <line class="rule" x1="24" y1="114" x2="464" y2="114"/>
+    <text class="ts" x="40" y="129">id</text><text class="key" x="196" y="129">PK</text><text class="tm" x="232" y="129">uuid</text><text class="tm" x="330" y="129">uuidv7()</text>
+    <text class="ts" x="40" y="150">order_number</text><text class="key" x="196" y="150">UK</text><text class="tm" x="232" y="150">text</text>
+    <text class="ts" x="40" y="171">submission_key</text><text class="key" x="196" y="171">UK</text><text class="tm" x="232" y="171">text</text><text class="tm" x="330" y="171">client submissionId</text>
+    <text class="ts" x="40" y="192">quantity</text><text class="tm" x="232" y="192">int</text><text class="tm" x="330" y="192">&gt; 0</text>
+    <text class="ts" x="40" y="213">destination_latitude</text><text class="tm" x="232" y="213">float8</text><text class="tm" x="330" y="213">−90..90</text>
+    <text class="ts" x="40" y="234">destination_longitude</text><text class="tm" x="232" y="234">float8</text><text class="tm" x="330" y="234">−180..180</text>
+    <text class="ts" x="40" y="255">unit_price</text><text class="tm" x="232" y="255">numeric(12,2)</text><text class="tm" x="330" y="255">≥ 0</text>
+    <text class="ts" x="40" y="276">discount_rate</text><text class="tm" x="232" y="276">numeric(3,2)</text><text class="tm" x="330" y="276">0..1</text>
+    <text class="ts" x="40" y="297">discount_amount</text><text class="tm" x="232" y="297">numeric(12,2)</text><text class="tm" x="330" y="297">0..subtotal</text>
+    <text class="ts" x="40" y="318">shipping_cost</text><text class="tm" x="232" y="318">numeric(12,2)</text><text class="tm" x="330" y="318">≥ 0</text>
+    <text class="ts" x="40" y="339">created_at</text><text class="tm" x="232" y="339">timestamptz</text><text class="tm" x="330" y="339">NOW()</text>
+    <text class="ts" x="40" y="360">updated_at</text><text class="tm" x="232" y="360">timestamptz</text><text class="tm" x="330" y="360">NOW()</text>
+  </g>
+  <text class="legend" x="24" y="398">No subtotal, discounted total or order total columns:</text>
+  <text class="legend" x="24" y="416">all three are derived on read from the stored facts.</text>
+  <text class="legend" x="24" y="452">UNIQUE (order_id, warehouse_id) — one allocation per warehouse</text>
+  <text class="legend" x="24" y="470">per order. Both foreign keys are ON DELETE RESTRICT.</text>
+
+  <!-- order_allocations -->
+  <g class="purple">
+    <rect x="560" y="80" width="380" height="168" rx="8"/>
+    <text class="th" x="576" y="104">order_allocations</text>
+    <line class="rule" x1="560" y1="114" x2="940" y2="114"/>
+    <text class="ts" x="576" y="129">id</text><text class="key" x="712" y="129">PK</text><text class="tm" x="748" y="129">uuid</text><text class="tm" x="836" y="129">uuidv7()</text>
+    <text class="ts" x="576" y="150">order_id</text><text class="key" x="712" y="150">FK</text><text class="tm" x="748" y="150">uuid</text><text class="tm" x="836" y="150">→ orders.id</text>
+    <text class="ts" x="576" y="171">warehouse_id</text><text class="key" x="712" y="171">FK</text><text class="tm" x="748" y="171">uuid</text><text class="tm" x="836" y="171">→ warehouses.id</text>
+    <text class="ts" x="576" y="192">quantity</text><text class="tm" x="748" y="192">int</text><text class="tm" x="836" y="192">&gt; 0</text>
+    <text class="ts" x="576" y="213">created_at</text><text class="tm" x="748" y="213">timestamptz</text><text class="tm" x="836" y="213">NOW()</text>
+    <text class="ts" x="576" y="234">updated_at</text><text class="tm" x="748" y="234">timestamptz</text><text class="tm" x="836" y="234">NOW()</text>
+  </g>
+  
+  <!-- warehouses -->
+  <g class="gray">
+    <rect x="560" y="330" width="380" height="189" rx="8"/>
+    <text class="th" x="576" y="354">warehouses</text>
+    <line class="rule" x1="560" y1="364" x2="940" y2="364"/>
+    <text class="ts" x="576" y="379">id</text><text class="key" x="712" y="379">PK</text><text class="tm" x="748" y="379">uuid</text><text class="tm" x="836" y="379">uuidv7()</text>
+    <text class="ts" x="576" y="400">name</text><text class="key" x="712" y="400">UK</text><text class="tm" x="748" y="400">text</text>
+    <text class="ts" x="576" y="421">latitude</text><text class="tm" x="748" y="421">float8</text><text class="tm" x="836" y="421">−90..90</text>
+    <text class="ts" x="576" y="442">longitude</text><text class="tm" x="748" y="442">float8</text><text class="tm" x="836" y="442">−180..180</text>
+    <text class="ts" x="576" y="463">stock</text><text class="tm" x="748" y="463">int</text><text class="tm" x="836" y="463">≥ 0</text>
+    <text class="ts" x="576" y="484">created_at</text><text class="tm" x="748" y="484">timestamptz</text><text class="tm" x="836" y="484">NOW()</text>
+    <text class="ts" x="576" y="505">updated_at</text><text class="tm" x="748" y="505">timestamptz</text><text class="tm" x="836" y="505">NOW()</text>
+  </g>
+
+  <!-- orders 1 to 1..* order_allocations -->
+  <path class="rel" d="M464 164 H560"/>
+  <path class="glyph" d="M472 156 V172"/>
+  <path class="glyph" d="M480 156 V172"/>
+  <path class="glyph" d="M542 164 H556"/>
+  <path class="glyph" d="M546 164 L558 155 M546 164 L558 173"/>
+  <path class="glyph" d="M536 156 V172"/>
+  <text class="rlabel" x="512" y="150" text-anchor="middle">fulfilled by</text>
+
+  <!-- warehouses 1 to 0..* order_allocations -->
+  <path class="rel" d="M750 248 V330"/>
+  <path class="glyph" d="M742 322 H758"/>
+  <path class="glyph" d="M742 314 H758"/>
+  <circle class="glyph-o" cx="750" cy="274" r="5"/>
+  <path class="glyph" d="M750 262 L741 250 M750 262 L759 250"/>
+  <text class="rlabel" x="766" y="296">supplies</text>
+
+  <!-- Legend -->
+  <g>
+    <path class="glyph" d="M40 556 V572"/>
+    <path class="glyph" d="M48 556 V572"/>
+    <path class="rel" d="M40 564 H92"/>
+    <text class="legend" x="104" y="568">exactly one</text>
+    <path class="rel" d="M232 564 H284"/>
+    <path class="glyph" d="M240 556 V572"/>
+    <path class="glyph" d="M272 564 L284 555 M272 564 L284 573"/>
+    <text class="legend" x="296" y="568">one or many</text>
+    <path class="rel" d="M432 564 H484"/>
+    <circle class="glyph-o" cx="444" cy="564" r="5"/>
+    <path class="glyph" d="M472 564 L484 555 M472 564 L484 573"/>
+    <text class="legend" x="496" y="568">zero or many</text>
+    <text class="legend" x="40" y="600">Only accepted orders are stored — a business rejection is returned to the caller and never persisted, so there is no submission, rejection or outcome table.</text>
+  </g>
+</svg>

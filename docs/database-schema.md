@@ -16,43 +16,7 @@ Only accepted Orders are stored. A business rejection is returned to the caller 
 
 ## Entity relationships
 
-```mermaid
-erDiagram
-    orders ||--|{ order_allocations : "fulfilled by"
-    warehouses ||--o{ order_allocations : "supplies"
-
-    warehouses {
-        uuid id PK "UUIDv7, stable seed IDs"
-        text name UK
-        float8 latitude "-90..90"
-        float8 longitude "-180..180"
-        int stock ">= 0"
-        timestamptz created_at
-        timestamptz updated_at
-    }
-    orders {
-        uuid id PK "uuidv7()"
-        text order_number UK
-        text submission_key UK "client submissionId, 1..255 chars"
-        int quantity "> 0"
-        float8 destination_latitude "-90..90"
-        float8 destination_longitude "-180..180"
-        numeric unit_price "12,2; >= 0"
-        numeric discount_rate "3,2; 0..1"
-        numeric discount_amount "12,2; 0..unit_price * quantity"
-        numeric shipping_cost "12,2; >= 0"
-        timestamptz created_at
-        timestamptz updated_at
-    }
-    order_allocations {
-        uuid id PK "uuidv7()"
-        uuid order_id FK
-        uuid warehouse_id FK
-        int quantity "> 0"
-        timestamptz created_at
-        timestamptz updated_at
-    }
-```
+![The SCOS Ordering database schema](images/database-schema.svg)
 
 `order_allocations` has a unique `(order_id, warehouse_id)` pair: one allocation per warehouse per Order.
 

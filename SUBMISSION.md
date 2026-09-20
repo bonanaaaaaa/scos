@@ -247,30 +247,28 @@ list is in [README, Limitations and next steps](README.md#limitations-and-next-s
 
 **Known gaps in what is built:**
 
-- **AWS Lambda is deferred** (#14, #16). The design and the per-endpoint
+- **AWS Lambda is deferred.** The design and the per-endpoint
   composition roots are kept; no handler or packaging exists.
 - **A silently dropped database connection is unbounded** until the OS reports
   it broken, because TCP keepalive is not configured.
 
-### What is still tracked, and why
+### What remains
 
-Work was planned as GitHub issues, each with its own acceptance criteria.
-Everything in the core track (#2, #7–#13, #17, #28, #15) is merged. Four issues
-remain open, and it is worth being precise about why, because none of them is
-unfinished business logic:
-
-| Open                                                                                         | What remains                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [#33](https://github.com/bonanaaaaaa/scos/issues/33) — hosted Cloudflare demonstration       | The deployment shipped and QA verified it from the outside ([evidence](docs/hosted-demonstration.md#verification-evidence)). It stays open on the criteria that need the account itself: **actual charges**, Hyperdrive origin-connection analytics, Workers Logs ingestion, CPU time per request, and PlanetScale's `max_connections`. The Cloudflare access available to this project is bound to a **different account** than the one hosting the demonstration, so those reads were impossible. Per the issue's own rule, that is blocked, not implicitly passed — the full list is [What is not verified](docs/hosted-demonstration.md#what-is-not-verified) |
-| [#14](https://github.com/bonanaaaaaa/scos/issues/14) — Lambda preparation and pooling design | Postponed. An AWS account issue blocked the track before the deadline ([ADR 0005](docs/adr/0005-cloudflare-first-deployment.md))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| [#16](https://github.com/bonanaaaaaa/scos/issues/16) — hosted AWS demonstration              | Postponed, behind #14                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| [#6](https://github.com/bonanaaaaaa/scos/issues/6) — the delivery epic                       | The umbrella issue; closes when its children do                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-
-So the honest status is: the core is complete and verified, the hosted
-demonstration is live and externally verified, and the residue is
-account-credentialed observation plus a deliberately postponed second cloud
-target. The first thing I would do with the account in hand is close #33's
-billing and connection-budget criteria — they are the ones that would tell us
-whether the connection-budget arithmetic in
+The core is complete and verified, and the hosted demonstration is live and
+verified from the outside
+([evidence](docs/hosted-demonstration.md#verification-evidence)). What is left
+is not unfinished business logic. The hosted demonstration still owes the
+checks that need the account itself — actual charges, Hyperdrive
+origin-connection analytics, Workers Logs ingestion, CPU time per request and
+PlanetScale's `max_connections` — because the Cloudflare access available here
+belongs to a different account than the one hosting it; those are recorded as
+blocked rather than passed, and listed in full under
+[What is not verified](docs/hosted-demonstration.md#what-is-not-verified). The
+second cloud target is deliberately postponed: an AWS account issue stopped the
+Lambda track before the deadline
+([ADR 0005](docs/adr/0005-cloudflare-first-deployment.md)), so its design is
+kept but unbuilt. With account access in hand the first thing to close is the
+billing and connection-budget figures, since those are what would show whether
+the arithmetic in
 [the deployment design](docs/cloudflare-deployment-design.md#connection-budget)
 actually holds under Hyperdrive.
