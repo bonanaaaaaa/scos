@@ -6,7 +6,8 @@
 
 import type { InventoryReader } from "@scos/core";
 
-import type { Telemetry } from "../telemetry";
+import type { Telemetry } from "#telemetry/telemetry";
+
 import { ATTR_WAREHOUSE_COUNT, inSpan } from "./span";
 
 export function traceInventoryReader(

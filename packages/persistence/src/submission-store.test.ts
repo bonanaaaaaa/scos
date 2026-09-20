@@ -11,7 +11,8 @@ import {
 } from "@scos/core";
 import { describe, expect, test, vi } from "vitest";
 
-import { Prisma, type PrismaClient } from "./generated/prisma/client";
+import { Prisma, type PrismaClient } from "#generated/prisma/client";
+
 import {
   DEFAULT_SUBMISSION_TRANSACTION_OPTIONS,
   type OrderRow,

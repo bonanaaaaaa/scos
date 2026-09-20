@@ -20,8 +20,8 @@
  * @module
  */
 
-import { type Server, createServer } from "node:http";
 import { once } from "node:events";
+import { type Server, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import {

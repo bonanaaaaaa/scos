@@ -4,13 +4,11 @@ import {
   factorySpies,
   flush,
   unreachableDatabaseUrl as databaseUrl,
-} from "../../testing/persistence-spies.test-support";
+} from "#testing/persistence-spies.test-support";
 
 // Spy on the adapter factories while keeping their real behaviour.
 vi.mock("@scos/persistence", async (importOriginal) =>
-  (await import("../../testing/persistence-spies.test-support")).spyOnFactories(
-    await importOriginal(),
-  ),
+  (await import("#testing/persistence-spies.test-support")).spyOnFactories(await importOriginal()),
 );
 
 const persistence = await import("@scos/persistence");

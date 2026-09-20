@@ -23,7 +23,7 @@ import {
   toTelemetryConfig,
   toWorkersTelemetryConfig,
   workersTelemetryEnvironmentShape,
-} from "./telemetry/config";
+} from "#telemetry/config";
 
 export const DEFAULT_PORT = 3000;
 

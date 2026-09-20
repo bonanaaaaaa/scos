@@ -23,23 +23,23 @@
 import type { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { type ApiProcess, spawnApi, stopAllApiProcesses } from "./support/api-process";
+import { type ApiProcess, spawnApi, stopAllApiProcesses } from "#test/support/api-process";
 import {
   holdWarehouseLocks,
   openPool,
   resetDatabase,
   waitForLockWaiters,
-} from "./support/database";
-import { type HttpResult, expectErrorEnvelope, expectJson, request } from "./support/http";
-import type { LogRecord } from "./support/logs";
-import { ABOVE_LIMIT } from "./support/oracle";
+} from "#test/support/database";
+import { type HttpResult, expectErrorEnvelope, expectJson, request } from "#test/support/http";
+import type { LogRecord } from "#test/support/logs";
+import { ABOVE_LIMIT } from "#test/support/oracle";
 import {
   METRICS_PATH,
   type OtlpCollector,
   type OtlpPayload,
   TRACES_PATH,
   startCollector,
-} from "./support/otlp/collector";
+} from "#test/support/otlp/collector";
 import {
   type Attributes,
   type DecodedHistogramPoint,
@@ -47,9 +47,9 @@ import {
   type DecodedNumberPoint,
   type DecodedSpan,
   hasRemoteParent,
-} from "./support/otlp/decode";
-import { AT_PARIS, MANHATTAN } from "./support/prd";
-import { acceptanceDatabaseUrl } from "./support/shared-api";
+} from "#test/support/otlp/decode";
+import { AT_PARIS, MANHATTAN } from "#test/support/prd";
+import { acceptanceDatabaseUrl } from "#test/support/shared-api";
 
 const SUBMISSIONS = "scos.order.submissions";
 const REQUEST_DURATION = "http.server.request.duration";

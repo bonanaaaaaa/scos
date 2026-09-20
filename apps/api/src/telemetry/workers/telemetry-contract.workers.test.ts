@@ -7,14 +7,14 @@
  * per-request flush; the harness adds up the DELTA metric exports.
  */
 
-import { composeWorkerApplication } from "../../composition/worker";
-import { composeHealthApplication } from "../../endpoints/health/composition";
-import { fakeLogger } from "../../testing/fixtures.test-support";
-import { describeTelemetryContract } from "../../testing/telemetry-contract.test-support";
+import { composeWorkerApplication } from "#composition/worker";
+import { composeHealthApplication } from "#endpoints/health/composition";
+import { fakeLogger } from "#testing/fixtures.test-support";
+import { describeTelemetryContract } from "#testing/telemetry-contract.test-support";
 import {
   UNREACHABLE_DATABASE_URL,
   workersTestTelemetry,
-} from "../../testing/workers-telemetry.test-support";
+} from "#testing/workers-telemetry.test-support";
 
 describeTelemetryContract("Cloudflare Workers SDK (telemetry/workers/sdk.ts)", () => {
   const test = workersTestTelemetry({ LOG_LEVEL: "silent" });

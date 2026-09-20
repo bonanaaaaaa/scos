@@ -58,10 +58,11 @@ import {
   TracerProvider,
 } from "@opentelemetry/sdk-trace";
 
-import { type StructuredLogger, createConsoleJsonLogger } from "../../http/logger";
-import type { WorkersTelemetryConfig } from "../config";
-import { resourceAttributes } from "../log-record";
-import { type Telemetry, createTelemetry } from "../telemetry";
+import { type StructuredLogger, createConsoleJsonLogger } from "#http/logger";
+import type { WorkersTelemetryConfig } from "#telemetry/config";
+import { resourceAttributes } from "#telemetry/log-record";
+import { type Telemetry, createTelemetry } from "#telemetry/telemetry";
+
 import { ensureWorkersContextManager } from "./context";
 import { OtlpFetchMetricExporter, OtlpFetchSpanExporter, type OtlpSignal } from "./otlp-exporter";
 

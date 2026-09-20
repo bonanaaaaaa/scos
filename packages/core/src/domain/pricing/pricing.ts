@@ -8,10 +8,10 @@
  * @module
  */
 
-import { DomainDecimal } from "../shared/decimal";
-import { Money } from "../shared/money";
-import { UNIT_PRICE } from "../shared/product";
-import type { Quantity } from "../shared/quantity";
+import { DomainDecimal } from "#domain/shared/decimal";
+import { Money } from "#domain/shared/money";
+import { UNIT_PRICE } from "#domain/shared/product";
+import type { Quantity } from "#domain/shared/quantity";
 
 export type DiscountRate = "0.00" | "0.05" | "0.10" | "0.15" | "0.20";
 

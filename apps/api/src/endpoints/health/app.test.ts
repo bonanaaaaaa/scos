@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { errorResponseSchema } from "../../http/errors";
-import { submitBody, verifyBody } from "../../testing/fixtures.test-support";
+import { errorResponseSchema } from "#http/errors";
+import { submitBody, verifyBody } from "#testing/fixtures.test-support";
+
 import { createHealthApp } from "./app";
 import { healthResponseSchema, healthRoute } from "./contract";
 

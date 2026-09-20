@@ -3,7 +3,8 @@ import { resolver } from "hono-openapi";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
-import { generateOpenApiDocument } from "../openapi/document";
+import { generateOpenApiDocument } from "#openapi/document";
+
 import { SPEC_CONVERSION, describeContract } from "./describe-route";
 import { jsonBody } from "./json";
 import type { RouteContract } from "./route-contract";

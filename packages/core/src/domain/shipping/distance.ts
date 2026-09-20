@@ -8,7 +8,7 @@
  * @module
  */
 
-import type { GeoPoint } from "../shared/destination";
+import type { GeoPoint } from "#domain/shared/destination";
 
 /**
  * Mean Earth radius in kilometres: the IUGG mean radius R1 = (2a + b) / 3 of

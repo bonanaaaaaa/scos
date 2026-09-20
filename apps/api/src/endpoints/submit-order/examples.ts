@@ -10,7 +10,7 @@
  * @module
  */
 
-import { errorBody } from "../../http/errors";
+import { errorBody } from "#http/errors";
 import {
   insufficientStockEstimateExample,
   insufficientStockRequest,
@@ -18,9 +18,10 @@ import {
   shippingExceedsLimitRequest,
   validEstimateExample,
   validRequest,
-} from "../../http/estimate-examples";
-import { MESSAGES } from "../../http/messages";
-import { type ExampleMap, invalidRequestExamples } from "../../http/route-contract";
+} from "#http/estimate-examples";
+import { MESSAGES } from "#http/messages";
+import { type ExampleMap, invalidRequestExamples } from "#http/route-contract";
+
 import { SUBMIT_ORDER_MESSAGES } from "./messages";
 
 /** Any client-chosen string of 1-255 characters; not necessarily a UUID. */

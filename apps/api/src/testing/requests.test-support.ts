@@ -13,7 +13,8 @@ import {
 } from "@scos/core";
 import type { Hono } from "hono";
 
-import { createApp } from "../app";
+import { createApp } from "#app";
+
 import {
   acceptedOrder as order,
   fakeLogger,

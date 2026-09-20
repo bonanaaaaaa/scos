@@ -22,13 +22,13 @@
 import { readFile } from "node:fs/promises";
 
 import SwaggerParser from "@apidevtools/swagger-parser";
-import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
 import addFormatsModule from "ajv-formats";
+import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
 import type { OpenAPI } from "openapi-types";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { type ApiProcess, spawnApi, stopAllApiProcesses } from "./support/api-process";
+import { type ApiProcess, spawnApi, stopAllApiProcesses } from "#test/support/api-process";
 import {
   openPool,
   readState,
@@ -36,8 +36,8 @@ import {
   setAllStock,
   setStock,
   stockById,
-} from "./support/database";
-import { openApiArtifact } from "./support/environment";
+} from "#test/support/database";
+import { openApiArtifact } from "#test/support/environment";
 import {
   type ApiUnderTest,
   type HttpResult,
@@ -46,7 +46,7 @@ import {
   get,
   postJson,
   request,
-} from "./support/http";
+} from "#test/support/http";
 import {
   AT_PARIS,
   FAR_AWAY,
@@ -56,8 +56,8 @@ import {
   TOTAL_STOCK,
   WAREHOUSES,
   warehouse,
-} from "./support/prd";
-import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
+} from "#test/support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
 
 // ajv-formats is CommonJS; its default export arrives wrapped under ESM.
 const addFormats = ((addFormatsModule as unknown as { default?: unknown }).default ??

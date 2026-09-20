@@ -26,8 +26,8 @@ import {
 } from "@opentelemetry/api";
 import { describe, expect, test } from "vitest";
 
-import type { LogDetails, StructuredLogger } from "../http/logger";
-import { type LogLevelName, REDACTION_CENSOR } from "../telemetry/log-record";
+import type { LogDetails, StructuredLogger } from "#http/logger";
+import { type LogLevelName, REDACTION_CENSOR } from "#telemetry/log-record";
 
 export interface LoggerUnderTest {
   readonly logger: StructuredLogger;

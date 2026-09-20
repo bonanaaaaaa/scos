@@ -1,19 +1,17 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { SUBMIT_ORDER_MESSAGES } from "../endpoints/submit-order/messages";
-import { MESSAGES } from "../http/messages";
-import { startBlackHole } from "../testing/black-hole.test-support";
+import { SUBMIT_ORDER_MESSAGES } from "#endpoints/submit-order/messages";
+import { MESSAGES } from "#http/messages";
+import { startBlackHole } from "#testing/black-hole.test-support";
 import {
   factorySpies,
   flush,
   unreachableDatabaseUrl as unreachable,
-} from "../testing/persistence-spies.test-support";
+} from "#testing/persistence-spies.test-support";
 
 // Spy on the adapter factories while keeping their real behaviour.
 vi.mock("@scos/persistence", async (importOriginal) =>
-  (await import("../testing/persistence-spies.test-support")).spyOnFactories(
-    await importOriginal(),
-  ),
+  (await import("#testing/persistence-spies.test-support")).spyOnFactories(await importOriginal()),
 );
 
 const persistence = await import("@scos/persistence");

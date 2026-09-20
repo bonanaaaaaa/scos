@@ -2,9 +2,10 @@ import { createRequire } from "node:module";
 
 import { describe, expect, test } from "vitest";
 
-import { parseConfig, parseDatabaseConfig, parseWorkerConfig } from "../config";
-import { parseHealthConfig } from "../endpoints/health/config";
-import { DEFAULT_TELEMETRY_CONFIG } from "../testing/telemetry.test-support";
+import { parseConfig, parseDatabaseConfig, parseWorkerConfig } from "#config";
+import { parseHealthConfig } from "#endpoints/health/config";
+import { DEFAULT_TELEMETRY_CONFIG } from "#testing/telemetry.test-support";
+
 import {
   DEFAULT_WORKERS_OTLP_TIMEOUT_MS,
   PACKAGE_VERSION,

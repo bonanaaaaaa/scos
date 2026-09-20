@@ -1,9 +1,9 @@
 import { TransientSubmissionError, submissionKeySchema } from "@scos/core";
 import { describe, expect, test } from "vitest";
 
-import { errorResponseSchema } from "../../http/errors";
-import { estimateBody } from "../../http/estimate";
-import { MESSAGES } from "../../http/messages";
+import { errorResponseSchema } from "#http/errors";
+import { estimateBody } from "#http/estimate";
+import { MESSAGES } from "#http/messages";
 import {
   acceptedOrder,
   insufficientEstimate,
@@ -13,7 +13,8 @@ import {
   shippingEstimate,
   submitBody,
   verifyBody,
-} from "../../testing/fixtures.test-support";
+} from "#testing/fixtures.test-support";
+
 import {
   orderResponseSchema,
   rejectedSubmissionResponseSchema,

@@ -8,12 +8,7 @@
  * @module
  */
 
-import {
-  OPENAPI_USAGE,
-  exportArguments,
-  exportOpenApiDocument,
-  exportPath,
-} from "../src/openapi/export";
+import { OPENAPI_USAGE, exportArguments, exportOpenApiDocument, exportPath } from "#openapi/export";
 
 const [argument, ...extra] = exportArguments(process.argv.slice(2));
 if (extra.length > 0 || argument === "--help" || argument === "-h") {

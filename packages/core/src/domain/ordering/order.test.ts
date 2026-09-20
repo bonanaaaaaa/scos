@@ -1,11 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import type { Destination } from "../shared/destination";
-import { DomainError } from "../shared/errors";
-import { Money } from "../shared/money";
-import { MAX_QUANTITY, type Quantity } from "../shared/quantity";
-
-import type { WarehouseStock } from "../shipping/allocation";
+import type { Destination } from "#domain/shared/destination";
+import { DomainError } from "#domain/shared/errors";
+import { Money } from "#domain/shared/money";
+import { MAX_QUANTITY, type Quantity } from "#domain/shared/quantity";
+import type { WarehouseStock } from "#domain/shipping/allocation";
 
 import { type OrderEstimate, type ValidOrderEstimate, estimateOrder } from "./estimate";
 import { type StoredOrder, createOrder, hasSameRequest, restoreOrder } from "./order";

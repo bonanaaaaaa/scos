@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { DEFAULT_TELEMETRY_CONFIG } from "../../testing/telemetry.test-support";
+import { DEFAULT_TELEMETRY_CONFIG } from "#testing/telemetry.test-support";
+
 import { parseHealthConfig } from "./config";
 
 describe("parseHealthConfig", () => {

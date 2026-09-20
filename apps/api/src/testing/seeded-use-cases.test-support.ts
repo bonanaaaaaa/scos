@@ -17,7 +17,8 @@ import {
 import { warehouseSeeds } from "@scos/persistence";
 import type { Hono } from "hono";
 
-import { createApp } from "../app";
+import { createApp } from "#app";
+
 import { fakeLogger } from "./fixtures.test-support";
 
 /** Current stock of a freshly seeded database. */

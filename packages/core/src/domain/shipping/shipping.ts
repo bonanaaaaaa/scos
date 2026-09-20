@@ -8,9 +8,13 @@
  * @module
  */
 
-import { type Decimal, DomainDecimal } from "../shared/decimal";
-import { Money } from "../shared/money";
-import { SHIPPING_LIMIT_RATIO, SHIPPING_RATE_PER_KG_KM, UNIT_WEIGHT_KG } from "../shared/product";
+import { type Decimal, DomainDecimal } from "#domain/shared/decimal";
+import { Money } from "#domain/shared/money";
+import {
+  SHIPPING_LIMIT_RATIO,
+  SHIPPING_RATE_PER_KG_KM,
+  UNIT_WEIGHT_KG,
+} from "#domain/shared/product";
 
 import type { WarehouseAllocation } from "./allocation";
 

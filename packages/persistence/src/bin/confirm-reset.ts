@@ -1,4 +1,4 @@
-import { runConfirmResetCommand } from "../commands";
+import { runConfirmResetCommand } from "#commands";
 
 try {
   runConfirmResetCommand();

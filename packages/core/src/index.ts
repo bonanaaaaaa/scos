@@ -1,7 +1,7 @@
 /**
  * Public API of the Ordering core: the domain model, the application use cases
  * and the ports that driven adapters implement. Adapters import only from
- * here, never from `./domain/*` or `./application/*` directly.
+ * here, never from `#domain/*` or `#application/*` directly.
  *
  * @see docs/architecture.md, "Domain model" and "Application layer"
  * @module
@@ -14,15 +14,15 @@ export type {
   ShippingPlan,
   WarehouseAllocation,
   WarehouseStock,
-} from "./domain/shipping/allocation";
+} from "#domain/shipping/allocation";
 export {
   type Destination,
   type GeoPoint,
   LATITUDE_LIMIT,
   LONGITUDE_LIMIT,
   destinationSchema,
-} from "./domain/shared/destination";
-export { DomainError, type DomainErrorCode } from "./domain/shared/errors";
+} from "#domain/shared/destination";
+export { DomainError, type DomainErrorCode } from "#domain/shared/errors";
 export {
   type EstimateRejectionReason,
   type InsufficientStockEstimate,
@@ -30,8 +30,8 @@ export {
   type ShippingExceedsLimitEstimate,
   type ValidOrderEstimate,
   estimateOrder,
-} from "./domain/ordering/estimate";
-export { MONEY_MAX_STRING, Money } from "./domain/shared/money";
+} from "#domain/ordering/estimate";
+export { MONEY_MAX_STRING, Money } from "#domain/shared/money";
 export {
   type CreateOrderInput,
   type NewOrder,
@@ -41,19 +41,19 @@ export {
   type StoredOrder,
   createOrder,
   restoreOrder,
-} from "./domain/ordering/order";
-export { ORDER_NUMBER_PATTERN, generateOrderNumber } from "./domain/ordering/order-number";
-export { type OrderRequest, orderRequestSchema } from "./domain/ordering/order-request";
-export { type SubmissionKey, submissionKeySchema } from "./domain/ordering/submission-key";
-export type { DiscountRate } from "./domain/pricing/pricing";
-export { MAX_QUANTITY, type Quantity, quantitySchema } from "./domain/shared/quantity";
+} from "#domain/ordering/order";
+export { ORDER_NUMBER_PATTERN, generateOrderNumber } from "#domain/ordering/order-number";
+export { type OrderRequest, orderRequestSchema } from "#domain/ordering/order-request";
+export { type SubmissionKey, submissionKeySchema } from "#domain/ordering/submission-key";
+export type { DiscountRate } from "#domain/pricing/pricing";
+export { MAX_QUANTITY, type Quantity, quantitySchema } from "#domain/shared/quantity";
 
 export {
   type SubmissionStore,
   type SubmissionTransaction,
   SubmissionKeyTakenError,
   TransientSubmissionError,
-} from "./application/ports/submission-store";
+} from "#application/ports/submission-store";
 export {
   type AcceptedSubmission,
   type ConflictingSubmission,
@@ -67,11 +67,11 @@ export {
   type SubmitOrderOutcome,
   type UnavailableSubmission,
   createSubmitOrder,
-} from "./application/submit-order";
+} from "#application/submit-order";
 
-export type { InventoryReader } from "./application/ports/inventory-reader";
+export type { InventoryReader } from "#application/ports/inventory-reader";
 export {
   type VerifyOrder,
   type VerifyOrderDependencies,
   createVerifyOrder,
-} from "./application/verify-order";
+} from "#application/verify-order";

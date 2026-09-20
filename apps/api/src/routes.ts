@@ -6,10 +6,10 @@
  * @module
  */
 
-import { healthRoute } from "./endpoints/health/contract";
-import { submitOrderRoute } from "./endpoints/submit-order/contract";
-import { verifyOrderRoute } from "./endpoints/verify-order/contract";
-import type { RouteContract } from "./http/route-contract";
+import { healthRoute } from "#endpoints/health/contract";
+import { submitOrderRoute } from "#endpoints/submit-order/contract";
+import { verifyOrderRoute } from "#endpoints/verify-order/contract";
+import type { RouteContract } from "#http/route-contract";
 
 /**
  * Every route the API serves with each documented status, and the standalone

@@ -15,8 +15,8 @@ import {
   destinationSchema,
   latitudeSchema,
   longitudeSchema,
-} from "../shared/destination";
-import { type Quantity, quantitySchema } from "../shared/quantity";
+} from "#domain/shared/destination";
+import { type Quantity, quantitySchema } from "#domain/shared/quantity";
 
 /** A validated order request; build one with {@link orderRequestSchema}. */
 export interface OrderRequest {

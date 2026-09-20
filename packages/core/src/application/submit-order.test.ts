@@ -1,17 +1,17 @@
 import { describe, expect, test } from "vitest";
 
-import { type NewOrder, type Order, restoreOrder } from "../domain/ordering/order";
-import { ORDER_NUMBER_PATTERN } from "../domain/ordering/order-number";
-import type { SubmissionKey } from "../domain/ordering/submission-key";
-import { DomainError } from "../domain/shared/errors";
-import type { WarehouseStock } from "../domain/shipping/allocation";
-
 import {
   type SubmissionStore,
   type SubmissionTransaction,
   SubmissionKeyTakenError,
   TransientSubmissionError,
-} from "./ports/submission-store";
+} from "#application/ports/submission-store";
+import { type NewOrder, type Order, restoreOrder } from "#domain/ordering/order";
+import { ORDER_NUMBER_PATTERN } from "#domain/ordering/order-number";
+import type { SubmissionKey } from "#domain/ordering/submission-key";
+import { DomainError } from "#domain/shared/errors";
+import type { WarehouseStock } from "#domain/shipping/allocation";
+
 import {
   MAX_SUBMISSION_ATTEMPTS,
   type SubmitOrderOutcome,

@@ -4,7 +4,7 @@
  * from a test file:
  *
  *   vi.mock("@scos/persistence", async (importOriginal) =>
- *     (await import("../../testing/persistence-spies.test-support")).spyOnFactories(
+ *     (await import("./persistence-spies.test-support")).spyOnFactories(
  *       await importOriginal(),
  *     ),
  *   );

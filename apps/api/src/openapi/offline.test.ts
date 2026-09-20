@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { errorResponseSchema } from "../http/errors";
-import { json, post } from "../testing/fixtures.test-support";
+import { errorResponseSchema } from "#http/errors";
+import { json, post } from "#testing/fixtures.test-support";
+
 import { offlineApp, renderOpenApiDocument } from "./offline";
 
 describe("offline OpenAPI app", () => {

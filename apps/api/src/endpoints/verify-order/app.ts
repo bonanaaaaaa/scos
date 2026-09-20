@@ -8,12 +8,13 @@
 import { type VerifyOrder, orderRequestSchema } from "@scos/core";
 import type { Hono } from "hono";
 
-import { describeContract } from "../../http/describe-route";
-import { createEndpointApp } from "../../http/endpoint-app";
-import { estimateBody } from "../../http/estimate";
-import { jsonBody, requireJson } from "../../http/json";
-import { type Logger, defaultLogger } from "../../http/logger";
-import { MESSAGES } from "../../http/messages";
+import { describeContract } from "#http/describe-route";
+import { createEndpointApp } from "#http/endpoint-app";
+import { estimateBody } from "#http/estimate";
+import { jsonBody, requireJson } from "#http/json";
+import { type Logger, defaultLogger } from "#http/logger";
+import { MESSAGES } from "#http/messages";
+
 import { verifyOrderRequestSchema, verifyOrderRoute } from "./contract";
 
 export interface VerifyOrderAppDependencies {

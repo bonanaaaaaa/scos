@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-import type { RouteContract } from "../../http/route-contract";
+import type { RouteContract } from "#http/route-contract";
 
 export const healthResponseSchema = z
   .object({ status: z.literal("ok") })

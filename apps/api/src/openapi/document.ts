@@ -17,8 +17,8 @@
 import type { Hono } from "hono";
 import { type GenerateSpecOptions, generateSpecs } from "hono-openapi";
 
-import { responseOption } from "../http/describe-route";
-import { API_PREFIX, SUBMISSION_ADR_URL, notFoundResponse } from "../http/route-contract";
+import { responseOption } from "#http/describe-route";
+import { API_PREFIX, SUBMISSION_ADR_URL, notFoundResponse } from "#http/route-contract";
 
 export const OPENAPI_PATH = "/openapi.json";
 export const DOCS_PATH = "/docs";

@@ -14,10 +14,10 @@ import { readFile } from "node:fs/promises";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { WAREHOUSES } from "./support/prd";
-import { get } from "./support/http";
-import { openPool, resetDatabase, stockById } from "./support/database";
-import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
+import { openPool, resetDatabase, stockById } from "#test/support/database";
+import { get } from "#test/support/http";
+import { WAREHOUSES } from "#test/support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
 
 const api = sharedApi();
 let pool: Pool;

@@ -11,8 +11,9 @@
 import type { SubmitOrder, VerifyOrder } from "@scos/core";
 import type { Hono } from "hono";
 
-import { createApp } from "../app";
-import type { Logger } from "../http/logger";
+import { createApp } from "#app";
+import type { Logger } from "#http/logger";
+
 import {
   type OpenApiDocument,
   generateOpenApiDocument,

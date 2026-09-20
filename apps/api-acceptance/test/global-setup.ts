@@ -19,15 +19,16 @@
  */
 
 import { connect } from "node:net";
+
 import type { TestProject } from "vitest/node";
 
-import { type ApiProcess, spawnApi } from "./support/api-process";
-import { readEnvironment, requireApiArtifacts } from "./support/environment";
+import { type ApiProcess, spawnApi } from "#test/support/api-process";
+import { readEnvironment, requireApiArtifacts } from "#test/support/environment";
 import {
   type AcceptanceDatabase,
   createAcceptanceDatabase,
   prepareExistingDatabase,
-} from "./support/provision";
+} from "#test/support/provision";
 
 /** How long the already-running server has to accept a TCP connection. */
 const REACHABLE_TIMEOUT_MS = 5_000;

@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
-import { Prisma } from "./generated/prisma/client";
+import { Prisma } from "#generated/prisma/client";
+
 import {
   formatDiscountRate,
   formatMoney,

@@ -1,7 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 
-import type { ComposedApplication } from "../composition/node";
-import type { StructuredLogger } from "../http/logger";
+import type { ComposedApplication } from "#composition/node";
+import type { StructuredLogger } from "#http/logger";
+import type { TelemetryRuntime } from "#telemetry/node/sdk";
+import { DEFAULT_TELEMETRY_CONFIG, testTelemetry } from "#testing/telemetry.test-support";
+
 import {
   TELEMETRY_SHUTDOWN_TIMEOUT_MS,
   type ServerRuntime,
@@ -9,8 +12,6 @@ import {
   nodeRuntime,
   startServer,
 } from "./node";
-import type { TelemetryRuntime } from "../telemetry/node/sdk";
-import { DEFAULT_TELEMETRY_CONFIG, testTelemetry } from "../testing/telemetry.test-support";
 
 function fakeStructuredLogger() {
   const logger = {

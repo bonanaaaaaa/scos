@@ -3,7 +3,8 @@
 import type { SubmitOrder, SubmitOrderOutcome } from "@scos/core";
 import { vi } from "vitest";
 
-import { acceptedOrder, fakeLogger } from "../../testing/fixtures.test-support";
+import { acceptedOrder, fakeLogger } from "#testing/fixtures.test-support";
+
 import { createSubmitOrderApp } from "./app";
 
 export function harness(

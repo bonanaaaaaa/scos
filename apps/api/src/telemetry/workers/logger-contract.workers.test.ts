@@ -7,8 +7,9 @@
  * `console.log` call and hands the suite its JSON form.
  */
 
-import { createConsoleJsonLogger } from "../../http/logger";
-import { describeLoggerContract } from "../../testing/logger-contract.test-support";
+import { createConsoleJsonLogger } from "#http/logger";
+import { describeLoggerContract } from "#testing/logger-contract.test-support";
+
 import { ensureWorkersContextManager } from "./context";
 import { logRecord } from "./sdk";
 

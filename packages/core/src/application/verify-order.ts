@@ -11,10 +11,9 @@
  * @module
  */
 
-import { type OrderEstimate, estimateOrder } from "../domain/ordering/estimate";
-import type { OrderRequest } from "../domain/ordering/order-request";
-
-import type { InventoryReader } from "./ports/inventory-reader";
+import type { InventoryReader } from "#application/ports/inventory-reader";
+import { type OrderEstimate, estimateOrder } from "#domain/ordering/estimate";
+import type { OrderRequest } from "#domain/ordering/order-request";
 
 /**
  * Returns the Order Estimate for a validated Order Request.

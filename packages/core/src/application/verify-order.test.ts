@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { type OrderEstimate, estimateOrder } from "../domain/ordering/estimate";
-import { type OrderRequest, orderRequestSchema } from "../domain/ordering/order-request";
-import { DomainError } from "../domain/shared/errors";
-import type { InventorySnapshot, WarehouseStock } from "../domain/shipping/allocation";
+import type { InventoryReader } from "#application/ports/inventory-reader";
+import { type OrderEstimate, estimateOrder } from "#domain/ordering/estimate";
+import { type OrderRequest, orderRequestSchema } from "#domain/ordering/order-request";
+import { DomainError } from "#domain/shared/errors";
+import type { InventorySnapshot, WarehouseStock } from "#domain/shipping/allocation";
 
-import type { InventoryReader } from "./ports/inventory-reader";
 import { createVerifyOrder } from "./verify-order";
 
 const PRD_WAREHOUSES: readonly WarehouseStock[] = [

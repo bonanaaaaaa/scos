@@ -1,8 +1,8 @@
 import { MAX_SUBMISSION_ATTEMPTS } from "@scos/core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { SUBMIT_ORDER_MESSAGES } from "../src/endpoints/submit-order/messages";
-import { errorResponseSchema, orderResponseSchema } from "../src/index";
+import { SUBMIT_ORDER_MESSAGES } from "#endpoints/submit-order/messages";
+import { errorResponseSchema, orderResponseSchema } from "#index";
 import {
   AT_PARIS,
   Applications,
@@ -12,14 +12,14 @@ import {
   failureInjector,
   postJson,
   snapshot,
-} from "./support/app";
+} from "#test/support/app";
 import {
   type TestDatabase,
   createTestDatabase,
   holdWarehouseLocks,
   readState,
   stockById,
-} from "./support/database";
+} from "#test/support/database";
 
 let db: TestDatabase;
 const applications = new Applications();

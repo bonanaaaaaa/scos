@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
-import type { Destination } from "../shared/destination";
-import { DomainError } from "../shared/errors";
-import type { Quantity } from "../shared/quantity";
+import type { Destination } from "#domain/shared/destination";
+import { DomainError } from "#domain/shared/errors";
+import type { Quantity } from "#domain/shared/quantity";
 
 import { type WarehouseStock, allocateNearestFirst } from "./allocation";
 

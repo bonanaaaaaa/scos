@@ -9,14 +9,15 @@ import { MAX_QUANTITY } from "@scos/core";
 import { describe, expect, test } from "vitest";
 import type { z } from "zod";
 
-import { createApp } from "../app";
+import { createApp } from "#app";
 import {
   SUBMISSION_ID_DESCRIPTION,
   submitOrderRequestSchema,
-} from "../endpoints/submit-order/contract";
-import { verifyOrderRequestSchema } from "../endpoints/verify-order/contract";
-import { fakeLogger, post } from "../testing/fixtures.test-support";
-import { ajvAccepts, specValidator } from "../testing/openapi.test-support";
+} from "#endpoints/submit-order/contract";
+import { verifyOrderRequestSchema } from "#endpoints/verify-order/contract";
+import { fakeLogger, post } from "#testing/fixtures.test-support";
+import { ajvAccepts, specValidator } from "#testing/openapi.test-support";
+
 import { buildOpenApiDocument } from "./offline";
 
 const validator = specValidator(await buildOpenApiDocument());

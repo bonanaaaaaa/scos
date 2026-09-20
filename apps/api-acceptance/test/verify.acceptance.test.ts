@@ -14,17 +14,24 @@
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { openPool, readState, resetDatabase } from "./support/database";
-import { expectJson, get, postJson } from "./support/http";
+import { openPool, readState, resetDatabase } from "#test/support/database";
+import { expectJson, get, postJson } from "#test/support/http";
 import {
   ABOVE_LIMIT,
   AT_LIMIT,
   BELOW_LIMIT,
   type LimitDestination,
   expectedEstimate,
-} from "./support/oracle";
-import { AT_PARIS, FAR_AWAY, MANHATTAN, MAX_QUANTITY, TOTAL_STOCK, warehouse } from "./support/prd";
-import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
+} from "#test/support/oracle";
+import {
+  AT_PARIS,
+  FAR_AWAY,
+  MANHATTAN,
+  MAX_QUANTITY,
+  TOTAL_STOCK,
+  warehouse,
+} from "#test/support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
 
 const api = sharedApi();
 let pool: Pool;

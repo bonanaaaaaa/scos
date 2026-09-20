@@ -11,24 +11,25 @@ import { type DataPoint, type Histogram, type MetricData } from "@opentelemetry/
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { composeHealthApplication } from "../../endpoints/health/composition";
-import { createApp } from "../../app";
+import { createApp } from "#app";
+import { composeHealthApplication } from "#endpoints/health/composition";
+import { traceSubmitOrder } from "#telemetry/decorators/submit-order";
+import { traceVerifyOrder } from "#telemetry/decorators/verify-order";
+import { instrumentApp } from "#telemetry/http";
+import { SUBMISSIONS_METRIC } from "#telemetry/telemetry";
 import {
   acceptedOrder,
   fakeLogger,
   post,
   submitBody,
   validEstimate,
-} from "../../testing/fixtures.test-support";
+} from "#testing/fixtures.test-support";
 import {
   accumulateDeltas,
   workerTelemetryConfig,
   workersTestTelemetry,
-} from "../../testing/workers-telemetry.test-support";
-import { instrumentApp } from "../http";
-import { traceSubmitOrder } from "../decorators/submit-order";
-import { traceVerifyOrder } from "../decorators/verify-order";
-import { SUBMISSIONS_METRIC } from "../telemetry";
+} from "#testing/workers-telemetry.test-support";
+
 import { failureReason, postOtlp } from "./otlp-exporter";
 import { RequestFlushSpanProcessor, WORKERS_SPAN_LIMITS, createWorkersTelemetry } from "./sdk";
 

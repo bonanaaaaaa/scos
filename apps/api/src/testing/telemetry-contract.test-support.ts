@@ -20,6 +20,9 @@
  * DELTA per-request exports into the cumulative view `metrics()` returns.
  */
 
+import { SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import type { DataPoint, Histogram, MetricData } from "@opentelemetry/sdk-metrics";
+import type { ReadableSpan } from "@opentelemetry/sdk-trace";
 import {
   type NewOrder,
   type Order,
@@ -29,24 +32,22 @@ import {
   createSubmitOrder,
   createVerifyOrder,
 } from "@scos/core";
-import { SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
-import type { DataPoint, Histogram, MetricData } from "@opentelemetry/sdk-metrics";
-import type { ReadableSpan } from "@opentelemetry/sdk-trace";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { createApp } from "../app";
-import type { ComposedApplication } from "../composition/composed-application";
-import { createHealthApp } from "../endpoints/health/app";
-import { createSubmitOrderApp } from "../endpoints/submit-order/app";
-import { createVerifyOrderApp } from "../endpoints/verify-order/app";
-import { traceInventoryReader } from "../telemetry/decorators/inventory-reader";
-import { traceSubmissionStore } from "../telemetry/decorators/submission-store";
-import { traceSubmitOrder } from "../telemetry/decorators/submit-order";
-import { traceVerifyOrder } from "../telemetry/decorators/verify-order";
-import type { Logger } from "../http/logger";
-import { instrumentApp } from "../telemetry/http";
-import type { Telemetry } from "../telemetry/telemetry";
+import { createApp } from "#app";
+import type { ComposedApplication } from "#composition/composed-application";
+import { createHealthApp } from "#endpoints/health/app";
+import { createSubmitOrderApp } from "#endpoints/submit-order/app";
+import { createVerifyOrderApp } from "#endpoints/verify-order/app";
+import type { Logger } from "#http/logger";
+import { traceInventoryReader } from "#telemetry/decorators/inventory-reader";
+import { traceSubmissionStore } from "#telemetry/decorators/submission-store";
+import { traceSubmitOrder } from "#telemetry/decorators/submit-order";
+import { traceVerifyOrder } from "#telemetry/decorators/verify-order";
+import { instrumentApp } from "#telemetry/http";
+import type { Telemetry } from "#telemetry/telemetry";
+
 import {
   acceptedOrder,
   fakeLogger,

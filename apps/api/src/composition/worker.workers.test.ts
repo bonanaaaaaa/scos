@@ -9,9 +9,10 @@
 import type { ExecutionContext } from "hono";
 import { describe, expect, test, vi } from "vitest";
 
-import { MESSAGES } from "../http/messages";
-import { post } from "../testing/fixtures.test-support";
-import { UNREACHABLE_DATABASE_URL } from "../testing/workers-telemetry.test-support";
+import { MESSAGES } from "#http/messages";
+import { post } from "#testing/fixtures.test-support";
+import { UNREACHABLE_DATABASE_URL } from "#testing/workers-telemetry.test-support";
+
 import { WORKER_REQUEST_MAX_CONNECTIONS, composeWorkerApplication } from "./worker";
 
 function executionContext() {

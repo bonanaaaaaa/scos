@@ -12,12 +12,13 @@ import {
 } from "@opentelemetry/sdk-metrics";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 
-import { composeApplication } from "../../composition/node";
-import { composeHealthApplication } from "../../endpoints/health/composition";
-import { fakeLogger } from "../../testing/fixtures.test-support";
-import { unreachableDatabaseUrl } from "../../testing/persistence-spies.test-support";
-import { describeTelemetryContract } from "../../testing/telemetry-contract.test-support";
-import { parseTelemetryConfig } from "../../testing/telemetry.test-support";
+import { composeApplication } from "#composition/node";
+import { composeHealthApplication } from "#endpoints/health/composition";
+import { fakeLogger } from "#testing/fixtures.test-support";
+import { unreachableDatabaseUrl } from "#testing/persistence-spies.test-support";
+import { describeTelemetryContract } from "#testing/telemetry-contract.test-support";
+import { parseTelemetryConfig } from "#testing/telemetry.test-support";
+
 import { createTelemetryRuntime } from "./sdk";
 
 describeTelemetryContract("Node/Lambda SDK (telemetry/node/sdk.ts)", () => {

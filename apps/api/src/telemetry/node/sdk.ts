@@ -59,10 +59,11 @@ import {
 } from "@opentelemetry/sdk-trace";
 import type { DestinationStream } from "pino";
 
-import type { StructuredLogger } from "../../http/logger";
-import type { TelemetryConfig } from "../config";
-import { resourceAttributes } from "../log-record";
-import { type Telemetry, createTelemetry } from "../telemetry";
+import type { StructuredLogger } from "#http/logger";
+import type { TelemetryConfig } from "#telemetry/config";
+import { resourceAttributes } from "#telemetry/log-record";
+import { type Telemetry, createTelemetry } from "#telemetry/telemetry";
+
 import { createPinoLogger } from "./pino-logger";
 
 /** Bounds of the span export queue (see docs/observability.md). */

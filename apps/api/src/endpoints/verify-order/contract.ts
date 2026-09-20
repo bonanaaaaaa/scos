@@ -6,10 +6,11 @@
 
 import { z } from "zod";
 
-import { errorResponseSchema } from "../../http/errors";
-import { estimateResponseSchema } from "../../http/estimate";
-import { API_PREFIX, invalidRequestResponse, type RouteContract } from "../../http/route-contract";
-import { latitudeFieldSchema, longitudeFieldSchema, quantityFieldSchema } from "../../http/schemas";
+import { errorResponseSchema } from "#http/errors";
+import { estimateResponseSchema } from "#http/estimate";
+import { API_PREFIX, invalidRequestResponse, type RouteContract } from "#http/route-contract";
+import { latitudeFieldSchema, longitudeFieldSchema, quantityFieldSchema } from "#http/schemas";
+
 import { verifyOrderRequestExamples, verifyOrderResponseExamples } from "./examples";
 
 /** Body of `POST /api/v1/orders/verify`. Unknown fields are rejected. */

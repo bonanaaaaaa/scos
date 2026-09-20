@@ -15,17 +15,17 @@
 import type { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { openPool, readState, resetDatabase } from "./support/database";
+import { openPool, readState, resetDatabase } from "#test/support/database";
 import {
   type HttpResult,
   type RawRequest,
   expectErrorEnvelope,
   expectJson,
   request,
-} from "./support/http";
-import { expectedOrder } from "./support/oracle";
-import { AT_PARIS, MAX_QUANTITY } from "./support/prd";
-import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
+} from "#test/support/http";
+import { expectedOrder } from "#test/support/oracle";
+import { AT_PARIS, MAX_QUANTITY } from "#test/support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
 
 const api = sharedApi();
 let pool: Pool;

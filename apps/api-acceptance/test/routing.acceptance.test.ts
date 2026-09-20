@@ -14,11 +14,11 @@
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { type ApiProcess, spawnApi, stopAllApiProcesses } from "./support/api-process";
-import { openPool, resetDatabase } from "./support/database";
-import { expectErrorEnvelope, expectJson, get, postJson, request } from "./support/http";
-import { AT_PARIS } from "./support/prd";
-import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
+import { type ApiProcess, spawnApi, stopAllApiProcesses } from "#test/support/api-process";
+import { openPool, resetDatabase } from "#test/support/database";
+import { expectErrorEnvelope, expectJson, get, postJson, request } from "#test/support/http";
+import { AT_PARIS } from "#test/support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
 
 const api = sharedApi();
 

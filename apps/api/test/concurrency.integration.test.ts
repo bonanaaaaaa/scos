@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { orderResponseSchema, rejectedSubmissionResponseSchema } from "../src/index";
-import { AT_PARIS, Applications, PARIS, postJson, snapshot } from "./support/app";
+import { orderResponseSchema, rejectedSubmissionResponseSchema } from "#index";
+import { AT_PARIS, Applications, PARIS, postJson, snapshot } from "#test/support/app";
 import {
   type TestDatabase,
   createTestDatabase,
@@ -10,7 +10,7 @@ import {
   setAllStock,
   stockById,
   waitForLockWaiters,
-} from "./support/database";
+} from "#test/support/database";
 
 let db: TestDatabase;
 const applications = new Applications();

@@ -4,18 +4,19 @@
  * @module
  */
 
-import type { SubmitOrder, SubmitOrderOutcome } from "@scos/core";
 import { type Attributes, SpanStatusCode } from "@opentelemetry/api";
 import { ATTR_ERROR_TYPE } from "@opentelemetry/semantic-conventions";
+import type { SubmitOrder, SubmitOrderOutcome } from "@scos/core";
 
-import { sanitizeError } from "../log-record";
+import { sanitizeError } from "#telemetry/log-record";
 import {
   ATTR_SUBMISSION_OUTCOME,
   ATTR_SUBMISSION_REJECTION_REASON,
   ATTR_SUBMISSION_REPLAYED,
   type SubmissionOutcome,
   type Telemetry,
-} from "../telemetry";
+} from "#telemetry/telemetry";
+
 import { inSpan } from "./span";
 
 /** The bounded counter/span attributes of a completed SubmitOrder call. */

@@ -7,7 +7,7 @@
 
 import type { TestProject } from "vitest/node";
 
-import { createTestDatabase } from "../support/database";
+import { createTestDatabase } from "#test/support/database";
 
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const database = await createTestDatabase();

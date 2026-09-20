@@ -10,15 +10,14 @@
  * @module
  */
 
-import { DomainDecimal } from "../shared/decimal";
-import { type Destination, type GeoPoint, destinationSchema } from "../shared/destination";
-import { DomainError } from "../shared/errors";
-import { Money } from "../shared/money";
-import { UNIT_PRICE } from "../shared/product";
-import { type Quantity, MAX_QUANTITY } from "../shared/quantity";
-
-import { discountRateFor } from "../pricing/pricing";
-import { isShippingWithinLimit, shippingCostFor } from "../shipping/shipping";
+import { discountRateFor } from "#domain/pricing/pricing";
+import { DomainDecimal } from "#domain/shared/decimal";
+import { type Destination, type GeoPoint, destinationSchema } from "#domain/shared/destination";
+import { DomainError } from "#domain/shared/errors";
+import { Money } from "#domain/shared/money";
+import { UNIT_PRICE } from "#domain/shared/product";
+import { type Quantity, MAX_QUANTITY } from "#domain/shared/quantity";
+import { isShippingWithinLimit, shippingCostFor } from "#domain/shipping/shipping";
 
 import type { OrderEstimate } from "./estimate";
 import { ORDER_NUMBER_PATTERN } from "./order-number";

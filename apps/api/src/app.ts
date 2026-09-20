@@ -11,14 +11,15 @@
 import type { SubmitOrder, VerifyOrder } from "@scos/core";
 import type { Hono } from "hono";
 
-import { createHealthApp } from "./endpoints/health/app";
-import { SUBMIT_ORDER_MESSAGES } from "./endpoints/submit-order/messages";
-import { createSubmitOrderApp } from "./endpoints/submit-order/app";
-import { createVerifyOrderApp } from "./endpoints/verify-order/app";
-import { createEndpointApp } from "./http/endpoint-app";
-import { type Logger, defaultLogger } from "./http/logger";
-import { MESSAGES } from "./http/messages";
-import { createDocsApp } from "./openapi/docs-app";
+import { createHealthApp } from "#endpoints/health/app";
+import { createSubmitOrderApp } from "#endpoints/submit-order/app";
+import { SUBMIT_ORDER_MESSAGES } from "#endpoints/submit-order/messages";
+import { createVerifyOrderApp } from "#endpoints/verify-order/app";
+import { createEndpointApp } from "#http/endpoint-app";
+import { type Logger, defaultLogger } from "#http/logger";
+import { MESSAGES } from "#http/messages";
+import { createDocsApp } from "#openapi/docs-app";
+
 import { routes } from "./routes";
 
 export interface AppDependencies {

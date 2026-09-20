@@ -8,7 +8,8 @@ import {
   restoreOrder,
 } from "@scos/core";
 
-import { Prisma, type PrismaClient } from "./generated/prisma/client";
+import { Prisma, type PrismaClient } from "#generated/prisma/client";
+
 import { formatDiscountRate, formatMoney } from "./records";
 import { classifySubmissionError } from "./submission-errors";
 

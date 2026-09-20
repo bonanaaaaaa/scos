@@ -1,4 +1,4 @@
-import type { Order, OrderAllocation, Prisma, Warehouse } from "./generated/prisma/client";
+import type { Order, OrderAllocation, Prisma, Warehouse } from "#generated/prisma/client";
 
 // Persistence-local typed records. Rows from Prisma are mapped here so that
 // Prisma Decimal values never leave the adapter. Money is a fixed two-decimal

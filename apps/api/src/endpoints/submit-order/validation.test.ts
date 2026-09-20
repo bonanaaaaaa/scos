@@ -1,8 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { errorResponseSchema } from "../../http/errors";
-import { MESSAGES } from "../../http/messages";
-import { json, post, submitBody, verifyBody } from "../../testing/fixtures.test-support";
+import { errorResponseSchema } from "#http/errors";
+import { MESSAGES } from "#http/messages";
+import { json, post, submitBody, verifyBody } from "#testing/fixtures.test-support";
+
 import { harness } from "./harness.test-support";
 
 describe("request validation before the use case", () => {
