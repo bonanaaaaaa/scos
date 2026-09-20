@@ -10,9 +10,11 @@ separately.
 
 ## Scope and status
 
-- **Offline preparation only.** Nothing has been provisioned. The script was
-  tested with stub `pscale` and `wrangler` executables, never against
-  PlanetScale or Cloudflare.
+- **Provisioned.** The script was developed offline against stub `pscale`
+  and `wrangler` executables, but it has since run for real: it created the
+  `scos` database and both roles during a deploy on 2026-09-19
+  ([hosted demonstration](hosted-demonstration.md#the-chargeable-step-and-its-date)).
+  The database exists and is billing.
 - **The deploy runs it.** By the user's decision (the
   [ADR 0005 amendment](adr/0005-cloudflare-first-deployment.md)), the deploy
   job's first step after the build runs this script with

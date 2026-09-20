@@ -7,8 +7,11 @@ records why the first hosted demonstration runs on Cloudflare Workers.
 
 ## Scope and status
 
-- **Design only.** Nothing is provisioned. No Cloudflare or PlanetScale
-  account was used. Every value below is an input for #15, not a resource.
+- **Design, now provisioned.** This record was written as design only, and
+  every value below was an input for #15 rather than a resource. The design
+  has since been deployed: what actually exists, and what it costs, is in
+  [hosted demonstration](hosted-demonstration.md). Where the two disagree,
+  the hosted record is the live one.
 - **Checked on 2026-09-19.** Platform limits and prices come from the
   [sources](#sources) as they read on that date. Re-check them before #15
   runs the bootstrap.

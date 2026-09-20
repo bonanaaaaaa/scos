@@ -128,10 +128,10 @@ Test names are quoted exactly. A name with `%s`, `%i` or `$name` is a parameteri
 
 ### Hosted demonstration (P2)
 
-| Scenario                                                  | Evidence                                                               | Level | Owner  |
-| --------------------------------------------------------- | ---------------------------------------------------------------------- | ----- | ------ |
-| Core flows and docs verified against a hosted environment | Not in scope (P2), deferred to #28, #15 and #33 ([ADR 0005][adr-0005]) | n/a   | devops |
-| Teardown identifies and removes created resources         | Not in scope (P2), deferred to #15 and #33                             | n/a   | devops |
+| Scenario                                                  | Evidence                                                                                                                                                                                                       | Level           | Owner      |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ---------- |
+| Core flows and docs verified against a hosted environment | Done (#33): 33 hosted API tests green against the live Cloudflare deployment, plus a concurrency probe showing no oversell at width 15 ([hosted demonstration](hosted-demonstration.md#verification-evidence)) | API, documented | qa, devops |
+| Teardown identifies and removes created resources         | Identified and documented, **not performed**: a 7-step procedure with what each step destroys and whether it is recoverable ([teardown](hosted-demonstration.md#teardown))                                     | documented      | devops     |
 
 ## Issue #13 acceptance criteria
 

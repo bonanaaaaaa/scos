@@ -9,17 +9,21 @@ and [ADR 0005](adr/0005-cloudflare-first-deployment.md).
 
 ## Offline preparation and hosted execution
 
-The pipeline is committed, but nothing is provisioned yet:
+The pipeline is committed and has since provisioned and deployed the hosted
+demonstration; what exists is recorded in
+[hosted demonstration](hosted-demonstration.md). The mechanics below are
+unchanged:
 
 - `infra-check.yml` runs on pull requests with no secret and no environment.
 - `Deploy Prod` (`deploy-prod.yml`) runs on every merge to `main` and deploys
   to `prod`. While the settings are incomplete it fails before creating
   anything: GitHub should reject a missing required repository secret before
-  the job starts (unverified until #33; without the R2 keys
-  `backend-init.sh` stops anyway), and a missing `prod` setting fails the first step that uses it. As of 2026-09-20 every required
-  setting is present, so the next merge deploys and, on the first run,
-  creates the database and starts billing. Disable the workflow first if
-  that is not wanted yet.
+  the job starts (unverified; without the R2 keys
+  `backend-init.sh` stops anyway), and a missing `prod` setting fails the first step that uses it. Every required
+  setting is present and the database already exists, so a merge now deploys
+  over the live demonstration, and a merge _after_ a teardown would recreate
+  the database and restart billing. Disable the workflow first if that is not
+  wanted ([teardown](hosted-demonstration.md#teardown)).
 
 **Hosted execution** depends on the user's account, budget and provisioning
 authorization. That covers every step that touches Cloudflare or PlanetScale:
