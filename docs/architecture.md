@@ -7,32 +7,51 @@ database and the hosting runtime, is a replaceable attachment on the outside. Th
 shape has no meaning of its own; it is drawn with many sides because an
 application can have many plugs.
 
-```mermaid
-flowchart LR
-    subgraph driving["Driving adapters (call in)"]
-        api["Hono HTTP API<br/>apps/api"]
-        worker["Cloudflare Worker<br/>apps/api (workerd)"]
-        lambda["Lambda handler<br/>(deferred, #14)"]
-    end
+![SCOS hexagonal architecture: driving adapters, the core, and the driven adapter](images/hexagonal-architecture.svg)
 
-    subgraph core["packages/core"]
-        direction TB
-        app["application/<br/>VerifyOrder, SubmitOrder<br/>(orchestration)"]
-        ports["application/ports<br/>InventoryReader, SubmissionStore,<br/>SubmissionTransaction<br/>(interfaces)"]
-        domain["domain/<br/>Money, Quantity, Destination, pricing,<br/>distance, allocation, estimate, Order<br/>(pure rules)"]
-        app --> domain
-        app --> ports
-    end
+## Repository map
 
-    subgraph driven["Driven adapters (called out)"]
-        db["Prisma / PostgreSQL<br/>packages/persistence"]
-    end
+Where each directory sits in the diagram above. The rule of thumb: `packages/`
+holds what the business would still need if every technology changed, `apps/`
+and `infra/` hold the technologies.
 
-    api --> app
-    worker --> app
-    lambda --> app
-    db -. implements .-> ports
-```
+| Directory                | What it is                                                                                                                                           | Hexagon position    |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `packages/core`          | The domain model and the use cases, with the ports they need. Depends on nothing but Zod — [README](../packages/core/README.md)                      | The hexagon         |
+| `packages/persistence`   | Prisma schema, migrations, the six-warehouse seed, and the driven adapters that implement core's ports — [README](../packages/persistence/README.md) | Driven adapter      |
+| `apps/api`               | The Hono API: routes, request schemas, OpenAPI, telemetry, and the Node and Worker entry points — [README](../apps/api/README.md)                    | Driving adapter     |
+| `apps/api-acceptance`    | The QA-owned Playwright suite. Imports no API source; talks to a running server only over HTTP — [README](../apps/api-acceptance/README.md)          | Outside the hexagon |
+| `infra/cloudflare`       | Terraform for the Worker, Hyperdrive and secrets, plus the deploy scripts and their tests                                                            | Infrastructure      |
+| `infra/planetscale`      | The one-shot database bootstrap script and its tests                                                                                                 | Infrastructure      |
+| `libs/typescript-config` | The shared `tsconfig` base every package extends                                                                                                     | Tooling             |
+| `scripts`                | Repository scripts with their own tests: PR-title validation, hosted concurrency measurement                                                         | Tooling             |
+| `docs`                   | The written record — see the table below                                                                                                             | —                   |
+
+Two splits are deliberate and easy to miss:
+
+- **`apps/api` vs `apps/api-acceptance`.** `apps/api` holds the developer tests,
+  which compose the application inside the test process. `apps/api-acceptance`
+  holds the QA suite, which starts the built artifact as a real server and only
+  speaks HTTP to it. The second cannot accidentally pass because of a test
+  double, which is the whole point of keeping it separate.
+- **`packages/persistence/src` vs `packages/persistence/test`.** `src` holds
+  unit tests beside their code; `test` holds the tests that need a real
+  PostgreSQL, so CI can run them as a separate, never-cached job.
+
+### Which document answers which question
+
+| I want to know…                                         | Read                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| How do I run it, locally or hosted?                     | [README](../README.md#evaluator-walkthrough)                                                                                                                                                                                                                                                                                                       |
+| What does the challenge ask, and where is it?           | [SUBMISSION.md](../SUBMISSION.md)                                                                                                                                                                                                                                                                                                                  |
+| What do these business words mean?                      | [CONTEXT.md](../CONTEXT.md)                                                                                                                                                                                                                                                                                                                        |
+| How is the code structured, and where does new code go? | This file                                                                                                                                                                                                                                                                                                                                          |
+| Why is it built this way?                               | [ADRs](adr/) — [0001](adr/0001-advisory-verification.md) advisory verification, [0003](adr/0003-database-managed-timestamps.md) timestamps, [0004](adr/0004-deduplicate-accepted-orders.md) idempotent submission, [0005](adr/0005-cloudflare-first-deployment.md) Cloudflare first ([0002](adr/0002-replay-submission-outcomes.md) is superseded) |
+| What was agreed before implementation?                  | [PRD](prd/scos-ordering.md), [design decisions](design-decisions.md)                                                                                                                                                                                                                                                                               |
+| What do the tables look like?                           | [database schema](database-schema.md)                                                                                                                                                                                                                                                                                                              |
+| What do logs, traces and metrics do?                    | [observability](observability.md)                                                                                                                                                                                                                                                                                                                  |
+| How is it deployed?                                     | [deployment pipeline](deployment-pipeline.md), [Cloudflare design](cloudflare-deployment-design.md), [PlanetScale bootstrap](planetscale-bootstrap.md)                                                                                                                                                                                             |
+| What is actually proven, and what is not?               | [acceptance evidence](acceptance-evidence.md), [hosted demonstration](hosted-demonstration.md)                                                                                                                                                                                                                                                     |
 
 ## Layers
 
@@ -107,6 +126,17 @@ flowchart LR
      deployment pipeline is #15, and the hosted demonstration is #33.
    - **Driven adapters** are called by the application. `packages/persistence`
      implements the ports with Prisma and SQL.
+
+## Numeric policy across the layers
+
+| Topic              | Rule                                                                                                                                                                                                           | Details                                                                     |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Decimal arithmetic | Money uses an isolated `decimal.js` clone with 40 significant digits and `ROUND_HALF_UP`; constants are built from strings. Discounts are exact at cents; only the shipping charge is rounded, once, to cents. | [core numeric policy](../packages/core/README.md#numeric-policy)            |
+| Money on the wire  | Decimal strings with two fractional digits (`"150.00"`); `discountRate` is a two-decimal string; `shippingCost` and `orderTotal` are `null` for insufficient stock.                                            | [API endpoints](../apps/api/README.md#endpoints)                            |
+| Distance           | Haversine in JavaScript `number` with Earth radius `EARTH_RADIUS_KM = 6371.0088` km (IUGG mean radius); `distanceKm` is returned unrounded.                                                                    | [core numeric policy](../packages/core/README.md#numeric-policy)            |
+| Quantity           | JSON integer from 1 to `MAX_QUANTITY` = 66,666,666 (floor(9,999,999,999.99 / 150)), a storage-representability bound rather than a business cap; larger values are `400`.                                      | [supported input bounds](../packages/core/README.md#supported-input-bounds) |
+| Coordinates        | JSON numbers, latitude -90 to 90 and longitude -180 to 180 inclusive, never coerced from strings; stored as `double precision`.                                                                                | [request validation](../apps/api/README.md#request-validation)              |
+| Stored money       | `NUMERIC(12,2)`, at most 9,999,999,999.99 and nonnegative; `discount_rate` is `NUMERIC(3,2)`. Out-of-range amounts fail instead of being rounded.                                                              | [money and coordinates](database-schema.md#money-and-coordinates)           |
 
 ## The dependency rule
 
@@ -285,143 +315,7 @@ one aggregate, a set of value objects and a few stateless domain services.
 Solid diamonds are composition (the owner holds the value); dashed arrows are
 "uses" or "returns" dependencies of a function.
 
-```mermaid
-classDiagram
-    direction LR
-
-    class Order {
-        <<AggregateRoot>>
-        +id string
-        +orderNumber string
-        +submissionKey SubmissionKey
-        +quantity Quantity
-        +destination Destination
-        +unitPrice Money
-        +merchandiseSubtotal Money
-        +discountRate DiscountRate
-        +discountAmount Money
-        +discountedMerchandiseTotal Money
-        +shippingCost Money
-        +orderTotal Money
-        +allocations OrderAllocation[]
-    }
-    class OrderAllocation {
-        <<ValueObject>>
-        +warehouseId string
-        +quantity number
-    }
-    class CreateOrder {
-        <<Factory>>
-        +createOrder(orderNumber, submissionKey, estimate) NewOrder
-        +restoreOrder(stored) Order
-    }
-
-    class SubmissionKey {
-        <<ValueObject>>
-    }
-    class Quantity {
-        <<ValueObject>>
-    }
-    class Destination {
-        <<ValueObject>>
-        +latitude number
-        +longitude number
-    }
-    class Money {
-        <<ValueObject>>
-    }
-    class DiscountRate {
-        <<ValueObject>>
-    }
-    class WarehouseAllocation {
-        <<ValueObject>>
-        +warehouseId string
-        +quantity number
-        +distanceKm number
-    }
-    class ShippingPlan {
-        <<ValueObject>>
-    }
-    class OrderRequest {
-        <<ValueObject>>
-        +quantity Quantity
-        +destination Destination
-    }
-    class OrderEstimate {
-        <<ValueObject>>
-        +valid boolean
-        +reason string
-    }
-
-    class InventorySnapshot {
-        <<ReadModel>>
-    }
-    class WarehouseStock {
-        <<ReadModel>>
-        +warehouseId string
-        +latitude number
-        +longitude number
-        +available number
-    }
-
-    class Pricing {
-        <<DomainService>>
-        +discountRateFor(quantity) DiscountRate
-        +priceMerchandise(quantity) MerchandisePricing
-    }
-    class Shipping {
-        <<DomainService>>
-        +shippingCostFor(allocations) Money
-        +shippingLimitFor(discountedTotal) Decimal
-        +isShippingWithinLimit(shippingCost, discountedTotal) boolean
-    }
-    class Allocation {
-        <<DomainService>>
-        +allocateNearestFirst(quantity, destination, inventory) ShippingPlan
-    }
-    class Distance {
-        <<DomainService>>
-        +haversineDistanceKm(from, to) number
-    }
-    class EstimateOrder {
-        <<DomainService>>
-        +estimateOrder(request, inventory) OrderEstimate
-    }
-
-    Order *-- SubmissionKey
-    Order *-- Quantity
-    Order *-- Destination
-    Order *-- Money
-    Order *-- DiscountRate
-    Order "1" *-- "1..*" OrderAllocation : allocations
-    ShippingPlan "1" *-- "1..*" WarehouseAllocation
-    OrderRequest *-- Quantity
-    OrderRequest *-- Destination
-    OrderEstimate *-- Quantity
-    OrderEstimate *-- Destination
-    OrderEstimate *-- Money
-    OrderEstimate *-- DiscountRate
-    OrderEstimate "1" *-- "0..*" WarehouseAllocation : allocations
-    InventorySnapshot "1" *-- "0..*" WarehouseStock
-
-    EstimateOrder ..> OrderRequest : uses
-    EstimateOrder ..> InventorySnapshot : uses
-    EstimateOrder ..> Pricing : uses
-    EstimateOrder ..> Allocation : uses
-    EstimateOrder ..> Shipping : uses
-    EstimateOrder ..> OrderEstimate : returns
-    Allocation ..> Distance : uses
-    Allocation ..> InventorySnapshot : uses
-    Allocation ..> ShippingPlan : returns
-    Shipping ..> WarehouseAllocation : uses
-    Pricing ..> Quantity : uses
-    CreateOrder ..> OrderEstimate : uses
-    CreateOrder ..> SubmissionKey : uses
-    CreateOrder ..> Pricing : re-verifies with
-    CreateOrder ..> Shipping : re-verifies with
-    CreateOrder ..> Order : returns
-    CreateOrder ..> OrderAllocation : drops distance into
-```
+![The SCOS Ordering domain model](images/domain-model.svg)
 
 - **Aggregate root: `Order`.** An accepted order with its identity (`id`,
   `orderNumber`), the client's `submissionKey`, amounts and allocations. A new

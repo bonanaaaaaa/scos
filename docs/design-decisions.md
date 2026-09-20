@@ -95,40 +95,7 @@
 
 Verification is advisory: another order can consume inventory before submission. The following flow shows a submission with a new submissionId. Repeating the submissionId of an accepted Order returns that Order without deducting stock again; reuse with different inputs returns a conflict.
 
-```mermaid
-sequenceDiagram
-    actor User
-    participant API as Hono API
-    participant DB as PostgreSQL
-    actor Other as Another user
-
-    User->>API: Verify quantity and destination
-    API->>DB: Read available inventory
-    DB-->>API: Current stock
-    API->>API: Calculate pricing and shipping
-    API-->>User: Estimate and validity
-    Note over API,DB: No Order created and no stock reserved or deducted
-
-    Other->>API: Submit another order
-    API->>DB: Accept order and deduct stock atomically
-    API-->>Other: Order accepted
-
-    User->>API: Submit with new submissionId
-    rect rgb(235, 245, 255)
-        Note over API,DB: One database transaction
-        API->>DB: Lock warehouse rows in stable ID order
-        DB-->>API: Current inventory
-        API->>DB: Look up Order by submissionId (none found)
-        API->>API: Recalculate pricing and shipping
-        alt Fulfillable and shipping within limit
-            API->>DB: Save Order with submissionId and allocations, deduct stock
-        else Insufficient stock or shipping exceeds limit
-            Note over API,DB: Save nothing; stock unchanged
-        end
-        API->>DB: Commit
-    end
-    API-->>User: Accepted Order or business rejection
-```
+![Verification and submission sequence](images/submission-sequence.svg)
 
 ## Observability
 

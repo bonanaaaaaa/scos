@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1010" height="500" viewBox="0 0 1010 500" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>SCOS hexagonal architecture: driving adapters, core, driven adapters</title>
+  <desc>Three driving adapters call in: the Hono HTTP API and the Cloudflare Worker, both in apps/api, and a deferred Lambda handler. They all call the application layer of packages/core, which holds the VerifyOrder and SubmitOrder use cases. The application layer depends on the domain, which holds the pure business rules, and on its ports, which are interfaces. The driven adapter, Prisma over PostgreSQL in packages/persistence, implements those ports, so the dependency points inward at every boundary.</desc>
+  <style>
+    .bg { fill: #ffffff; }
+    .gray rect { fill: #F1EFE8; stroke: #5F5E5A; }
+    .gray .th { fill: #444441; } .gray .ts { fill: #5F5E5A; }
+    .teal rect { fill: #E1F5EE; stroke: #0F6E56; }
+    .teal .th { fill: #085041; } .teal .ts { fill: #0F6E56; }
+    .purple rect { fill: #EEEDFE; stroke: #534AB7; }
+    .purple .th { fill: #3C3489; } .purple .ts { fill: #534AB7; }
+    .muted rect { stroke-dasharray: 5 4; }
+    .muted .th, .muted .ts { fill-opacity: .62; }
+    .th { font-size: 13.5px; font-weight: 600; }
+    .ts { font-size: 11.5px; }
+    .col { font-size: 11.5px; font-weight: 600; fill: #5F5E5A; letter-spacing: .05em; }
+    .core-box { fill: none; stroke: #0F6E56; stroke-width: 1; stroke-dasharray: 6 4; stroke-opacity: .7; }
+    .core-label { font-size: 12px; font-weight: 700; fill: #085041; letter-spacing: .02em; }
+    .arr { stroke: #888780; stroke-width: 1.5; fill: none; }
+    .impl { stroke: #1D9E75; stroke-width: 1.25; stroke-dasharray: 4 3; fill: none; }
+    .elabel { font-size: 11px; fill: #5F5E5A; }
+    .legend { font-size: 12px; fill: #5F5E5A; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .gray rect { fill: #444441; stroke: #B4B2A9; }
+      .gray .th { fill: #F1EFE8; } .gray .ts { fill: #D3D1C7; }
+      .teal rect { fill: #085041; stroke: #5DCAA5; }
+      .teal .th { fill: #E1F5EE; } .teal .ts { fill: #9FE1CB; }
+      .purple rect { fill: #3C3489; stroke: #AFA9EC; }
+      .purple .th { fill: #EEEDFE; } .purple .ts { fill: #CECBF6; }
+      .core-box { stroke: #5DCAA5; }
+      .core-label { fill: #9FE1CB; }
+      .col, .elabel, .legend { fill: #D3D1C7; }
+      .arr { stroke: #B4B2A9; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#1D9E75" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1010" height="500"/>
+
+  <text class="col" x="129" y="56" text-anchor="middle">DRIVING ADAPTERS — CALL IN</text>
+  <text class="col" x="883" y="236" text-anchor="middle">DRIVEN ADAPTER — CALLED OUT</text>
+
+  <!-- driving adapters -->
+  <g class="gray">
+    <rect x="24" y="96" width="210" height="64" rx="8"/>
+    <text class="th" x="40" y="122">Hono HTTP API</text>
+    <text class="ts" x="40" y="140">apps/api</text>
+  </g>
+  <g class="gray">
+    <rect x="24" y="184" width="210" height="64" rx="8"/>
+    <text class="th" x="40" y="210">Cloudflare Worker</text>
+    <text class="ts" x="40" y="228">apps/api, in workerd</text>
+  </g>
+  <g class="gray muted">
+    <rect x="24" y="272" width="210" height="64" rx="8"/>
+    <text class="th" x="40" y="298">Lambda handler</text>
+    <text class="ts" x="40" y="316">deferred</text>
+  </g>
+
+  <!-- the core -->
+  <rect class="core-box" x="300" y="70" width="420" height="308" rx="12"/>
+  <text class="core-label" x="316" y="92">packages/core</text>
+  <g class="teal">
+    <rect x="324" y="112" width="372" height="84" rx="8"/>
+    <text class="th" x="340" y="136">application/</text>
+    <text class="ts" x="340" y="156">VerifyOrder, SubmitOrder</text>
+    <text class="ts" x="340" y="176">orchestration, no business rules</text>
+  </g>
+  <g class="teal">
+    <rect x="324" y="232" width="178" height="124" rx="8"/>
+    <text class="th" x="340" y="256">domain/</text>
+    <text class="ts" x="340" y="276">Money, Quantity,</text>
+    <text class="ts" x="340" y="292">Destination, pricing,</text>
+    <text class="ts" x="340" y="308">distance, allocation,</text>
+    <text class="ts" x="340" y="324">estimate, Order</text>
+    <text class="ts" x="340" y="344">pure rules</text>
+  </g>
+  <g class="purple">
+    <rect x="518" y="232" width="178" height="124" rx="8"/>
+    <text class="th" x="534" y="256">application/ports</text>
+    <text class="ts" x="534" y="276">InventoryReader,</text>
+    <text class="ts" x="534" y="292">SubmissionStore,</text>
+    <text class="ts" x="534" y="308">SubmissionTransaction</text>
+    <text class="ts" x="534" y="344">interfaces only</text>
+  </g>
+
+  <!-- driven adapter -->
+  <g class="gray">
+    <rect x="780" y="262" width="206" height="84" rx="8"/>
+    <text class="th" x="796" y="288">Prisma / PostgreSQL</text>
+    <text class="ts" x="796" y="308">packages/persistence</text>
+    <text class="ts" x="796" y="326">SQL, row locks, pooling</text>
+  </g>
+
+  <!-- calls in -->
+  <path class="arr" marker-end="url(#a)" d="M234 128 H300 V140 H318"/>
+  <path class="arr" marker-end="url(#a)" d="M234 216 H286 V158 H318"/>
+  <path class="arr" marker-end="url(#a)" d="M234 304 H268 V176 H318"/>
+
+  <!-- application depends inward -->
+  <path class="arr" marker-end="url(#a)" d="M413 196 V226"/>
+  <path class="arr" marker-end="url(#a)" d="M607 196 V226"/>
+
+  <!-- persistence implements the ports -->
+  <path class="impl" marker-end="url(#g)" d="M780 296 H702"/>
+  <text class="elabel" x="741" y="288" text-anchor="middle">implements</text>
+
+  <!-- legend -->
+  <g>
+    <path class="arr" marker-end="url(#a)" d="M40 424 H100"/>
+    <text class="legend" x="112" y="428">calls / depends on</text>
+    <path class="impl" marker-end="url(#g)" d="M280 424 H340"/>
+    <text class="legend" x="352" y="428">implements an interface</text>
+    <text class="legend" x="40" y="462">Every arrow points inward. The core names what it needs; the adapters outside supply it, so HTTP, the database and</text>
+    <text class="legend" x="40" y="482">the hosting runtime are replaceable without touching a business rule.</text>
+  </g>
+</svg>

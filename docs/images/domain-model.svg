@@ -1,0 +1,236 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="970" viewBox="0 0 1060 970" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>The SCOS Ordering domain model</title>
+  <desc>An Order Request and an Inventory Snapshot of Warehouse Stock feed the domain services. EstimateOrder orchestrates Pricing, Allocation and Shipping, and Allocation uses Distance; it returns an Order Estimate, which carries Warehouse Allocations, while Allocation returns a Shipping Plan of the same. The CreateOrder factory takes an Order Estimate and a Submission Key, re-verifies the amounts with Pricing and Shipping, and returns the Order aggregate root, which owns its Order Allocations. Quantity, Destination, Money, DiscountRate and SubmissionKey are shared value objects composed into Order, Order Estimate and Order Request.</desc>
+  <style>
+    .bg { fill: #ffffff; }
+    .gray rect { fill: #F1EFE8; stroke: #5F5E5A; }
+    .gray .th { fill: #444441; } .gray .ts { fill: #5F5E5A; }
+    .teal rect { fill: #E1F5EE; stroke: #0F6E56; }
+    .teal .th { fill: #085041; } .teal .ts { fill: #0F6E56; }
+    .purple rect { fill: #EEEDFE; stroke: #534AB7; }
+    .purple .th { fill: #3C3489; } .purple .ts { fill: #534AB7; }
+    .amber rect { fill: #FDF0DC; stroke: #A66A00; }
+    .amber .th { fill: #7A4E00; } .amber .ts { fill: #A66A00; }
+    .th { font-size: 14px; font-weight: 600; }
+    .ts { font-size: 12px; }
+    .col { font-size: 12px; font-weight: 600; fill: #5F5E5A; letter-spacing: .04em; }
+    .legend { font-size: 12px; fill: #5F5E5A; }
+    .band { fill: none; stroke: #B4B2A9; stroke-width: 1; stroke-dasharray: 5 4; }
+    .comp { stroke: #888780; stroke-width: 1.5; fill: none; }
+    .uses { stroke: #1D9E75; stroke-width: 1.25; stroke-dasharray: 4 3; fill: none; }
+    .elabel { font-size: 11px; fill: #5F5E5A; }
+    .dia { fill: #888780; stroke: none; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .gray rect { fill: #444441; stroke: #B4B2A9; }
+      .gray .th { fill: #F1EFE8; } .gray .ts { fill: #D3D1C7; }
+      .teal rect { fill: #085041; stroke: #5DCAA5; }
+      .teal .th { fill: #E1F5EE; } .teal .ts { fill: #9FE1CB; }
+      .purple rect { fill: #3C3489; stroke: #AFA9EC; }
+      .purple .th { fill: #EEEDFE; } .purple .ts { fill: #CECBF6; }
+      .amber rect { fill: #7A4E00; stroke: #F0C27B; }
+      .amber .th { fill: #FDF0DC; } .amber .ts { fill: #F5D9AE; }
+      .col, .legend, .elabel { fill: #D3D1C7; }
+      .band { stroke: #5F5E5A; }
+      .comp { stroke: #B4B2A9; }
+      .dia { fill: #B4B2A9; }
+    }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="comp" d="M2 1L8 5L2 9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="at" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#1D9E75" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="dia" viewBox="0 0 12 12" refX="1" refY="6" markerWidth="9" markerHeight="9" orient="auto">
+      <path class="dia" d="M1 6L6 2L11 6L6 10Z"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1060" height="970"/>
+
+  <text class="col" x="124" y="40" text-anchor="middle">INPUTS</text>
+  <text class="col" x="378" y="40" text-anchor="middle">DOMAIN SERVICES</text>
+  <text class="col" x="642" y="40" text-anchor="middle">ESTIMATE RESULT</text>
+  <text class="col" x="918" y="40" text-anchor="middle">ORDER AGGREGATE</text>
+
+  <!-- Column 1: inputs -->
+  <g class="purple">
+    <rect x="24" y="70" width="200" height="96" rx="8"/>
+    <text class="th" x="40" y="92">OrderRequest</text>
+    <text class="ts" x="40" y="110">«ValueObject»</text>
+    <text class="ts" x="40" y="134">quantity: Quantity</text>
+    <text class="ts" x="40" y="152">destination: Destination</text>
+  </g>
+  <g class="gray">
+    <rect x="24" y="196" width="200" height="60" rx="8"/>
+    <text class="th" x="40" y="220">InventorySnapshot</text>
+    <text class="ts" x="40" y="240">«ReadModel»</text>
+  </g>
+  <g class="gray">
+    <rect x="24" y="286" width="200" height="112" rx="8"/>
+    <text class="th" x="40" y="310">WarehouseStock</text>
+    <text class="ts" x="40" y="328">«ReadModel»</text>
+    <text class="ts" x="40" y="352">warehouseId</text>
+    <text class="ts" x="40" y="370">latitude, longitude</text>
+    <text class="ts" x="40" y="388">available</text>
+  </g>
+
+  <!-- Column 2: domain services -->
+  <g class="teal">
+    <rect x="268" y="70" width="220" height="96" rx="8"/>
+    <text class="th" x="284" y="92">EstimateOrder</text>
+    <text class="ts" x="284" y="110">«DomainService»</text>
+    <text class="ts" x="284" y="134">estimateOrder(request,</text>
+    <text class="ts" x="284" y="152">inventory) → OrderEstimate</text>
+  </g>
+  <g class="teal">
+    <rect x="268" y="196" width="220" height="96" rx="8"/>
+    <text class="th" x="284" y="218">Pricing</text>
+    <text class="ts" x="284" y="236">«DomainService»</text>
+    <text class="ts" x="284" y="260">discountRateFor(q)</text>
+    <text class="ts" x="284" y="278">priceMerchandise(q)</text>
+  </g>
+  <g class="teal">
+    <rect x="268" y="322" width="220" height="96" rx="8"/>
+    <text class="th" x="284" y="344">Allocation</text>
+    <text class="ts" x="284" y="362">«DomainService»</text>
+    <text class="ts" x="284" y="386">allocateNearestFirst(q,</text>
+    <text class="ts" x="284" y="404">destination, inventory)</text>
+  </g>
+  <g class="teal">
+    <rect x="268" y="448" width="220" height="78" rx="8"/>
+    <text class="th" x="284" y="470">Distance</text>
+    <text class="ts" x="284" y="488">«DomainService»</text>
+    <text class="ts" x="284" y="512">haversineDistanceKm(a, b)</text>
+  </g>
+  <g class="teal">
+    <rect x="268" y="556" width="220" height="114" rx="8"/>
+    <text class="th" x="284" y="578">Shipping</text>
+    <text class="ts" x="284" y="596">«DomainService»</text>
+    <text class="ts" x="284" y="620">shippingCostFor(allocations)</text>
+    <text class="ts" x="284" y="638">shippingLimitFor(total)</text>
+    <text class="ts" x="284" y="656">isShippingWithinLimit(…)</text>
+  </g>
+
+  <!-- Column 3: estimate result -->
+  <g class="purple">
+    <rect x="532" y="70" width="220" height="186" rx="8"/>
+    <text class="th" x="548" y="92">OrderEstimate</text>
+    <text class="ts" x="548" y="110">«ValueObject»</text>
+    <text class="ts" x="548" y="134">valid, reason</text>
+    <text class="ts" x="548" y="152">quantity, destination</text>
+    <text class="ts" x="548" y="170">merchandiseSubtotal</text>
+    <text class="ts" x="548" y="188">discountRate, discountAmount</text>
+    <text class="ts" x="548" y="206">discountedMerchandiseTotal</text>
+    <text class="ts" x="548" y="224">shippingCost, orderTotal</text>
+    <text class="ts" x="548" y="242">allocations 0..*</text>
+  </g>
+  <g class="purple">
+    <rect x="532" y="286" width="220" height="60" rx="8"/>
+    <text class="th" x="548" y="310">ShippingPlan</text>
+    <text class="ts" x="548" y="330">«ValueObject» · 1..* allocations</text>
+  </g>
+  <g class="purple">
+    <rect x="532" y="376" width="220" height="112" rx="8"/>
+    <text class="th" x="548" y="400">WarehouseAllocation</text>
+    <text class="ts" x="548" y="418">«ValueObject»</text>
+    <text class="ts" x="548" y="442">warehouseId</text>
+    <text class="ts" x="548" y="460">quantity</text>
+    <text class="ts" x="548" y="478">distanceKm</text>
+  </g>
+
+  <!-- Column 4: the aggregate -->
+  <g class="teal">
+    <rect x="800" y="70" width="236" height="114" rx="8"/>
+    <text class="th" x="816" y="92">CreateOrder</text>
+    <text class="ts" x="816" y="110">«Factory»</text>
+    <text class="ts" x="816" y="134">createOrder(orderNumber,</text>
+    <text class="ts" x="816" y="152">submissionKey, estimate)</text>
+    <text class="ts" x="816" y="170">restoreOrder(stored)</text>
+  </g>
+  <text class="elabel" x="816" y="202">re-verifies amounts with Pricing</text>
+  <text class="elabel" x="816" y="217">and Shipping before returning</text>
+  <g class="amber">
+    <rect x="800" y="232" width="236" height="210" rx="8"/>
+    <text class="th" x="816" y="256">Order</text>
+    <text class="ts" x="816" y="274">«AggregateRoot»</text>
+    <text class="ts" x="816" y="298">id, orderNumber</text>
+    <text class="ts" x="816" y="316">submissionKey: SubmissionKey</text>
+    <text class="ts" x="816" y="334">quantity, destination</text>
+    <text class="ts" x="816" y="352">unitPrice, merchandiseSubtotal</text>
+    <text class="ts" x="816" y="370">discountRate, discountAmount</text>
+    <text class="ts" x="816" y="388">discountedMerchandiseTotal</text>
+    <text class="ts" x="816" y="406">shippingCost, orderTotal</text>
+    <text class="ts" x="816" y="424">allocations: OrderAllocation[]</text>
+  </g>
+  <g class="purple">
+    <rect x="800" y="472" width="236" height="96" rx="8"/>
+    <text class="th" x="816" y="496">OrderAllocation</text>
+    <text class="ts" x="816" y="514">«ValueObject»</text>
+    <text class="ts" x="816" y="538">warehouseId</text>
+    <text class="ts" x="816" y="556">quantity</text>
+  </g>
+
+  <!-- Edges -->
+  <path class="uses" marker-end="url(#at)" d="M224 118 H262"/>
+  <path class="uses" marker-end="url(#at)" d="M224 226 H240 Q248 226 248 218 V146 Q248 138 256 138 H262"/>
+  <path class="comp" marker-start="url(#dia)" d="M124 256 V286"/>
+
+  <path class="uses" marker-end="url(#at)" d="M378 166 V196"/>
+  <path class="uses" marker-end="url(#at)" d="M276 166 Q252 166 252 190 V352 Q252 370 260 370 H262"/>
+  <path class="uses" marker-end="url(#at)" d="M290 166 Q234 170 234 200 V590 Q234 606 250 606 H262"/>
+  <path class="uses" marker-end="url(#at)" d="M378 418 V448"/>
+
+  <path class="uses" marker-end="url(#at)" d="M488 118 H526"/>
+  <text class="elabel" x="507" y="110" text-anchor="middle">returns</text>
+  <path class="uses" marker-end="url(#at)" d="M488 370 H504 Q514 370 514 356 V322 Q514 316 522 316 H526"/>
+
+  <path class="comp" marker-start="url(#dia)" d="M642 346 V376"/>
+  <path class="comp" marker-start="url(#dia)" d="M752 240 H768 Q776 240 776 252 V420 Q776 432 768 432 H758"/>
+
+  <path class="uses" marker-end="url(#at)" d="M752 118 H794"/>
+  <path class="uses" marker-end="url(#at)" d="M918 184 V232"/>
+  <path class="comp" marker-start="url(#dia)" d="M918 442 V472"/>
+
+  <!-- Shared value objects -->
+  <rect class="band" x="24" y="700" width="1012" height="130" rx="10"/>
+  <text class="col" x="40" y="724">SHARED VALUE OBJECTS</text>
+  <text class="legend" x="220" y="724">composed into Order, OrderEstimate and OrderRequest</text>
+  <g class="purple">
+    <rect x="40" y="740" width="180" height="72" rx="8"/>
+    <text class="th" x="56" y="768">Quantity</text>
+    <text class="ts" x="56" y="790">positive integer</text>
+  </g>
+  <g class="purple">
+    <rect x="240" y="740" width="180" height="72" rx="8"/>
+    <text class="th" x="256" y="768">Destination</text>
+    <text class="ts" x="256" y="790">latitude, longitude</text>
+  </g>
+  <g class="purple">
+    <rect x="440" y="740" width="180" height="72" rx="8"/>
+    <text class="th" x="456" y="768">Money</text>
+    <text class="ts" x="456" y="790">exact, 2 decimal places</text>
+  </g>
+  <g class="purple">
+    <rect x="640" y="740" width="180" height="72" rx="8"/>
+    <text class="th" x="656" y="768">DiscountRate</text>
+    <text class="ts" x="656" y="790">0 · .05 · .10 · .15 · .20</text>
+  </g>
+  <g class="purple">
+    <rect x="840" y="740" width="180" height="72" rx="8"/>
+    <text class="th" x="856" y="768">SubmissionKey</text>
+    <text class="ts" x="856" y="790">client idempotency key</text>
+  </g>
+
+  <!-- Legend -->
+  <g>
+    <path class="comp" marker-start="url(#dia)" d="M40 884 H110"/>
+    <text class="legend" x="122" y="888">composition — the owner holds the value</text>
+    <path class="uses" marker-end="url(#at)" d="M440 884 H510"/>
+    <text class="legend" x="522" y="888">uses or returns — a function dependency</text>
+    <text class="legend" x="40" y="920">Colour: gray read models · teal domain services and the factory · purple value objects · amber the aggregate root.</text>
+    <text class="legend" x="40" y="942">The domain layer is pure: no I/O, no ports, no HTTP or database types. Source: packages/core/src/domain.</text>
+  </g>
+</svg>

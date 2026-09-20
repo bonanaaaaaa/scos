@@ -203,7 +203,7 @@ Reading the reports:
 | Coordinates        | Latitude -90 to 90, longitude -180 to 180, inclusive                                          | [supported input bounds](../packages/core/README.md#supported-input-bounds)                                                                                                    |
 | Stored money       | `NUMERIC(12,2)`, nonnegative; out-of-range amounts fail, never rounded                        | [money and coordinates](database-schema.md#money-and-coordinates), [`money.test.ts`][core-money] "accepts the NUMERIC(12, 2) maximum and rejects anything larger"              |
 
-The README summarises these in [Numeric limits and precision](../README.md#numeric-limits-and-precision).
+These are summarised in [Numeric policy across the layers](architecture.md#numeric-policy-across-the-layers).
 
 ## Hosted-only gaps
 

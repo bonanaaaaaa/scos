@@ -118,6 +118,67 @@ needed):
 pnpm openapi:export   # write apps/api/dist/openapi.json
 ```
 
+## Install and verify
+
+```sh
+pnpm install --frozen-lockfile
+pnpm exec tsc --version
+pnpm build
+pnpm typecheck
+pnpm lint
+pnpm format:check
+pnpm test
+```
+
+The compiler command must report `Version 7.0.2`. The separate quality commands build every package, type-check, lint with Oxlint, check formatting and import order with Oxfmt, and run the current Vitest suites through Turbo. Each unit suite enforces at least 80% statement, branch, function, and line coverage. Coverage summaries are written to `coverage/` at the repository root and in each tested package.
+
+Installing dependencies also enables the [husky](https://typicode.github.io/husky/) `pre-commit` hook in `.husky` (the `prepare` script runs `husky`). Before each commit, [lint-staged](https://github.com/lint-staged/lint-staged) formats the staged files with Oxfmt, re-stages them, and lints the staged JavaScript and TypeScript with Oxlint (configured under `lint-staged` in `package.json`); the hook then runs the Turbo typecheck for the whole workspace as CI does. Use `git commit --no-verify` to skip it for a single commit, or `HUSKY=0` to disable hooks.
+
+Every directory's job is listed in the
+[repository map](architecture.md#repository-map); the hexagonal layering, the
+dependency rule and where new code belongs are in
+[architecture](architecture.md).
+
+### Build tooling
+
+The library packages (`packages/core`, `packages/persistence`) build with tsdown into ESM JavaScript and declaration files in their `dist` directories, and package exports point to those files. Their third-party and `@scos/*` dependencies stay external; `packages/persistence` additionally bundles its generated Prisma client (`src/generated/prisma`, produced by the `generate` task) and keeps `pg`, `@prisma/client`, `@prisma/adapter-pg` and `@scos/core` external. Declarations are emitted by the TypeScript 7 compiler; `tsc --noEmit` remains the type checker.
+
+The API application builds with esbuild (`apps/api/build.mjs`) into a self-contained ESM bundle, `apps/api/dist/node.js` (one file per runtime entry point in `apps/api/src/entrypoints/`), for Node.js, with AWS Lambda handlers to follow later (#14, deferred). The Cloudflare Worker, the first hosted target, is bundled by Wrangler from `src/entrypoints/worker.ts` instead. The esbuild bundle inlines the built workspace libraries and third-party runtime dependencies, so it runs without `node_modules`. Only Node.js built-ins and pg's optional native addon, `pg-native`, stay external. The API publishes no package exports or declarations.
+
+Each package's `turbo.json` declares its build configuration (`tsdown.config.ts` or `build.mjs`), `tsconfig.json`, `package.json`, and `src` as build inputs, and builds after its workspace dependencies. Turbo treats the shared TypeScript configuration as a global dependency so compiler-policy changes invalidate affected cached tasks.
+
+## Compose path: both databases by hand
+
+Copy `.env.example` to `.env` for local configuration. The committed values are local-only examples and contain no external credentials.
+
+Start both databases and wait for their health checks:
+
+```sh
+docker compose up -d --wait postgres postgres-test
+```
+
+The development database persists in the `scos-postgres-data` volume and listens on port 5432. The test database listens on port 5433 and stores its data in container-scoped temporary memory. It is separate so integration tests cannot alter development data.
+
+Run the real-database integration harness:
+
+```sh
+DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
+  pnpm test:integration
+```
+
+The harness creates a uniquely named schema, proves a transaction rollback leaves no rows, and drops the schema when the test completes. The persistence schema tests create a uniquely named database beside `scos_test` for each test file, apply the real migrations, and drop it afterwards. Database integration tasks are uncached.
+
+## Database schema, migrations, and seed
+
+The PostgreSQL schema, Prisma client, migrations, and warehouse seed live in `packages/persistence`. With `DATABASE_URL` exported:
+
+```sh
+pnpm db:migrate   # apply pending migrations
+pnpm db:seed      # apply migrations, then insert missing seed warehouses
+```
+
+Seeding never replenishes consumed stock. The destructive `db:reset` requires `SCOS_CONFIRM_DATABASE_RESET` to match the target database name. See [database schema](database-schema.md) for the entity relationships and schema decisions,.
+
 ## Stopping and removing local data
 
 Ctrl+C stops the API gracefully: it closes the listener, then its database
@@ -167,8 +228,8 @@ yourself, manage it the way you created it.
 
 ### Compose services started by hand
 
-Services started with `docker compose up` (see the README's Local PostgreSQL
-section) belong to a project named after the checkout directory, so run these
+Services started with `docker compose up` (see
+[Compose path](#compose-path-both-databases-by-hand)) belong to a project named after the checkout directory, so run these
 from the same checkout:
 
 ```sh
