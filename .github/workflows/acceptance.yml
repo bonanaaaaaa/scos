@@ -1,0 +1,122 @@
+name: Acceptance
+
+# QA's black-box acceptance tests of the served API, on Playwright (#51).
+#
+# Separate from CI on purpose. These are not the developers' tests: they start
+# the built API as a child process against a provisioned database and drive it
+# over HTTP only, they own their own reporting, and their failures mean
+# something different from a unit test failure. Keeping them in their own
+# workflow gives them their own status check, their own report artifact, and a
+# runtime that does not lengthen the CI feedback loop.
+#
+# The hosted suite (`test:hosted`) is NOT here: it runs against the live
+# Cloudflare demonstration, needs HOSTED_BASE_URL, and permanently consumes
+# that deployment's finite stock, so it is never run automatically.
+# See docs/hosted-demonstration.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acceptance:
+    name: API acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18.1-alpine
+        env:
+          POSTGRES_DB: scos_test
+          POSTGRES_PASSWORD: scos_ci
+          POSTGRES_USER: scos_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scos_ci -d scos_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      DATABASE_TEST_URL: postgresql://scos_ci:scos_ci@localhost:5432/scos_test
+      # These are API tests; Playwright needs no browser binaries.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      TURBO_API: ${{ vars.TURBO_API }}
+      TURBO_REMOTE_CACHE_SIGNATURE_KEY: ${{ secrets.TURBO_REMOTE_CACHE_SIGNATURE_KEY }}
+      TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Reject skipped or focused acceptance tests
+        # Acceptance tests must fail, never skip. Playwright adds fixme and
+        # fail to the modifiers Vitest already had, so both are rejected here.
+        # The match is textual, so a comment or string naming one also fails;
+        # reword it. grep exits 1 only when nothing matched; any other status
+        # (a match, or a missing directory) fails the step.
+        run: |
+          set +e
+          grep -rnE --include='*.ts' '\.(skip|skipIf|runIf|todo|only|fixme|fail)\b' \
+            apps/api-acceptance/test
+          status=$?
+          set -e
+          if [ "$status" -ne 1 ]; then
+            echo "::error::Acceptance tests must not use skip, only, todo, fixme or fail (grep exit $status)."
+            exit 1
+          fi
+      - name: Run the acceptance suite
+        run: pnpm exec turbo run test:acceptance
+      - name: Check the suite actually ran
+        # turbo skips a task a package does not define, silently and with exit
+        # 0, so a rename that misses this workflow would leave the job green
+        # having run nothing. Assert on the report, not the exit code.
+        if: ${{ !cancelled() }}
+        run: |
+          report=apps/api-acceptance/test-results/acceptance/junit.xml
+          test -s "$report" || {
+            echo "::error::No JUnit report at $report: the acceptance suite did not run."
+            exit 1
+          }
+          total=$(grep -oE 'tests="[0-9]+"' "$report" | head -1 | grep -oE '[0-9]+')
+          skipped=$(grep -oE 'skipped="[0-9]+"' "$report" | head -1 | grep -oE '[0-9]+')
+          # `tests` counts skipped ones too, so a run that collected everything
+          # and executed nothing would satisfy a check on `tests` alone.
+          ran=$(( ${total:-0} - ${skipped:-0} ))
+          if [ "$ran" -le 0 ]; then
+            echo "::error::The acceptance suite executed $ran tests (${total:-0} collected, ${skipped:-0} skipped)."
+            exit 1
+          fi
+          echo "Acceptance tests executed: $ran" >>"$GITHUB_STEP_SUMMARY"
+      - name: Upload the acceptance report
+        # Uploaded on failure too: the HTML report and its artifacts are the
+        # point of running Playwright here.
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: acceptance-report
+          path: apps/api-acceptance/test-results/acceptance
+          retention-days: 14

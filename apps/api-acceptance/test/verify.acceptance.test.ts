@@ -6,15 +6,17 @@
  *
  * Verification is read-only, so the seed state is restored once for the file
  * (as the old suite did) rather than before every test; the run shares one
- * served API and one database, and `fileParallelism: false` keeps files apart.
+ * served API and one database, and the runner's single worker keeps files
+ * apart.
  *
  * @module
  */
 
+import { expect, test } from "@playwright/test";
 import type { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { openPool, readState, resetDatabase } from "#test/support/database";
+import { formatTitle } from "#test/support/each";
 import { expectJson, get, postJson } from "#test/support/http";
 import {
   ABOVE_LIMIT,
@@ -36,18 +38,18 @@ import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
 const api = sharedApi();
 let pool: Pool;
 
-beforeAll(async () => {
+test.beforeAll(async () => {
   pool = openPool(acceptanceDatabaseUrl());
   await resetDatabase(pool);
 });
 
-afterAll(async () => {
+test.afterAll(async () => {
   await pool.end();
 });
 
 const verify = (body: unknown) => postJson(api, "/api/v1/orders/verify", body);
 
-describe("GET /health", () => {
+test.describe("GET /health", () => {
   test('200 {"status":"ok"} as JSON', async () => {
     const response = await get(api, "/health");
     expect(expectJson(response, 200)).toStrictEqual({ status: "ok" });
@@ -55,7 +57,7 @@ describe("GET /health", () => {
   });
 });
 
-describe("POST /api/v1/orders/verify: valid estimates", () => {
+test.describe("POST /api/v1/orders/verify: valid estimates", () => {
   test("30 units to Manhattan: New York stock, 5% discount, shipping rounded once half-up", async () => {
     // 30 x $150 = 4500.00; 5% = 225.00; 4275.00.
     // New York to (40.7128, -74.006) ~ 20.80497 km; 30 x 0.365 x 0.01 x 20.80497 = 2.2781 -> 2.28.
@@ -139,7 +141,7 @@ describe("POST /api/v1/orders/verify: valid estimates", () => {
   });
 });
 
-describe("POST /api/v1/orders/verify: discount tier boundaries (at Paris, zero shipping)", () => {
+test.describe("POST /api/v1/orders/verify: discount tier boundaries (at Paris, zero shipping)", () => {
   const cases = [
     // quantity, subtotal, rate, discount, discounted
     [24, "3600.00", "0.00", "0.00", "3600.00"],
@@ -152,26 +154,29 @@ describe("POST /api/v1/orders/verify: discount tier boundaries (at Paris, zero s
     [250, "37500.00", "0.20", "7500.00", "30000.00"],
   ] as const;
 
-  test.each(cases)("%i units", async (quantity, subtotal, rate, discount, discounted) => {
-    const body = expectJson(await verify({ quantity, ...AT_PARIS }), 200);
-    expect(body).toStrictEqual({
-      valid: true,
-      reason: null,
-      quantity,
-      destination: AT_PARIS,
-      merchandiseSubtotal: subtotal,
-      discountRate: rate,
-      discountAmount: discount,
-      discountedMerchandiseTotal: discounted,
-      shippingCost: "0.00",
-      orderTotal: discounted,
-      allocations: [{ warehouseId: warehouse("Paris").id, quantity, distanceKm: 0 }],
+  for (const testCase of cases) {
+    const [quantity, subtotal, rate, discount, discounted] = testCase;
+    test(formatTitle("%i units", testCase), async () => {
+      const body = expectJson(await verify({ quantity, ...AT_PARIS }), 200);
+      expect(body).toStrictEqual({
+        valid: true,
+        reason: null,
+        quantity,
+        destination: AT_PARIS,
+        merchandiseSubtotal: subtotal,
+        discountRate: rate,
+        discountAmount: discount,
+        discountedMerchandiseTotal: discounted,
+        shippingCost: "0.00",
+        orderTotal: discounted,
+        allocations: [{ warehouseId: warehouse("Paris").id, quantity, distanceKm: 0 }],
+      });
+      expect(body).toStrictEqual(expectedEstimate(quantity, AT_PARIS));
     });
-    expect(body).toStrictEqual(expectedEstimate(quantity, AT_PARIS));
-  });
+  }
 });
 
-describe("POST /api/v1/orders/verify: invalid estimates are 200", () => {
+test.describe("POST /api/v1/orders/verify: invalid estimates are 200", () => {
   test("SHIPPING_EXCEEDS_LIMIT keeps every amount and allocation", async () => {
     // 1 unit from Hong Kong, ~9391.25073 km: 0.00365 x 9391.25073 = 34.2781 -> 34.28 > 22.50.
     const body = expectJson(await verify({ quantity: 1, ...FAR_AWAY }), 200);
@@ -245,7 +250,7 @@ describe("POST /api/v1/orders/verify: invalid estimates are 200", () => {
   });
 });
 
-describe("POST /api/v1/orders/verify: coordinate endpoints are accepted", () => {
+test.describe("POST /api/v1/orders/verify: coordinate endpoints are accepted", () => {
   const endpoints = [
     { latitude: 90, longitude: 180 },
     { latitude: -90, longitude: -180 },
@@ -255,10 +260,13 @@ describe("POST /api/v1/orders/verify: coordinate endpoints are accepted", () => 
     { latitude: 0, longitude: -180 },
   ];
 
-  test.each(endpoints)("(%o)", async (destination) => {
-    const body = expectJson(await verify({ quantity: 1, ...destination }), 200);
-    expect(body).toStrictEqual(expectedEstimate(1, destination));
-  });
+  for (const testCase of endpoints) {
+    const destination = testCase;
+    test(formatTitle("(%o)", [testCase]), async () => {
+      const body = expectJson(await verify({ quantity: 1, ...destination }), 200);
+      expect(body).toStrictEqual(expectedEstimate(1, destination));
+    });
+  }
 
   test("north pole literal: Warsaw, 0.00365 x 4206.97324 = 15.3554 -> 15.36, valid", async () => {
     const body = expectJson(await verify({ quantity: 1, latitude: 90, longitude: 180 }), 200);
@@ -271,39 +279,42 @@ describe("POST /api/v1/orders/verify: coordinate endpoints are accepted", () => 
   });
 });
 
-describe("POST /api/v1/orders/verify: shipping limit boundary (1 unit, limit 22.50)", () => {
+test.describe("POST /api/v1/orders/verify: shipping limit boundary (1 unit, limit 22.50)", () => {
   // 15% of 150.00 = 22.50. Each destination is found and checked by the
   // independent oracle in ./support/oracle.ts: one warehouse, a distance in the
   // middle of the charge's rounding window, and every other warehouse >= 100 km
   // farther.
   const coordinates = ({ latitude, longitude }: LimitDestination) => ({ latitude, longitude });
 
-  test.each([
+  for (const testCase of [
     ["22.49 is below the limit: valid", BELOW_LIMIT, "22.49", "172.49", true],
     ["22.50 equals the limit: valid", AT_LIMIT, "22.50", "172.50", true],
     ["22.51 is above the limit: SHIPPING_EXCEEDS_LIMIT", ABOVE_LIMIT, "22.51", "172.51", false],
-  ] as const)("%s", async (_name, destination, shipping, total, valid) => {
-    expect(destination.shippingCost).toBe(shipping);
-    const body = expectJson(await verify({ quantity: 1, ...coordinates(destination) }), 200);
-    expect(body).toStrictEqual({
-      valid,
-      reason: valid ? null : "SHIPPING_EXCEEDS_LIMIT",
-      quantity: 1,
-      destination: coordinates(destination),
-      merchandiseSubtotal: "150.00",
-      discountRate: "0.00",
-      discountAmount: "0.00",
-      discountedMerchandiseTotal: "150.00",
-      shippingCost: shipping,
-      orderTotal: total,
-      allocations: [
-        {
-          warehouseId: destination.warehouse.id,
-          quantity: 1,
-          distanceKm: expect.closeTo(destination.distanceKm, 6),
-        },
-      ],
+  ] as const) {
+    const [_name, destination, shipping, total, valid] = testCase;
+    test(formatTitle("%s", testCase), async () => {
+      expect(destination.shippingCost).toBe(shipping);
+      const body = expectJson(await verify({ quantity: 1, ...coordinates(destination) }), 200);
+      expect(body).toStrictEqual({
+        valid,
+        reason: valid ? null : "SHIPPING_EXCEEDS_LIMIT",
+        quantity: 1,
+        destination: coordinates(destination),
+        merchandiseSubtotal: "150.00",
+        discountRate: "0.00",
+        discountAmount: "0.00",
+        discountedMerchandiseTotal: "150.00",
+        shippingCost: shipping,
+        orderTotal: total,
+        allocations: [
+          {
+            warehouseId: destination.warehouse.id,
+            quantity: 1,
+            distanceKm: expect.closeTo(destination.distanceKm, 6),
+          },
+        ],
+      });
+      expect(body).toStrictEqual(expectedEstimate(1, coordinates(destination)));
     });
-    expect(body).toStrictEqual(expectedEstimate(1, coordinates(destination)));
-  });
+  }
 });

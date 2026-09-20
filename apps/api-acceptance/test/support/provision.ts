@@ -6,9 +6,9 @@
  * Mirrors `apps/api/test/support/database.ts`, with one deliberate
  * difference: the developer suite creates a database per test file, while
  * the acceptance suite creates **one** for the whole run, because a single
- * served API is started against it. Test files run one at a time
- * (`fileParallelism: false`) and reset stock through the database between
- * tests.
+ * served API is started against it. Test files run one at a time (the
+ * acceptance project runs in a single worker) and reset stock through the
+ * database between tests.
  *
  * Used only by the global setup. Test files talk to the database through
  * `database.ts`.

@@ -149,13 +149,16 @@ jobs:
             echo "::error::Integration tests must not use .skip, .skipIf, .runIf, .todo or .only (grep exit $status)."
             exit 1
           fi
-      - name: Run persistence integration, API integration, API acceptance and Worker (workerd) tests
+      - name: Run persistence integration, API integration and Worker (workerd) tests
+        # The QA acceptance suite is no longer part of this task: it runs on
+        # Playwright in its own workflow (acceptance.yml). `test:integration`
+        # now means the developers' tests against a real database only.
         run: pnpm exec turbo run test:integration
       - name: Check the generated OpenAPI specification is not committed
         # test:integration depends on build, which writes the specification.
         # It is a build artifact; the served /openapi.json equality, document
         # validity and response conformance are checked by
-        # apps/api-acceptance/test/openapi.acceptance.test.ts above. dist/ is
+        # apps/api-acceptance/test/openapi.acceptance.test.ts (acceptance.yml). dist/ is
         # ignored, so the tracking check guards against a forced `git add -f`.
         run: |
           test -s apps/api/dist/openapi.json || {

@@ -2,10 +2,16 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
-    "test:integration": {
+    "test:acceptance": {
       "dependsOn": ["^build", "@scos/api#build"],
       "cache": false,
-      "env": ["API_BASE_URL", "DATABASE_TEST_URL", "DATABASE_URL", "SCOS_CONFIRM_ACCEPTANCE_RESET"],
+      "env": [
+        "API_BASE_URL",
+        "CI",
+        "DATABASE_TEST_URL",
+        "DATABASE_URL",
+        "SCOS_CONFIRM_ACCEPTANCE_RESET"
+      ],
       "persistent": false
     }
   }

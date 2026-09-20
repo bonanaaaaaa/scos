@@ -11,11 +11,12 @@
  * @module
  */
 
+import { expect, test } from "@playwright/test";
 import type { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { type ApiProcess, spawnApi, stopAllApiProcesses } from "#test/support/api-process";
 import { openPool, resetDatabase } from "#test/support/database";
+import { formatTitle } from "#test/support/each";
 import { expectErrorEnvelope, expectJson, get, postJson, request } from "#test/support/http";
 import { AT_PARIS } from "#test/support/prd";
 import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
@@ -24,21 +25,21 @@ const api = sharedApi();
 
 // Any extra listener a test started, in case an assertion threw before its
 // own cleanup ran.
-afterAll(stopAllApiProcesses);
+test.afterAll(stopAllApiProcesses);
 
-describe("unknown routes and methods", () => {
+test.describe("unknown routes and methods", () => {
   let pool: Pool;
 
-  beforeAll(async () => {
+  test.beforeAll(async () => {
     pool = openPool(acceptanceDatabaseUrl());
     await resetDatabase(pool);
   });
 
-  afterAll(async () => {
+  test.afterAll(async () => {
     await pool.end();
   });
 
-  test.each([
+  for (const testCase of [
     ["GET", "/"],
     ["GET", "/nope"],
     ["GET", "/api/v1/orders"],
@@ -49,28 +50,31 @@ describe("unknown routes and methods", () => {
     ["PATCH", "/api/v1/orders/verify"],
     ["POST", "/api/v1/orders/verify/extra"],
     ["POST", "/order"],
-  ])("%s %s is 404 NOT_FOUND in the envelope", async (method, path) => {
-    const response = await request(api, path, {
-      method,
-      contentType: method === "GET" || method === "DELETE" ? null : "application/json",
-      ...(method === "GET" || method === "DELETE" ? {} : { body: "{}" }),
+  ] as const) {
+    const [method, path] = testCase;
+    test(formatTitle("%s %s is 404 NOT_FOUND in the envelope", testCase), async () => {
+      const response = await request(api, path, {
+        method,
+        contentType: method === "GET" || method === "DELETE" ? null : "application/json",
+        ...(method === "GET" || method === "DELETE" ? {} : { body: "{}" }),
+      });
+      expectErrorEnvelope(response, 404, "NOT_FOUND", { issues: "absent" });
     });
-    expectErrorEnvelope(response, 404, "NOT_FOUND", { issues: "absent" });
-  });
+  }
 });
 
-describe("database unreachable", () => {
+test.describe("database unreachable", () => {
   // Port 1 (tcpmux) is privileged and not listening, so connections are refused
   // at once. An ephemeral "closed" port could be reused by a parallel test file.
   const databaseUrl = "postgresql://qa_user:qa-secret-password@127.0.0.1:1/scos_unreachable";
   let unreachable: ApiProcess;
 
-  beforeAll(async () => {
+  test.beforeAll(async () => {
     // The server starts: /health does not touch the database.
     unreachable = await spawnApi({ databaseUrl });
   });
 
-  afterAll(async () => {
+  test.afterAll(async () => {
     await unreachable?.stop();
   });
 
@@ -78,33 +82,39 @@ describe("database unreachable", () => {
     expect(expectJson(await get(unreachable, "/health"), 200)).toStrictEqual({ status: "ok" });
   });
 
-  test.each([
+  for (const testCase of [
     ["/api/v1/orders/verify", { quantity: 5, ...AT_PARIS }],
     ["/api/v1/orders", { submissionId: "qa-down", quantity: 5, ...AT_PARIS }],
-  ])(
-    "POST %s is a 500 or 503 envelope that exposes no internals and never implies acceptance",
-    async (path, body) => {
-      const response = await postJson(unreachable, path, body);
-      expect([500, 503]).toContain(response.status);
-      const code = response.status === 503 ? "SERVICE_UNAVAILABLE" : "INTERNAL_ERROR";
-      expectErrorEnvelope(response, response.status, code, { issues: "absent" });
-      for (const secret of [
-        "qa-secret-password",
-        "qa_user",
-        "scos_unreachable",
-        "127.0.0.1",
-        "ECONNREFUSED",
-        "prisma",
-        "Prisma",
-        "stack",
-        "    at ",
-      ]) {
-        expect(response.text).not.toContain(secret);
-      }
-      expect(response.text).not.toMatch(/orderNumber|allocations|orderTotal/);
-      if (response.status === 503) {
-        expect(response.headers.get("retry-after")).toMatch(/^\d+$/);
-      }
-    },
-  );
+  ] as const) {
+    const [path, body] = testCase;
+    test(
+      formatTitle(
+        "POST %s is a 500 or 503 envelope that exposes no internals and never implies acceptance",
+        testCase,
+      ),
+      async () => {
+        const response = await postJson(unreachable, path, body);
+        expect([500, 503]).toContain(response.status);
+        const code = response.status === 503 ? "SERVICE_UNAVAILABLE" : "INTERNAL_ERROR";
+        expectErrorEnvelope(response, response.status, code, { issues: "absent" });
+        for (const secret of [
+          "qa-secret-password",
+          "qa_user",
+          "scos_unreachable",
+          "127.0.0.1",
+          "ECONNREFUSED",
+          "prisma",
+          "Prisma",
+          "stack",
+          "    at ",
+        ]) {
+          expect(response.text).not.toContain(secret);
+        }
+        expect(response.text).not.toMatch(/orderNumber|allocations|orderTotal/);
+        if (response.status === 503) {
+          expect(response.headers.get("retry-after")).toMatch(/^\d+$/);
+        }
+      },
+    );
+  }
 });

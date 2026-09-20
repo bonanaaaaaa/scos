@@ -15,12 +15,24 @@
  *
  * A failure here fails the run. Nothing in this suite skips.
  *
+ * ## How the three values reach the test files
+ *
+ * Through {@link provideAcceptanceContext}, which sets environment variables
+ * this process owns. Playwright has no equivalent of Vitest's
+ * `TestProject.provide()` / `inject()`, but it starts its worker processes
+ * *after* `globalSetup` has resolved, and a worker inherits this process's
+ * environment — so a variable set here is readable at module scope in every
+ * test file, which is where `sharedApi()` is called. A file handoff or a
+ * fixture would both come too late for that: Playwright imports every test
+ * file before the first fixture runs.
+ *
+ * This module is only ever loaded for the `acceptance` project; see the
+ * docblock of ../playwright.config.ts.
+ *
  * @module
  */
 
 import { connect } from "node:net";
-
-import type { TestProject } from "vitest/node";
 
 import { type ApiProcess, spawnApi } from "#test/support/api-process";
 import { readEnvironment, requireApiArtifacts } from "#test/support/environment";
@@ -29,6 +41,7 @@ import {
   createAcceptanceDatabase,
   prepareExistingDatabase,
 } from "#test/support/provision";
+import { provideAcceptanceContext } from "#test/support/shared-api";
 
 /** How long the already-running server has to accept a TCP connection. */
 const REACHABLE_TIMEOUT_MS = 5_000;
@@ -57,7 +70,7 @@ async function requireReachable(baseUrl: string): Promise<void> {
   });
 }
 
-export default async function setup(project: TestProject): Promise<() => Promise<void>> {
+export default async function setup(): Promise<() => Promise<void>> {
   // Both modes need the artifact: even against a running server, the tests
   // that need a differently configured API start their own process from it.
   requireApiArtifacts();
@@ -88,9 +101,11 @@ export default async function setup(project: TestProject): Promise<() => Promise
     baseUrl = server.baseUrl;
   }
 
-  project.provide("apiBaseUrl", baseUrl);
-  project.provide("acceptanceDatabaseUrl", database.url);
-  project.provide("acceptanceMode", environment.mode);
+  provideAcceptanceContext({
+    apiBaseUrl: baseUrl,
+    acceptanceDatabaseUrl: database.url,
+    acceptanceMode: environment.mode,
+  });
 
   return async () => {
     try {

@@ -13,7 +13,7 @@
  * @module
  */
 
-import { expect } from "vitest";
+import { expect } from "@playwright/test";
 
 import { type Warehouse, ORDER_NUMBER, WAREHOUSES } from "./prd";
 

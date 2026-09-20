@@ -11,8 +11,8 @@
 
 import { readFile } from "node:fs/promises";
 
+import { expect, test } from "@playwright/test";
 import type { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { openPool, resetDatabase, stockById } from "#test/support/database";
 import { get } from "#test/support/http";
@@ -22,16 +22,16 @@ import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
 const api = sharedApi();
 let pool: Pool;
 
-beforeAll(async () => {
+test.beforeAll(async () => {
   pool = openPool(acceptanceDatabaseUrl());
   await resetDatabase(pool);
 });
 
-afterAll(async () => {
+test.afterAll(async () => {
   await pool.end();
 });
 
-describe("the served API under test", () => {
+test.describe("the served API under test", () => {
   test("answers GET /health over HTTP", async () => {
     const result = await get(api, "/health");
     expect(result.status, result.text).toBe(200);

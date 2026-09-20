@@ -20,7 +20,7 @@
  * key and no stock (docs/adr/0004-deduplicate-accepted-orders.md) — and each of
  * those is asserted to have left the inventory untouched.
  *
- * The suite is not part of CI, `turbo run test` or `test:integration`: it needs
+ * The suite is not part of CI, `turbo run test` or `test:acceptance`: it needs
  * a live deployment those do not have, and it spends real stock. It has no
  * turbo task for the same reason. Run it with
  * `HOSTED_BASE_URL=... pnpm --filter @scos/api-acceptance run test:hosted`.
@@ -44,9 +44,13 @@
  *   `#test/support/provision` or `#test/support/environment`. The only
  *   support it shares is the pure part: the PRD constants, the oracle and the
  *   `fetch` helpers.
- * - it has no `globalSetup`, so `test/global-setup.ts` never loads. See
- *   vitest.hosted.config.mjs, which is also why the file suffix is
- *   `.hosted.test.ts`: the default config collects `*.acceptance.test.ts`.
+ * - it has no global setup, so `test/global-setup.ts` never loads. It is its
+ *   own Playwright project (`hosted`), and ../../playwright.config.ts wires
+ *   the global setup only when the `acceptance` project runs; the two
+ *   projects are also kept apart by their file suffixes, because the
+ *   acceptance project matches every `.acceptance.test.ts` file under `test`
+ *   recursively and a subdirectory alone would not exclude these files.
+ *   `playwright test --project=hosted --list` is the check that proves it.
  * - it reads `HOSTED_BASE_URL` and nothing else — not `API_BASE_URL`, not
  *   `DATABASE_TEST_URL`, not `SCOS_CONFIRM_ACCEPTANCE_RESET`. A variable whose
  *   meaning elsewhere is "you may wipe the database behind this URL" must not
@@ -59,8 +63,9 @@
  * @module
  */
 
-import { beforeAll, describe, expect, test } from "vitest";
+import { expect, test } from "@playwright/test";
 
+import { formatTitle } from "#test/support/each";
 import {
   type ApiUnderTest,
   type HttpResult,
@@ -105,12 +110,24 @@ import {
   totalStock,
 } from "./support";
 
+/**
+ * The scenarios below observe one deployment in order, and several of them
+ * read state a hook or an earlier scenario left in this module — above all the
+ * single accepted Order. Playwright retries a failed test in a **fresh worker
+ * process**, which re-imports this file and re-runs only the hooks enclosing
+ * that one test; serial mode instead replays the whole file from the start, so
+ * the state is rebuilt in order. The replay costs no stock: this run's
+ * submissionIds are stable (./support.ts, `SCOS_HOSTED_RUN_ID`), so the
+ * re-submission is a replay of the same Order rather than a second one.
+ */
+test.describe.configure({ mode: "serial" });
+
 let api: ApiUnderTest;
 let spec: ServedSpec;
 
 // Nothing to tear down: `ApiUnderTest` is only a base URL, and the deployment
 // is not this suite's to stop.
-beforeAll(async () => {
+test.beforeAll(async () => {
   api = hostedApi();
   spec = await loadServedSpec(api);
 });
@@ -130,7 +147,7 @@ const acceptedRequest = { submissionId: acceptedSubmissionId, quantity: 1, ...MA
 let stockAtAcceptance: readonly Warehouse[];
 let accepted: HttpResult;
 
-describe("GET /health", () => {
+test.describe("GET /health", () => {
   test('200 {"status":"ok"} as JSON', async () => {
     const response = await get(api, HEALTH);
     expect(expectJson(response, 200)).toStrictEqual({ status: "ok" });
@@ -139,7 +156,7 @@ describe("GET /health", () => {
   });
 });
 
-describe("POST /api/v1/orders/verify: estimates match the independent oracle", () => {
+test.describe("POST /api/v1/orders/verify: estimates match the independent oracle", () => {
   test("30 units to Manhattan: every amount and allocation", async () => {
     const { stock, value: response } = await stableRead(api, () =>
       verify({ quantity: 30, ...MANHATTAN }),
@@ -172,7 +189,7 @@ describe("POST /api/v1/orders/verify: estimates match the independent oracle", (
   // The PRD tier boundaries. Merchandise amounts depend on quantity alone, so
   // they are asserted literally as well as through the oracle, and they hold
   // whether or not that many units are still available.
-  test.each([
+  for (const testCase of [
     // quantity, subtotal, rate, discount, discounted
     [24, "3600.00", "0.00", "0.00", "3600.00"],
     [25, "3750.00", "0.05", "187.50", "3562.50"],
@@ -182,23 +199,26 @@ describe("POST /api/v1/orders/verify: estimates match the independent oracle", (
     [100, "15000.00", "0.15", "2250.00", "12750.00"],
     [249, "37350.00", "0.15", "5602.50", "31747.50"],
     [250, "37500.00", "0.20", "7500.00", "30000.00"],
-  ] as const)(
-    "%i units at Paris: %s subtotal at a %s discount rate",
-    async (quantity, subtotal, rate, discount, discounted) => {
-      const { stock, value: response } = await stableRead(api, () =>
-        verify({ quantity, ...AT_PARIS }),
-      );
-      const body = expectJson(response, 200);
-      expect(body).toMatchObject({
-        quantity,
-        merchandiseSubtotal: subtotal,
-        discountRate: rate,
-        discountAmount: discount,
-        discountedMerchandiseTotal: discounted,
-      });
-      expect(body).toStrictEqual(expectedEstimate(quantity, AT_PARIS, stock));
-    },
-  );
+  ] as const) {
+    const [quantity, subtotal, rate, discount, discounted] = testCase;
+    test(
+      formatTitle("%i units at Paris: %s subtotal at a %s discount rate", testCase),
+      async () => {
+        const { stock, value: response } = await stableRead(api, () =>
+          verify({ quantity, ...AT_PARIS }),
+        );
+        const body = expectJson(response, 200);
+        expect(body).toMatchObject({
+          quantity,
+          merchandiseSubtotal: subtotal,
+          discountRate: rate,
+          discountAmount: discount,
+          discountedMerchandiseTotal: discounted,
+        });
+        expect(body).toStrictEqual(expectedEstimate(quantity, AT_PARIS, stock));
+      },
+    );
+  }
 
   test("more units than exist is INSUFFICIENT_STOCK with null shipping and total", async () => {
     // Stock is never replenished, so one more than any earlier reading of the
@@ -229,8 +249,8 @@ describe("POST /api/v1/orders/verify: estimates match the independent oracle", (
   });
 });
 
-describe("POST /api/v1/orders: acceptance, retry and conflict", () => {
-  beforeAll(async () => {
+test.describe("POST /api/v1/orders: acceptance, retry and conflict", () => {
+  test.beforeAll(async () => {
     stockAtAcceptance = await readStock(api);
     accepted = await submit(acceptedRequest);
     if (accepted.status === 201) {
@@ -310,7 +330,7 @@ describe("POST /api/v1/orders: acceptance, retry and conflict", () => {
   });
 });
 
-describe("POST /api/v1/orders: rejections store nothing and consume no stock", () => {
+test.describe("POST /api/v1/orders: rejections store nothing and consume no stock", () => {
   test("INSUFFICIENT_STOCK: 422 with the estimate that caused it", async () => {
     const total = totalStock(await readStock(api));
     const { stock, value: rejected } = await stableRead(api, () =>
@@ -379,7 +399,7 @@ describe("POST /api/v1/orders: rejections store nothing and consume no stock", (
   });
 });
 
-describe("decimal serialization: money is a two-decimal JSON string, never a number", () => {
+test.describe("decimal serialization: money is a two-decimal JSON string, never a number", () => {
   const ESTIMATE_MONEY = MONEY_FIELDS.filter((field) => field !== "unitPrice");
   // A quantity above the remaining stock nulls shipping and the order total.
   const NULLABLE = { nullable: ["shippingCost", "orderTotal"] };
@@ -422,7 +442,7 @@ describe("decimal serialization: money is a two-decimal JSON string, never a num
   });
 });
 
-describe("GET /openapi.json", () => {
+test.describe("GET /openapi.json", () => {
   test("200 JSON and an OpenAPI 3.1 document", async () => {
     const response = await get(api, "/openapi.json");
     const document = expectJson(response, 200) as JsonRecord;
@@ -485,7 +505,7 @@ describe("GET /openapi.json", () => {
   });
 });
 
-describe("GET /docs", () => {
+test.describe("GET /docs", () => {
   test("200 text/html booting Swagger UI", async () => {
     const response = await get(api, "/docs");
     expect(response.status, response.text).toBe(200);

@@ -11,11 +11,12 @@
  * @module
  */
 
+import { expect, test } from "@playwright/test";
 import type { Pool } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
 import { spawnApi, stopAllApiProcesses } from "#test/support/api-process";
 import { openPool, readState, resetDatabase, stockById } from "#test/support/database";
+import { formatTitle } from "#test/support/each";
 import { expectErrorEnvelope, expectJson, postJson } from "#test/support/http";
 import {
   ABOVE_LIMIT,
@@ -39,19 +40,19 @@ import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
 const api = sharedApi();
 let pool: Pool;
 
-beforeAll(async () => {
+test.beforeAll(async () => {
   pool = openPool(acceptanceDatabaseUrl());
 });
 
-afterAll(async () => {
+test.afterAll(async () => {
   await pool.end();
 });
 
 // Any extra listener a test started, in case an assertion threw before its
 // own cleanup ran.
-afterAll(stopAllApiProcesses);
+test.afterAll(stopAllApiProcesses);
 
-beforeEach(async () => {
+test.beforeEach(async () => {
   await resetDatabase(pool);
 });
 
@@ -61,7 +62,7 @@ function seededStock(): Record<string, number> {
   return Object.fromEntries(WAREHOUSES.map(({ id, stock }) => [id, stock]));
 }
 
-describe("201 accepted", () => {
+test.describe("201 accepted", () => {
   test("the accepted Order body, with no internal id, and stock deducted", async () => {
     const response = await submit({ submissionId: "qa-accept-1", quantity: 30, ...MANHATTAN });
     const body = expectJson(response, 201) as Record<string, unknown>;
@@ -140,7 +141,7 @@ describe("201 accepted", () => {
   });
 });
 
-describe("repeated submissionId", () => {
+test.describe("repeated submissionId", () => {
   test("same input returns 201 with a byte-identical body and no second deduction", async () => {
     const request = { submissionId: "qa-repeat", quantity: 50, ...MANHATTAN };
     const first = await submit(request);
@@ -167,30 +168,36 @@ describe("repeated submissionId", () => {
     expect(repeat.text).toBe(first.text);
   });
 
-  test.each([
+  for (const testCase of [
     ["quantity", { quantity: 6, ...AT_PARIS }],
     ["latitude", { quantity: 5, latitude: 49.0097, longitude: AT_PARIS.longitude }],
     ["longitude", { quantity: 5, latitude: AT_PARIS.latitude, longitude: 2.5478 }],
-  ])("changed %s is 409 with no Order details and nothing changed", async (_field, changed) => {
-    const accepted = await submit({ submissionId: "qa-conflict", quantity: 5, ...AT_PARIS });
-    const order = expectJson(accepted, 201) as { orderNumber: string };
-    const before = await readState(pool);
+  ] as const) {
+    const [_field, changed] = testCase;
+    test(
+      formatTitle("changed %s is 409 with no Order details and nothing changed", testCase),
+      async () => {
+        const accepted = await submit({ submissionId: "qa-conflict", quantity: 5, ...AT_PARIS });
+        const order = expectJson(accepted, 201) as { orderNumber: string };
+        const before = await readState(pool);
 
-    const conflict = await submit({ submissionId: "qa-conflict", ...changed });
+        const conflict = await submit({ submissionId: "qa-conflict", ...changed });
 
-    const error = expectErrorEnvelope(conflict, 409, "SUBMISSION_ID_CONFLICT", {
-      issues: "absent",
-    });
-    expect(conflict.text).not.toContain(order.orderNumber);
-    expect(conflict.text).not.toMatch(/orderNumber|allocations|orderTotal|estimate/);
-    expect(error.message).not.toContain(order.orderNumber);
-    expect(await readState(pool)).toStrictEqual(before);
+        const error = expectErrorEnvelope(conflict, 409, "SUBMISSION_ID_CONFLICT", {
+          issues: "absent",
+        });
+        expect(conflict.text).not.toContain(order.orderNumber);
+        expect(conflict.text).not.toMatch(/orderNumber|allocations|orderTotal|estimate/);
+        expect(error.message).not.toContain(order.orderNumber);
+        expect(await readState(pool)).toStrictEqual(before);
 
-    // The original Order is still returned for its own input.
-    const repeat = await submit({ submissionId: "qa-conflict", quantity: 5, ...AT_PARIS });
-    expect(repeat.status).toBe(201);
-    expect(repeat.text).toBe(accepted.text);
-  });
+        // The original Order is still returned for its own input.
+        const repeat = await submit({ submissionId: "qa-conflict", quantity: 5, ...AT_PARIS });
+        expect(repeat.status).toBe(201);
+        expect(repeat.text).toBe(accepted.text);
+      },
+    );
+  }
 
   test("submissionIds are case- and byte-sensitive: a different key is a new Order", async () => {
     const first = expectJson(
@@ -205,7 +212,7 @@ describe("repeated submissionId", () => {
   });
 });
 
-describe("422 business rejections", () => {
+test.describe("422 business rejections", () => {
   test("INSUFFICIENT_STOCK: error plus the estimate, nothing stored", async () => {
     const before = await readState(pool);
     const response = await submit({
@@ -285,7 +292,7 @@ describe("422 business rejections", () => {
   });
 });
 
-describe("shipping limit boundary (1 unit, limit 22.50)", () => {
+test.describe("shipping limit boundary (1 unit, limit 22.50)", () => {
   // Destinations from the independent oracle in ./support/oracle.ts (one
   // warehouse, rounded shipping exactly 22.50 or 22.51).
   test("shipping equal to the limit (22.50) is accepted: 201 and stock deducted", async () => {
@@ -326,7 +333,7 @@ describe("shipping limit boundary (1 unit, limit 22.50)", () => {
   });
 });
 
-describe("restart recovery", () => {
+test.describe("restart recovery", () => {
   test("a repeat on a new listener over the same database returns the original Order byte for byte", async () => {
     const request = { submissionId: "qa-restart", quantity: 40, ...MANHATTAN };
 

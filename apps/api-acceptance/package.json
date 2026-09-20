@@ -8,12 +8,13 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "oxlint --deny-warnings test vitest.config.mjs vitest.hosted.config.mjs",
-    "test:integration": "vitest run",
-    "test:hosted": "vitest run --config vitest.hosted.config.mjs"
+    "lint": "oxlint --deny-warnings test playwright.config.ts",
+    "test:acceptance": "playwright test --project=acceptance",
+    "test:hosted": "playwright test --project=hosted"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.0.0",
+    "@playwright/test": "1.63.0",
     "@scos/persistence": "workspace:*",
     "@scos/typescript-config": "workspace:*",
     "@types/node": "24.13.5",
@@ -21,7 +22,6 @@
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "openapi-types": "12.1.3",
-    "pg": "8.23.0",
-    "vitest": "4.1.11"
+    "pg": "8.23.0"
   }
 }

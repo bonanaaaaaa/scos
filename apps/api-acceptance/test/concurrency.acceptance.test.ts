@@ -10,8 +10,8 @@
  * @module
  */
 
+import { expect, test } from "@playwright/test";
 import type { Pool } from "pg";
-import { afterAll, beforeAll, expect, test } from "vitest";
 
 import {
   lockWaiters,
@@ -29,12 +29,12 @@ import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
 const api = sharedApi();
 let pool: Pool;
 
-beforeAll(async () => {
+test.beforeAll(async () => {
   pool = openPool(acceptanceDatabaseUrl());
   await resetDatabase(pool);
 });
 
-afterAll(async () => {
+test.afterAll(async () => {
   await pool.end();
 });
 
