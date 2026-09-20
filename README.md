@@ -53,7 +53,7 @@ pnpm api:start
 
    The integration suites fail, never skip, when `DATABASE_TEST_URL` is unset or the test database is unreachable.
 
-   Two suites cover the API, and the split is deliberate. `apps/api` holds the developer suite, which composes the application in the test process. [`apps/api-acceptance`](apps/api-acceptance/README.md) holds the QA-owned acceptance suite, which never imports API source: it starts the built artifact as a real server and talks to it only over HTTP. Run it alone with `pnpm test:acceptance`, or point it at a server you started yourself with `API_BASE_URL`. That mode migrates, seeds and resets whatever database `DATABASE_TEST_URL` names, so point it only at a disposable one.
+   Two suites cover the API, and the split is deliberate. `apps/api` holds the developer suite, which composes the application in the test process. [`apps/api-acceptance`](apps/api-acceptance/README.md) holds the QA-owned acceptance suite, which never imports API source: it starts the built artifact as a real server and talks to it only over HTTP. Run it alone with `pnpm test:acceptance`, or point it at a server you started yourself with `API_BASE_URL`. That mode migrates, seeds and resets whatever database `DATABASE_TEST_URL` names, so it refuses to run until `SCOS_CONFIRM_ACCEPTANCE_RESET` names that database too.
 
 10. Tear down with Ctrl+C for the API, then `docker compose down` (see [Stopping and removing local data](#stopping-and-removing-local-data) to delete the development data too).
 

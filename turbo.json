@@ -36,7 +36,7 @@
     "test:integration": {
       "dependsOn": ["build", "^build"],
       "cache": false,
-      "env": ["API_BASE_URL", "DATABASE_TEST_URL", "DATABASE_URL"],
+      "env": ["API_BASE_URL", "DATABASE_TEST_URL", "DATABASE_URL", "SCOS_CONFIRM_ACCEPTANCE_RESET"],
       "persistent": false
     },
     "openapi:export": {

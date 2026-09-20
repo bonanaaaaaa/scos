@@ -73,6 +73,39 @@ function requireDatabaseTestUrl(): string {
   return databaseTestUrl;
 }
 
+/** Names the database an external run is allowed to migrate, seed and reset. */
+export const resetConfirmationVariable = "SCOS_CONFIRM_ACCEPTANCE_RESET";
+
+/**
+ * Guards the one destructive mode this suite has.
+ *
+ * The default mode creates its own disposable database and needs no
+ * confirmation. External mode is different: the caller names a database that
+ * already exists and that a running server is using, and this suite migrates,
+ * seeds and then wipes it between test files. So the caller must name that
+ * exact database, exactly as `SCOS_CONFIRM_DATABASE_RESET` guards
+ * `pnpm db:reset`. Setting `API_BASE_URL` is not on its own consent to lose
+ * the data behind it.
+ */
+function confirmExternalReset(databaseTestUrl: string): void {
+  let databaseName: string;
+  try {
+    databaseName = decodeURIComponent(new URL(databaseTestUrl).pathname.replace(/^\//, ""));
+  } catch {
+    throw new Error("DATABASE_TEST_URL must be a valid PostgreSQL connection URL");
+  }
+  if (databaseName.length === 0) {
+    throw new Error("DATABASE_TEST_URL must name the database the suite may reset");
+  }
+  if (process.env[resetConfirmationVariable] !== databaseName) {
+    throw new Error(
+      `Refusing to run against API_BASE_URL with database "${databaseName}". ` +
+        "This suite migrates, seeds and deletes every Order and warehouse row in it. " +
+        `To confirm, rerun with ${resetConfirmationVariable}=${databaseName}.`,
+    );
+  }
+}
+
 /**
  * Reads and validates the environment.
  *
@@ -81,11 +114,12 @@ function requireDatabaseTestUrl(): string {
  * DATABASE_URL, because the suite is about to create and drop databases
  * beside it.
  *
- * In external mode both guards are deliberately relaxed. The caller points
+ * In external mode both guards are deliberately relaxed: the caller points
  * DATABASE_TEST_URL at the database the running server already uses, which is
- * legitimately its DATABASE_URL and need not be named `scos_test`. The suite
- * still migrates, seeds and resets it, so that mode is only for a disposable
- * database (see the app README and issue #33).
+ * legitimately its DATABASE_URL and need not be named `scos_test`. What
+ * replaces them is {@link confirmExternalReset}, which makes the caller name
+ * that database, so the data loss is chosen rather than inherited from
+ * `API_BASE_URL` (see the app README and issue #33).
  */
 export function readEnvironment(): AcceptanceEnvironment {
   const databaseTestUrl = requireDatabaseTestUrl();
@@ -99,6 +133,7 @@ export function readEnvironment(): AcceptanceEnvironment {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       throw new Error("API_BASE_URL must be an http:// or https:// URL.");
     }
+    confirmExternalReset(databaseTestUrl);
     return {
       mode: "external",
       baseUrl: baseUrl.replace(/\/+$/, ""),

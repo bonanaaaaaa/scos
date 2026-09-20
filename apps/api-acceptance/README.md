@@ -53,10 +53,12 @@ reads and resets stock through it exactly as in the default mode. Reachability
 is checked with a bare TCP connect rather than a request, for the same reason
 the readiness check is a log line.
 
-> **This mode migrates, seeds and resets the database you name.** It is for a
-> disposable database only. Do not point it at a deployed database whose
-> contents must survive — the read-only variant for a hosted environment is
-> issue #33.
+> **This mode migrates, seeds and resets the database you name.** So it makes
+> you name it: set `SCOS_CONFIRM_ACCEPTANCE_RESET` to that database's name, the
+> same way `SCOS_CONFIRM_DATABASE_RESET` guards `pnpm db:reset`. Setting
+> `API_BASE_URL` alone is not consent to lose the data behind it. It is for a
+> disposable database only — the read-only variant for a hosted environment
+> whose data must survive is issue #33.
 
 ### Tests that need a different server
 
@@ -95,9 +97,11 @@ Against a server you started yourself:
 # Terminal 1: the API over a migrated scos_test.
 DATABASE_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test pnpm api:start
 
-# Terminal 2: the suite against it. DATABASE_TEST_URL is that same database.
+# Terminal 2: the suite against it. DATABASE_TEST_URL is that same database,
+# and SCOS_CONFIRM_ACCEPTANCE_RESET names it, because the run resets it.
 API_BASE_URL=http://localhost:3000 \
 DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
+SCOS_CONFIRM_ACCEPTANCE_RESET=scos_test \
   pnpm exec turbo run test:integration --filter=@scos/api-acceptance
 ```
 
@@ -111,13 +115,14 @@ on `@scos/api`).
 passing, and CI rejects the Vitest modifiers that skip, defer or focus tests in
 the integration trees. Each of these produces a message that says what to do:
 
-| Situation                         | What you see                                                                                                             |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| The API was not built             | `The API build artifact …/dist/node.js is missing: run \`pnpm --filter @scos/api build\` first.`                         |
-| `DATABASE_TEST_URL` unset         | `DATABASE_TEST_URL must point to the test database; the acceptance suite fails rather than skipping without it.`         |
-| The server exits before listening | `The API process exited before it reported that it was listening (code …)`, with the last lines of its stdout and stderr |
-| The server never reports a port   | `The API process did not report that it was listening within 30000 ms.`, with its output                                 |
-| `API_BASE_URL` unreachable        | `API_BASE_URL … is not reachable: connect ECONNREFUSED …`                                                                |
+| Situation                                         | What you see                                                                                                                        |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| The API was not built                             | `The API build artifact …/dist/node.js is missing: run \`pnpm --filter @scos/api build\` first.`                                    |
+| `DATABASE_TEST_URL` unset                         | `DATABASE_TEST_URL must point to the test database; the acceptance suite fails rather than skipping without it.`                    |
+| The server exits before listening                 | `The API process exited before it reported that it was listening (code …)`, with the last lines of its stdout and stderr            |
+| The server never reports a port                   | `The API process did not report that it was listening within 30000 ms.`, with its output                                            |
+| `API_BASE_URL` unreachable                        | `API_BASE_URL … is not reachable: connect ECONNREFUSED …`                                                                           |
+| `API_BASE_URL` set without the reset confirmation | `Refusing to run against API_BASE_URL with database "scos_test". … To confirm, rerun with SCOS_CONFIRM_ACCEPTANCE_RESET=scos_test.` |
 
 ## Layout
 
