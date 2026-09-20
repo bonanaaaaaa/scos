@@ -49,5 +49,9 @@ crash.*.log
 .agents/skills/
 .codex/agents/
 
+# Scratch and temporary working directories
+tmp/
+.tmp/
+
 # Local issue drafts kept outside version control
 docs/issue-drafts/
