@@ -31,15 +31,15 @@ import type { SubmitOrder, VerifyOrder } from "@scos/core";
 import { createDatabasePool, createPrismaClient } from "@scos/persistence";
 import type { Context, MiddlewareHandler } from "hono";
 
-import { createApp } from "../app";
-import { buildSubmitOrder } from "../endpoints/submit-order/composition";
-import { buildVerifyOrder } from "../endpoints/verify-order/composition";
-import { createEndpointApp } from "../http/endpoint-app";
-import { type Logger, defaultLogger } from "../http/logger";
-import { MESSAGES } from "../http/messages";
-import type { Telemetry } from "../telemetry/telemetry";
-import type { ComposedApplication } from "./composed-application";
-import { databasePoolTimeouts, withHttpTelemetry } from "./database";
+import { createApp } from "#app";
+import { buildSubmitOrder } from "#endpoints/submit-order/composition";
+import { buildVerifyOrder } from "#endpoints/verify-order/composition";
+import { createEndpointApp } from "#http/endpoint-app";
+import { type Logger, defaultLogger } from "#http/logger";
+import { MESSAGES } from "#http/messages";
+import type { Telemetry } from "#telemetry/telemetry";
+import type { ComposedApplication } from "#composition/composed-application";
+import { databasePoolTimeouts, withHttpTelemetry } from "#composition/database";
 
 /**
  * pg pool size per request. A request's queries run one after another (the

@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 
-import type { Destination } from "../shared/destination";
-import { DomainError } from "../shared/errors";
-import type { Quantity } from "../shared/quantity";
+import type { Destination } from "#domain/shared/destination";
+import { DomainError } from "#domain/shared/errors";
+import type { Quantity } from "#domain/shared/quantity";
 
-import type { WarehouseStock } from "../shipping/allocation";
-import { EARTH_RADIUS_KM } from "../shipping/distance";
+import type { WarehouseStock } from "#domain/shipping/allocation";
+import { EARTH_RADIUS_KM } from "#domain/shipping/distance";
 
-import { type OrderEstimate, estimateOrder } from "./estimate";
+import { type OrderEstimate, estimateOrder } from "#domain/ordering/estimate";
 
 const asQuantity = (value: number): Quantity => value as Quantity;
 const destinationAt = (latitude: number, longitude: number): Destination =>

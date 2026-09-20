@@ -1,18 +1,16 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { factorySpies } from "../../testing/persistence-spies.test-support";
-import { DEFAULT_TELEMETRY_CONFIG } from "../../testing/telemetry.test-support";
+import { factorySpies } from "#testing/persistence-spies.test-support";
+import { DEFAULT_TELEMETRY_CONFIG } from "#testing/telemetry.test-support";
 
 // Spy on the adapter factories while keeping their real behaviour.
 vi.mock("@scos/persistence", async (importOriginal) =>
-  (await import("../../testing/persistence-spies.test-support")).spyOnFactories(
-    await importOriginal(),
-  ),
+  (await import("#testing/persistence-spies.test-support")).spyOnFactories(await importOriginal()),
 );
 
 const persistence = await import("@scos/persistence");
-const { composeHealthApplication } = await import("./composition");
-const { parseHealthConfig } = await import("./config");
+const { composeHealthApplication } = await import("#endpoints/health/composition");
+const { parseHealthConfig } = await import("#endpoints/health/config");
 const { calls } = factorySpies(persistence);
 
 afterEach(() => {

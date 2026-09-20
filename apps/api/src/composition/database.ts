@@ -22,10 +22,10 @@ import {
 } from "@scos/persistence";
 import type { Hono } from "hono";
 
-import type { ComposedApplication } from "./composed-application";
-import type { Logger } from "../http/logger";
-import { instrumentApp } from "../telemetry/http";
-import type { Telemetry } from "../telemetry/telemetry";
+import type { ComposedApplication } from "#composition/composed-application";
+import type { Logger } from "#http/logger";
+import { instrumentApp } from "#telemetry/http";
+import type { Telemetry } from "#telemetry/telemetry";
 
 /** Default limit for acquiring or opening a pooled connection. */
 export const DEFAULT_CONNECTION_TIMEOUT_MS = 5_000;
@@ -43,7 +43,7 @@ export function databasePoolTimeouts(
   return { connectionTimeoutMillis: connectionTimeoutMs };
 }
 
-export type { ComposedApplication } from "./composed-application";
+export type { ComposedApplication } from "#composition/composed-application";
 
 /** Options every database-backed composition accepts. */
 export interface DatabaseCompositionOptions {

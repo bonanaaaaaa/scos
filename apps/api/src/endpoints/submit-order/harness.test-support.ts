@@ -3,8 +3,8 @@
 import type { SubmitOrder, SubmitOrderOutcome } from "@scos/core";
 import { vi } from "vitest";
 
-import { acceptedOrder, fakeLogger } from "../../testing/fixtures.test-support";
-import { createSubmitOrderApp } from "./app";
+import { acceptedOrder, fakeLogger } from "#testing/fixtures.test-support";
+import { createSubmitOrderApp } from "#endpoints/submit-order/app";
 
 export function harness(
   submit: (input: unknown) => Promise<SubmitOrderOutcome> = async () => ({

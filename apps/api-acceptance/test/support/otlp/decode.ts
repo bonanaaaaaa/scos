@@ -28,7 +28,7 @@ import {
   fields,
   packedDoubles,
   packedFixed64,
-} from "./wire";
+} from "#test/support/otlp/wire";
 
 // ---------------------------------------------------------------------------
 // Common: AnyValue, KeyValue, InstrumentationScope, Resource

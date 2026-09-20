@@ -10,8 +10,8 @@
 
 import type { z } from "zod";
 
-import { errorBody, errorResponseSchema } from "./errors";
-import { MESSAGES } from "./messages";
+import { errorBody, errorResponseSchema } from "#http/errors";
+import { MESSAGES } from "#http/messages";
 
 /**
  * Prefix of the versioned order API. `GET /health` stays at the root: it is a

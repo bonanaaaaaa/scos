@@ -9,8 +9,8 @@
  * @module
  */
 
-import { errorBody } from "../../http/errors";
-import { MESSAGES } from "../../http/messages";
+import { errorBody } from "#http/errors";
+import { MESSAGES } from "#http/messages";
 import {
   insufficientStockEstimateExample,
   insufficientStockRequest,
@@ -18,8 +18,8 @@ import {
   shippingExceedsLimitRequest,
   validEstimateExample,
   validRequest,
-} from "../../http/estimate-examples";
-import { type ExampleMap, invalidRequestExamples } from "../../http/route-contract";
+} from "#http/estimate-examples";
+import { type ExampleMap, invalidRequestExamples } from "#http/route-contract";
 
 /** A string quantity, an out-of-range latitude and an unknown field. */
 export const malformedRequest = {

@@ -6,7 +6,7 @@
 import { Ajv2020, type ValidateFunction } from "ajv/dist/2020";
 import addFormatsModule from "ajv-formats";
 
-import type { JsonObject, OpenApiDocument } from "../openapi/document";
+import type { JsonObject, OpenApiDocument } from "#openapi/document";
 
 // ajv-formats is CommonJS; its default export arrives wrapped under ESM.
 const addFormats = ((addFormatsModule as unknown as { default?: unknown }).default ??

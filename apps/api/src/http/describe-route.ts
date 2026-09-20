@@ -25,7 +25,7 @@ import {
   JSON_REQUEST_DESCRIPTION,
   type ResponseContract,
   type RouteContract,
-} from "./route-contract";
+} from "#http/route-contract";
 
 type ResponsesOption = NonNullable<DescribeRouteOptions["responses"]>;
 type ResponseOption = ResponsesOption[string];

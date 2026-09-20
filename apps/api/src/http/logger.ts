@@ -19,7 +19,7 @@ import {
   correlationFields,
   redact,
   sanitizeDetails,
-} from "../telemetry/log-record";
+} from "#telemetry/log-record";
 
 export type LogDetails = Readonly<Record<string, unknown>>;
 

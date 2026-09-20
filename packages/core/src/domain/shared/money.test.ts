@@ -1,9 +1,9 @@
 import { Decimal } from "decimal.js";
 import { describe, expect, test } from "vitest";
 
-import { DomainDecimal } from "./decimal";
-import { DomainError } from "./errors";
-import { MONEY_MAX_STRING, Money } from "./money";
+import { DomainDecimal } from "#domain/shared/decimal";
+import { DomainError } from "#domain/shared/errors";
+import { MONEY_MAX_STRING, Money } from "#domain/shared/money";
 
 describe("DomainDecimal", () => {
   test("uses an isolated 40-digit HALF_UP configuration without mutating the global Decimal", () => {

@@ -118,6 +118,7 @@ Dependencies point inward only:
 - The `no-restricted-imports` rule in `packages/core/.oxlintrc.json` enforces
   both for every file under `packages/core/src`.
 - Adapters import only the package root (`@scos/core`), not internal files.
+- Imports are never relative; see [Module specifiers](#module-specifiers).
 
 The database is reached through dependency inversion. The use case needs
 persistence, but instead of importing it, core declares a port and
@@ -125,6 +126,50 @@ persistence, but instead of importing it, core declares a port and
 (`src/endpoints/<name>/composition.ts` per endpoint, and `src/composition/node.ts`
 for the combined app) wire the adapter into the use case at startup, after the
 runtime entry point (`src/entrypoints/node.ts` locally) has validated the environment.
+
+## Module specifiers
+
+No source or test file imports another file relatively. Every import names
+either the workspace package that exports it or the importing package's own
+`imports` map in `package.json`:
+
+| Target                               | Specifier                         | Example                          |
+| ------------------------------------ | --------------------------------- | -------------------------------- |
+| Another workspace package            | its package name, root entry only | `@scos/core`                     |
+| A file in the same package's `src/`  | `#<path under src>`               | `#domain/shared/money`           |
+| A file in the same package's `test/` | `#test/<path under test>`         | `#test/support/database`         |
+| A repository-root script             | `#scripts/<file>`                 | `#scripts/validate-pr-title.mjs` |
+
+The maps are small and mechanical; `apps/api`, for example, declares:
+
+```json
+"imports": {
+  "#*": "./src/*.ts",
+  "#test/*": "./test/*.ts"
+}
+```
+
+Each target carries the `.ts` extension, so every tool resolves a specifier to
+exactly one file with no extension guessing: `tsc`, Vitest (Node and the
+workerd pool), `tsx`, esbuild (the Node bundle and Wrangler's Worker bundle)
+and tsdown all read `imports` from `package.json` natively, so no path
+aliases, resolver plugins or per-tool configuration are needed.
+`packages/persistence` reaches the generated Prisma clients the same way
+(`#generated/prisma/client`); its workerd build redirects that one specifier
+to `#generated/prisma-workerd/client` (`tsdown.config.ts`).
+
+The `no-restricted-imports` rule in `.oxlintrc.json` rejects any specifier
+starting with `./` or `../`. `packages/core/.oxlintrc.json` replaces the root
+configuration for that package, so it repeats the ban next to the layering
+rules below. Tool configuration and build scripts (`vitest.*.mjs`,
+`*.config.mjs`, `build.mjs`) are exempt: their tool loads them by path, outside
+the module graph, and they address their siblings relatively.
+
+What this buys us: a specifier reads the same in every file, so it says where
+code lives rather than how far away it is; moving a file changes only its own
+path and never the `../../..` chains of the files that import it; and nothing
+can reach into another package's internals, because a package's files are
+addressable only from inside it.
 
 ## Where does code go?
 
@@ -416,7 +461,8 @@ Dependencies point one way: `shared` <- `pricing`, `shipping` <- `ordering`.
 `shared` imports no other domain folder, `pricing` and `shipping` do not import
 each other or `ordering`, and `ordering` may import all of them. No domain file
 imports `application/`. `packages/core/.oxlintrc.json` enforces these rules with
-`no-restricted-imports`, alongside the ban on adapter technology imports.
+`no-restricted-imports`, alongside the ban on adapter technology imports and
+the repository-wide ban on relative imports.
 
 The folders follow domain concepts rather than DDD building-block types
 (`entities/`, `value-objects/`, `services/`). Code that changes together stays

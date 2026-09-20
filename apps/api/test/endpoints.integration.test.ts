@@ -5,10 +5,15 @@ import {
   composeHealthApplication,
   composeSubmitOrderApplication,
   composeVerifyOrderApplication,
-} from "../src/index";
-import { orderResponseSchema, verifyOrderResponseSchema } from "../src/index";
-import { AT_PARIS, PARIS, postJson, silentLogger, snapshot } from "./support/app";
-import { type TestDatabase, createTestDatabase, readState, stockById } from "./support/database";
+} from "#index";
+import { orderResponseSchema, verifyOrderResponseSchema } from "#index";
+import { AT_PARIS, PARIS, postJson, silentLogger, snapshot } from "#test/support/app";
+import {
+  type TestDatabase,
+  createTestDatabase,
+  readState,
+  stockById,
+} from "#test/support/database";
 
 let db: TestDatabase;
 const opened: ComposedApplication[] = [];

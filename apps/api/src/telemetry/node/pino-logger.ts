@@ -18,14 +18,14 @@ import { createRequire } from "node:module";
 
 import type * as Pino from "pino";
 
-import type { LogDetails, StructuredLogger } from "../../http/logger";
+import type { LogDetails, StructuredLogger } from "#http/logger";
 import {
   type LogLevelName,
   OTEL_SEVERITY_NUMBERS,
   REDACTION_CENSOR,
   REDACT_PATHS,
   sanitizeDetails,
-} from "../log-record";
+} from "#telemetry/log-record";
 
 type PinoModule = typeof import("pino");
 

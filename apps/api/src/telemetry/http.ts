@@ -43,10 +43,10 @@ import {
 } from "@opentelemetry/semantic-conventions";
 import type { Hono, MiddlewareHandler } from "hono";
 
-import { createEndpointApp, routeTemplate } from "../http/endpoint-app";
-import { type Logger, type StructuredLogger, defaultLogger } from "../http/logger";
-import { MESSAGES } from "../http/messages";
-import { type Telemetry, recordFailure } from "./telemetry";
+import { createEndpointApp, routeTemplate } from "#http/endpoint-app";
+import { type Logger, type StructuredLogger, defaultLogger } from "#http/logger";
+import { MESSAGES } from "#http/messages";
+import { type Telemetry, recordFailure } from "#telemetry/telemetry";
 
 const KNOWN_METHODS = new Set([
   "CONNECT",

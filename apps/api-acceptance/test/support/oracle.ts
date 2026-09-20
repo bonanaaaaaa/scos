@@ -15,7 +15,7 @@
 
 import { expect } from "vitest";
 
-import { type Warehouse, ORDER_NUMBER, WAREHOUSES } from "./prd";
+import { type Warehouse, ORDER_NUMBER, WAREHOUSES } from "#test/support/prd";
 
 /** Mean Earth radius used for the great-circle distance (IUGG R1, km). */
 const EARTH_RADIUS_KM = 6371.0088;

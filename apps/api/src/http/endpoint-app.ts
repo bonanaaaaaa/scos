@@ -9,9 +9,9 @@ import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { matchedRoutes } from "hono/route";
 
-import { errorBody, invalidRequest, notFound } from "./errors";
-import type { Logger } from "./logger";
-import { MESSAGES } from "./messages";
+import { errorBody, invalidRequest, notFound } from "#http/errors";
+import type { Logger } from "#http/logger";
+import { MESSAGES } from "#http/messages";
 
 /** The route template that served the request, or `undefined` (404). */
 export function routeTemplate(c: Context): string | undefined {

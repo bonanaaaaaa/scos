@@ -16,7 +16,7 @@ import type { Hono } from "hono";
 import { expect, vi } from "vitest";
 import type { z } from "zod";
 
-import type { Logger } from "../http/logger";
+import type { Logger } from "#http/logger";
 
 // One warehouse at (0, 0) with 100 units: 30 units shipped 55.6 km is valid,
 // 1 unit to the North Pole costs more than 15% of $150, and 1 000 is too many.

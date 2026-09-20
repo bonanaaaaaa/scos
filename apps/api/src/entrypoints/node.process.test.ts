@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { startBlackHole } from "../testing/black-hole.test-support";
+import { startBlackHole } from "#testing/black-hole.test-support";
 
 // ---------------------------------------------------------------------------
 // The real entrypoint as a subprocess

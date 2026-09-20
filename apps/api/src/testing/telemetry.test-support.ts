@@ -24,11 +24,11 @@ import {
 } from "@opentelemetry/sdk-trace";
 import type { DestinationStream } from "pino";
 
-import type { Environment } from "../config";
-import { parseHealthConfig } from "../endpoints/health/config";
-import type { TelemetryConfig } from "../telemetry/config";
-import { ensureContextManager } from "../telemetry/node/sdk";
-import { type Telemetry, createTelemetry } from "../telemetry/telemetry";
+import type { Environment } from "#config";
+import { parseHealthConfig } from "#endpoints/health/config";
+import type { TelemetryConfig } from "#telemetry/config";
+import { ensureContextManager } from "#telemetry/node/sdk";
+import { type Telemetry, createTelemetry } from "#telemetry/telemetry";
 
 export interface LogCapture {
   readonly destination: DestinationStream;

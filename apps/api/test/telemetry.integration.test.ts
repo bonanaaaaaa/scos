@@ -10,20 +10,27 @@ import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { composeSubmitOrderApplication } from "../src/endpoints/submit-order/composition";
-import { composeVerifyOrderApplication } from "../src/endpoints/verify-order/composition";
-import { parseHealthConfig } from "../src/endpoints/health/config";
-import { createTelemetryRuntime } from "../src/telemetry/node/sdk";
-import { SUBMISSIONS_METRIC } from "../src/telemetry/telemetry";
-import { startBlackHole } from "../src/testing/black-hole.test-support";
-import { type TestTelemetry, testTelemetry } from "../src/testing/telemetry.test-support";
-import { AT_PARIS, Applications, FAR_AWAY, postJson, silentLogger, snapshot } from "./support/app";
+import { composeSubmitOrderApplication } from "#endpoints/submit-order/composition";
+import { composeVerifyOrderApplication } from "#endpoints/verify-order/composition";
+import { parseHealthConfig } from "#endpoints/health/config";
+import { createTelemetryRuntime } from "#telemetry/node/sdk";
+import { SUBMISSIONS_METRIC } from "#telemetry/telemetry";
+import { startBlackHole } from "#testing/black-hole.test-support";
+import { type TestTelemetry, testTelemetry } from "#testing/telemetry.test-support";
+import {
+  AT_PARIS,
+  Applications,
+  FAR_AWAY,
+  postJson,
+  silentLogger,
+  snapshot,
+} from "#test/support/app";
 import {
   type TestDatabase,
   createTestDatabase,
   holdWarehouseLocks,
   stockById,
-} from "./support/database";
+} from "#test/support/database";
 
 let db: TestDatabase;
 let harness: TestTelemetry;

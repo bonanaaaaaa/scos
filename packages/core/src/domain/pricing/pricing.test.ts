@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { DomainDecimal } from "../shared/decimal";
-import { MAX_QUANTITY, type Quantity } from "../shared/quantity";
+import { DomainDecimal } from "#domain/shared/decimal";
+import { MAX_QUANTITY, type Quantity } from "#domain/shared/quantity";
 
-import { discountRateFor, priceMerchandise } from "./pricing";
+import { discountRateFor, priceMerchandise } from "#domain/pricing/pricing";
 
 const asQuantity = (value: number): Quantity => value as Quantity;
 

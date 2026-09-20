@@ -12,13 +12,9 @@ import { SpanKind } from "@opentelemetry/api";
 import type { ExecutionContext } from "hono";
 import { describe, expect, test } from "vitest";
 
-import {
-  type WorkerRuntime,
-  createWorkerHandler,
-  workersRuntime,
-} from "../../src/entrypoints/worker";
-import { createWorkersTelemetry } from "../../src/telemetry/workers/sdk";
-import { accumulateDeltas } from "../../src/testing/workers-telemetry.test-support";
+import { type WorkerRuntime, createWorkerHandler, workersRuntime } from "#entrypoints/worker";
+import { createWorkersTelemetry } from "#telemetry/workers/sdk";
+import { accumulateDeltas } from "#testing/workers-telemetry.test-support";
 import {
   InMemoryMetricExporter,
   AggregationTemporality,

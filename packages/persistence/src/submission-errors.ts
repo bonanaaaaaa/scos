@@ -1,7 +1,7 @@
 import { SubmissionKeyTakenError, TransientSubmissionError } from "@scos/core";
 import { DatabaseError } from "pg";
 
-import { Prisma } from "./generated/prisma/client";
+import { Prisma } from "#generated/prisma/client";
 
 /**
  * Database error classification for the submission transaction.

@@ -47,14 +47,11 @@ import { TransientSubmissionError } from "@scos/core";
 import { Client, Pool, type PoolClient } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { type Prisma, type PrismaClient, createPrismaClient } from "../src/prisma";
-import { seedWarehouses } from "../src/seed";
-import { databaseErrorDetails } from "../src/submission-errors";
-import {
-  type PrismaSubmissionStoreOptions,
-  createPrismaSubmissionStore,
-} from "../src/submission-store";
-import { createMigratedDatabase, type MigratedDatabase } from "./support/database";
+import { type Prisma, type PrismaClient, createPrismaClient } from "#prisma";
+import { seedWarehouses } from "#seed";
+import { databaseErrorDetails } from "#submission-errors";
+import { type PrismaSubmissionStoreOptions, createPrismaSubmissionStore } from "#submission-store";
+import { createMigratedDatabase, type MigratedDatabase } from "#test/support/database";
 
 /** Session state a transaction-mode pooler does not carry between checkouts. */
 interface SessionState {

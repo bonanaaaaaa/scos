@@ -2,15 +2,15 @@ import { Hono } from "hono";
 import { describeRoute, type resolver } from "hono-openapi";
 import { describe, expect, test } from "vitest";
 
-import { createApp } from "../app";
-import { createHealthApp } from "../endpoints/health/app";
-import { createSubmitOrderApp } from "../endpoints/submit-order/app";
-import { createVerifyOrderApp } from "../endpoints/verify-order/app";
-import { errorResponseSchema } from "../http/errors";
-import { fakeLogger, json } from "../testing/fixtures.test-support";
-import { noSubmit, noVerify } from "../testing/requests.test-support";
-import { SWAGGER_UI_VERSION, createDocsApp } from "./docs-app";
-import { renderOpenApiDocument } from "./offline";
+import { createApp } from "#app";
+import { createHealthApp } from "#endpoints/health/app";
+import { createSubmitOrderApp } from "#endpoints/submit-order/app";
+import { createVerifyOrderApp } from "#endpoints/verify-order/app";
+import { errorResponseSchema } from "#http/errors";
+import { fakeLogger, json } from "#testing/fixtures.test-support";
+import { noSubmit, noVerify } from "#testing/requests.test-support";
+import { SWAGGER_UI_VERSION, createDocsApp } from "#openapi/docs-app";
+import { renderOpenApiDocument } from "#openapi/offline";
 
 function app() {
   return createApp({ verifyOrder: noVerify, submitOrder: noSubmit, logger: fakeLogger() });

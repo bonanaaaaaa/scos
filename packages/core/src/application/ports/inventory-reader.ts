@@ -8,7 +8,7 @@
  * @module
  */
 
-import type { InventorySnapshot } from "../../domain/shipping/allocation";
+import type { InventorySnapshot } from "#domain/shipping/allocation";
 
 /**
  * Reads Warehouse Inventory for advisory verification.

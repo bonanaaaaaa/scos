@@ -1,15 +1,15 @@
 import { describe, expect, test } from "vitest";
 
-import { DomainDecimal } from "../shared/decimal";
-import { Money } from "../shared/money";
+import { DomainDecimal } from "#domain/shared/decimal";
+import { Money } from "#domain/shared/money";
 
-import type { WarehouseAllocation } from "./allocation";
+import type { WarehouseAllocation } from "#domain/shipping/allocation";
 import {
   isShippingWithinLimit,
   shippingCostFor,
   shippingLimitFor,
   unroundedShippingCost,
-} from "./shipping";
+} from "#domain/shipping/shipping";
 
 const allocation = ({
   warehouseId = "a",

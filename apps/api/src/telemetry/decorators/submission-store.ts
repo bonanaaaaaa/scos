@@ -8,8 +8,8 @@
 
 import type { SubmissionStore, SubmissionTransaction } from "@scos/core";
 
-import type { Telemetry } from "../telemetry";
-import { ATTR_ORDER_FOUND, ATTR_WAREHOUSE_COUNT, inSpan } from "./span";
+import type { Telemetry } from "#telemetry/telemetry";
+import { ATTR_ORDER_FOUND, ATTR_WAREHOUSE_COUNT, inSpan } from "#telemetry/decorators/span";
 
 function traceTransaction(tx: SubmissionTransaction, telemetry: Telemetry): SubmissionTransaction {
   return {

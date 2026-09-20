@@ -19,13 +19,13 @@
 
 import type { ExecutionContext } from "hono";
 
-import { type Environment, type WorkerConfig, parseWorkerConfig } from "../config";
-import type { ComposedApplication } from "../composition/composed-application";
-import { type WorkerCompositionOptions, composeWorkerApplication } from "../composition/worker";
-import { errorBody } from "../http/errors";
-import { MESSAGES } from "../http/messages";
-import type { WorkersTelemetryConfig } from "../telemetry/config";
-import { type WorkersTelemetryRuntime, createWorkersTelemetry } from "../telemetry/workers/sdk";
+import { type Environment, type WorkerConfig, parseWorkerConfig } from "#config";
+import type { ComposedApplication } from "#composition/composed-application";
+import { type WorkerCompositionOptions, composeWorkerApplication } from "#composition/worker";
+import { errorBody } from "#http/errors";
+import { MESSAGES } from "#http/messages";
+import type { WorkersTelemetryConfig } from "#telemetry/config";
+import { type WorkersTelemetryRuntime, createWorkersTelemetry } from "#telemetry/workers/sdk";
 
 /** The Hyperdrive binding: only its connection string is used. */
 export interface HyperdriveBinding {

@@ -13,7 +13,7 @@ import {
 } from "@scos/core";
 import type { Hono } from "hono";
 
-import { createApp } from "../app";
+import { createApp } from "#app";
 import {
   acceptedOrder as order,
   fakeLogger,
@@ -22,7 +22,7 @@ import {
   submitBody,
   validEstimate as valid,
   verifyBody,
-} from "./fixtures.test-support";
+} from "#testing/fixtures.test-support";
 
 export interface Case {
   readonly name: string;

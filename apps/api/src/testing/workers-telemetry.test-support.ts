@@ -17,13 +17,13 @@ import {
 } from "@opentelemetry/sdk-metrics";
 import { InMemorySpanExporter, type ReadableSpan } from "@opentelemetry/sdk-trace";
 
-import { parseWorkerConfig } from "../config";
-import type { WorkersTelemetryConfig } from "../telemetry/config";
+import { parseWorkerConfig } from "#config";
+import type { WorkersTelemetryConfig } from "#telemetry/config";
 import {
   type WorkersTelemetryOverrides,
   type WorkersTelemetryRuntime,
   createWorkersTelemetry,
-} from "../telemetry/workers/sdk";
+} from "#telemetry/workers/sdk";
 
 /** A syntactically valid connection string nothing listens on. */
 export const UNREACHABLE_DATABASE_URL = "postgresql://scos:secret-password@127.0.0.1:1/scos";

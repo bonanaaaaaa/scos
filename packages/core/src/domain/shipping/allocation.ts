@@ -11,11 +11,11 @@
 
 import { z } from "zod";
 
-import { type Destination, latitudeSchema, longitudeSchema } from "../shared/destination";
-import { DomainError } from "../shared/errors";
-import type { Quantity } from "../shared/quantity";
+import { type Destination, latitudeSchema, longitudeSchema } from "#domain/shared/destination";
+import { DomainError } from "#domain/shared/errors";
+import type { Quantity } from "#domain/shared/quantity";
 
-import { haversineDistanceKm } from "./distance";
+import { haversineDistanceKm } from "#domain/shipping/distance";
 
 /**
  * Invariant check for one warehouse's stock: a non-empty ID, valid

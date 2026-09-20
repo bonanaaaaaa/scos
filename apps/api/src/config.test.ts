@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { DEFAULT_PORT, parseConfig, parseDatabaseConfig } from "./config";
-import { DEFAULT_TELEMETRY_CONFIG as telemetry } from "./testing/telemetry.test-support";
+import { DEFAULT_PORT, parseConfig, parseDatabaseConfig } from "#config";
+import { DEFAULT_TELEMETRY_CONFIG as telemetry } from "#testing/telemetry.test-support";
 
 const databaseUrl = "postgresql://scos:secret-password@localhost:5432/scos";
 

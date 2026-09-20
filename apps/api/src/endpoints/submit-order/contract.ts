@@ -10,17 +10,17 @@
 import { ORDER_NUMBER_PATTERN, submissionKeySchema } from "@scos/core";
 import { z } from "zod";
 
-import { errorResponseSchema, rejectionErrorBodySchema } from "../../http/errors";
+import { errorResponseSchema, rejectionErrorBodySchema } from "#http/errors";
 import {
   insufficientStockEstimateSchema,
   shippingExceedsLimitEstimateSchema,
-} from "../../http/estimate";
+} from "#http/estimate";
 import {
   API_PREFIX,
   type RouteContract,
   SUBMISSION_ADR_URL,
   invalidRequestResponse,
-} from "../../http/route-contract";
+} from "#http/route-contract";
 import {
   destinationResponseSchema,
   discountRateSchema,
@@ -30,8 +30,11 @@ import {
   quantityFieldSchema,
   responseQuantitySchema,
   warehouseIdSchema,
-} from "../../http/schemas";
-import { submitOrderRequestExamples, submitOrderResponseExamples } from "./examples";
+} from "#http/schemas";
+import {
+  submitOrderRequestExamples,
+  submitOrderResponseExamples,
+} from "#endpoints/submit-order/examples";
 
 /**
  * The submissionId rules JSON Schema cannot express. They are enforced by the

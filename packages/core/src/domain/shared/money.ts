@@ -8,8 +8,8 @@
  * @module
  */
 
-import { type Decimal, DomainDecimal } from "./decimal";
-import { DomainError } from "./errors";
+import { type Decimal, DomainDecimal } from "#domain/shared/decimal";
+import { DomainError } from "#domain/shared/errors";
 
 /** Largest value representable by PostgreSQL NUMERIC(12, 2). */
 export const MONEY_MAX_STRING = "9999999999.99";

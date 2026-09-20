@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "imports": {
+    "#*": "./src/*.ts",
+    "#test/*": "./test/*.ts"
+  },
   "scripts": {
     "build": "node build.mjs",
     "dev": "tsx watch src/entrypoints/node.ts",

@@ -2,7 +2,7 @@ import { LATITUDE_LIMIT, LONGITUDE_LIMIT, MAX_QUANTITY } from "@scos/core";
 import { describe, expect, test } from "vitest";
 import type { z } from "zod";
 
-import { verifyOrderRequestSchema, verifyOrderRoute } from "./contract";
+import { verifyOrderRequestSchema, verifyOrderRoute } from "#endpoints/verify-order/contract";
 
 const verifyBody = { quantity: 10, latitude: 13.75, longitude: 100.5 };
 

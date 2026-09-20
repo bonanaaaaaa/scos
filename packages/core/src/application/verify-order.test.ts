@@ -1,12 +1,12 @@
 import { describe, expect, test } from "vitest";
 
-import { type OrderEstimate, estimateOrder } from "../domain/ordering/estimate";
-import { type OrderRequest, orderRequestSchema } from "../domain/ordering/order-request";
-import { DomainError } from "../domain/shared/errors";
-import type { InventorySnapshot, WarehouseStock } from "../domain/shipping/allocation";
+import { type OrderEstimate, estimateOrder } from "#domain/ordering/estimate";
+import { type OrderRequest, orderRequestSchema } from "#domain/ordering/order-request";
+import { DomainError } from "#domain/shared/errors";
+import type { InventorySnapshot, WarehouseStock } from "#domain/shipping/allocation";
 
-import type { InventoryReader } from "./ports/inventory-reader";
-import { createVerifyOrder } from "./verify-order";
+import type { InventoryReader } from "#application/ports/inventory-reader";
+import { createVerifyOrder } from "#application/verify-order";
 
 const PRD_WAREHOUSES: readonly WarehouseStock[] = [
   { warehouseId: "wh-1-los-angeles", latitude: 33.9425, longitude: -118.408056, available: 355 },

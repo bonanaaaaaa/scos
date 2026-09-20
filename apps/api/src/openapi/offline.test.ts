@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { errorResponseSchema } from "../http/errors";
-import { json, post } from "../testing/fixtures.test-support";
-import { offlineApp, renderOpenApiDocument } from "./offline";
+import { errorResponseSchema } from "#http/errors";
+import { json, post } from "#testing/fixtures.test-support";
+import { offlineApp, renderOpenApiDocument } from "#openapi/offline";
 
 describe("offline OpenAPI app", () => {
   test("has no working use cases: a request reaching one is a 500, never a database call", async () => {

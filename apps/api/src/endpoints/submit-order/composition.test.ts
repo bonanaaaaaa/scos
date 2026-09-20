@@ -4,17 +4,15 @@ import {
   factorySpies,
   flush,
   unreachableDatabaseUrl as databaseUrl,
-} from "../../testing/persistence-spies.test-support";
+} from "#testing/persistence-spies.test-support";
 
 // Spy on the adapter factories while keeping their real behaviour.
 vi.mock("@scos/persistence", async (importOriginal) =>
-  (await import("../../testing/persistence-spies.test-support")).spyOnFactories(
-    await importOriginal(),
-  ),
+  (await import("#testing/persistence-spies.test-support")).spyOnFactories(await importOriginal()),
 );
 
 const persistence = await import("@scos/persistence");
-const { composeSubmitOrderApplication } = await import("./composition");
+const { composeSubmitOrderApplication } = await import("#endpoints/submit-order/composition");
 const { spies, calls, watchNextPool } = factorySpies(persistence);
 
 afterEach(() => {

@@ -11,7 +11,7 @@
 
 import { inject } from "vitest";
 
-import type { ApiUnderTest } from "./api-process";
+import type { ApiUnderTest } from "#test/support/api-process";
 
 /** The API every test in this run calls. */
 export function sharedApi(): ApiUnderTest {

@@ -10,7 +10,7 @@ import type { SubmitOrderIssue } from "@scos/core";
 import type { Context } from "hono";
 import { z } from "zod";
 
-import { MESSAGES } from "./messages";
+import { MESSAGES } from "#http/messages";
 
 /** Every error code any endpoint returns: the envelope's shared vocabulary. */
 export const ERROR_CODES = [

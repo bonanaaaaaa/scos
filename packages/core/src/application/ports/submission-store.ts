@@ -10,9 +10,9 @@
  * @module
  */
 
-import type { NewOrder, Order } from "../../domain/ordering/order";
-import type { SubmissionKey } from "../../domain/ordering/submission-key";
-import type { InventorySnapshot } from "../../domain/shipping/allocation";
+import type { NewOrder, Order } from "#domain/ordering/order";
+import type { SubmissionKey } from "#domain/ordering/submission-key";
+import type { InventorySnapshot } from "#domain/shipping/allocation";
 
 /**
  * Operations available inside one submission transaction. Every call runs on

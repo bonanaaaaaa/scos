@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { createPrismaInventoryReader } from "../src/inventory-reader";
-import { seedWarehouses, warehouseSeeds } from "../src/seed";
+import { createPrismaInventoryReader } from "#inventory-reader";
+import { seedWarehouses, warehouseSeeds } from "#seed";
 import {
   createMigratedDatabase,
   type MigratedDatabase,
   readPersistedState,
-} from "./support/database";
+} from "#test/support/database";
 
 // Seeded warehouse IDs (see src/seed.ts).
 const PARIS = "01996000-0000-7000-8000-000000000004";

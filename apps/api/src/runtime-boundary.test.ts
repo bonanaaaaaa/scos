@@ -10,7 +10,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "vitest";
@@ -115,12 +115,16 @@ function specifiers(path: string): string[] {
   return [...text.matchAll(IMPORT)].map((match) => match[1] as string);
 }
 
-/** The src/-relative module a relative specifier names, if it is ours. */
-function resolveLocal(from: string, specifier: string): string | undefined {
-  if (!specifier.startsWith(".")) {
+/**
+ * The src/-relative module a specifier names, if it is one of ours. Imports of
+ * this package's own files are "#<path under src>" (package.json "imports";
+ * docs/architecture.md, "Module specifiers"); everything else is a package.
+ */
+function resolveLocal(specifier: string): string | undefined {
+  if (!specifier.startsWith("#")) {
     return undefined;
   }
-  const base = join(dirname(from), specifier).split("\\").join("/");
+  const base = specifier.slice(1);
   return [`${base}.ts`, `${base}/index.ts`].find((candidate) =>
     existsSync(join(sourceDirectory, candidate)),
   );
@@ -138,10 +142,10 @@ function reachable(entry: string): Map<string, string[]> {
     const found = specifiers(path);
     seen.set(
       path,
-      found.filter((specifier) => !specifier.startsWith(".")),
+      found.filter((specifier) => !specifier.startsWith("#")),
     );
     for (const specifier of found) {
-      const local = resolveLocal(path, specifier);
+      const local = resolveLocal(specifier);
       if (local !== undefined) {
         pending.push(local);
       }
@@ -182,7 +186,7 @@ describe("the Workers runtime never loads Node-only telemetry", () => {
 
   test.each(workersModules)("%s imports no Node-only module or package", (path) => {
     for (const specifier of specifiers(path)) {
-      const local = resolveLocal(path, specifier);
+      const local = resolveLocal(specifier);
       if (local === undefined) {
         expect(NODE_ONLY_PACKAGES.test(specifier), `${path} imports ${specifier}`).toBe(false);
       } else {
@@ -204,7 +208,7 @@ describe("the Node runtime never loads Workers modules", () => {
 
   test.each(all.filter(isNodeOnly))("%s imports no Workers module", (path) => {
     for (const specifier of specifiers(path)) {
-      const local = resolveLocal(path, specifier);
+      const local = resolveLocal(specifier);
       expect(local !== undefined && isWorkersOnly(local), `${path} imports ${local}`).toBe(false);
       expect(specifier.startsWith("cloudflare:"), `${path} imports ${specifier}`).toBe(false);
     }

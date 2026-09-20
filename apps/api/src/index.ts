@@ -17,40 +17,34 @@ import { corePackage } from "@scos/core";
 import { persistencePackage } from "@scos/persistence";
 
 // Apps
-export { type AppDependencies, createApp } from "./app";
-export { type HealthAppOptions, createHealthApp } from "./endpoints/health/app";
-export {
-  type SubmitOrderAppDependencies,
-  createSubmitOrderApp,
-} from "./endpoints/submit-order/app";
-export {
-  type VerifyOrderAppDependencies,
-  createVerifyOrderApp,
-} from "./endpoints/verify-order/app";
+export { type AppDependencies, createApp } from "#app";
+export { type HealthAppOptions, createHealthApp } from "#endpoints/health/app";
+export { type SubmitOrderAppDependencies, createSubmitOrderApp } from "#endpoints/submit-order/app";
+export { type VerifyOrderAppDependencies, createVerifyOrderApp } from "#endpoints/verify-order/app";
 export {
   type Logger,
   type StructuredLogger,
   createConsoleJsonLogger,
   defaultLogger,
-} from "./http/logger";
+} from "#http/logger";
 
 // Compositions
-export { type CompositionOptions, composeApplication } from "./composition/node";
+export { type CompositionOptions, composeApplication } from "#composition/node";
 export {
   type ComposedApplication,
   type DatabaseCompositionOptions,
   DEFAULT_CONNECTION_TIMEOUT_MS,
   databasePoolTimeouts,
-} from "./composition/database";
-export { composeHealthApplication } from "./endpoints/health/composition";
+} from "#composition/database";
+export { composeHealthApplication } from "#endpoints/health/composition";
 export {
   type SubmitOrderCompositionOptions,
   composeSubmitOrderApplication,
-} from "./endpoints/submit-order/composition";
+} from "#endpoints/submit-order/composition";
 export {
   type VerifyOrderCompositionOptions,
   composeVerifyOrderApplication,
-} from "./endpoints/verify-order/composition";
+} from "#endpoints/verify-order/composition";
 
 // Configuration
 export {
@@ -59,11 +53,11 @@ export {
   type ServerConfig,
   parseConfig,
   parseDatabaseConfig,
-} from "./config";
-export { type HealthConfig, parseHealthConfig } from "./endpoints/health/config";
+} from "#config";
+export { type HealthConfig, parseHealthConfig } from "#endpoints/health/config";
 
 // Contracts
-export { routes } from "./routes";
+export { routes } from "#routes";
 export {
   type ErrorCode,
   type ErrorIssue,
@@ -73,14 +67,14 @@ export {
   errorCodeSchema,
   errorIssueSchema,
   errorResponseSchema,
-} from "./http/errors";
-export { healthResponseSchema } from "./endpoints/health/contract";
+} from "#http/errors";
+export { healthResponseSchema } from "#endpoints/health/contract";
 export {
   type VerifyOrderRequest,
   type VerifyOrderResponse,
   verifyOrderRequestSchema,
   verifyOrderResponseSchema,
-} from "./endpoints/verify-order/contract";
+} from "#endpoints/verify-order/contract";
 export {
   type OrderResponse,
   type RejectedSubmissionResponse,
@@ -91,14 +85,14 @@ export {
   rejectedSubmissionResponseSchema,
   submissionIdFieldSchema,
   submitOrderRequestSchema,
-} from "./endpoints/submit-order/contract";
+} from "#endpoints/submit-order/contract";
 export {
   type RejectedEstimate,
   estimateAllocationSchema,
   insufficientStockEstimateSchema,
   shippingExceedsLimitEstimateSchema,
   validEstimateSchema,
-} from "./http/estimate";
+} from "#http/estimate";
 export {
   API_PREFIX,
   type EndpointApp,
@@ -108,7 +102,7 @@ export {
   type ResponseContract,
   type RouteContract,
   notFoundResponse,
-} from "./http/route-contract";
+} from "#http/route-contract";
 export {
   destinationResponseSchema,
   discountRateSchema,
@@ -118,7 +112,7 @@ export {
   quantityFieldSchema,
   responseQuantitySchema,
   warehouseIdSchema,
-} from "./http/schemas";
+} from "#http/schemas";
 
 // OpenAPI
 export {
@@ -128,8 +122,8 @@ export {
   type OpenApiDocument,
   generateOpenApiDocument,
   serializeOpenApiDocument,
-} from "./openapi/document";
-export { buildOpenApiDocument, renderOpenApiDocument } from "./openapi/offline";
+} from "#openapi/document";
+export { buildOpenApiDocument, renderOpenApiDocument } from "#openapi/offline";
 
 export function workspaceComposition(): readonly string[] {
   return [corePackage.name, persistencePackage.name];

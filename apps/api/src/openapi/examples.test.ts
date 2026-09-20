@@ -7,23 +7,20 @@
 
 import { describe, expect, test } from "vitest";
 
-import {
-  EXAMPLE_ORDER_NUMBER,
-  submitOrderRequestExamples,
-} from "../endpoints/submit-order/examples";
-import { verifyOrderRequestExamples } from "../endpoints/verify-order/examples";
+import { EXAMPLE_ORDER_NUMBER, submitOrderRequestExamples } from "#endpoints/submit-order/examples";
+import { verifyOrderRequestExamples } from "#endpoints/verify-order/examples";
 import {
   type ExampleMap,
   type ResponseContract,
   type RouteContract,
   notFoundResponse,
-} from "../http/route-contract";
-import { routes } from "../routes";
-import { post } from "../testing/fixtures.test-support";
-import { ajvAccepts, specValidator } from "../testing/openapi.test-support";
-import { type SeededAppOptions, seededApp } from "../testing/seeded-use-cases.test-support";
-import type { JsonObject } from "./document";
-import { buildOpenApiDocument } from "./offline";
+} from "#http/route-contract";
+import { routes } from "#routes";
+import { post } from "#testing/fixtures.test-support";
+import { ajvAccepts, specValidator } from "#testing/openapi.test-support";
+import { type SeededAppOptions, seededApp } from "#testing/seeded-use-cases.test-support";
+import type { JsonObject } from "#openapi/document";
+import { buildOpenApiDocument } from "#openapi/offline";
 
 const document = await buildOpenApiDocument();
 const validator = specValidator(document);

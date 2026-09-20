@@ -4,23 +4,23 @@ import type { ReadableSpan } from "@opentelemetry/sdk-trace";
 import type { Hono } from "hono";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createApp } from "../app";
-import { composeHealthApplication } from "../endpoints/health/composition";
-import { createHealthApp } from "../endpoints/health/app";
-import { createVerifyOrderApp } from "../endpoints/verify-order/app";
-import type { Logger } from "../http/logger";
+import { createApp } from "#app";
+import { composeHealthApplication } from "#endpoints/health/composition";
+import { createHealthApp } from "#endpoints/health/app";
+import { createVerifyOrderApp } from "#endpoints/verify-order/app";
+import type { Logger } from "#http/logger";
 import {
   acceptedOrder,
   fakeLogger,
   post,
   validEstimate,
   verifyBody,
-} from "../testing/fixtures.test-support";
-import { captureLogs, testTelemetry } from "../testing/telemetry.test-support";
-import { traceSubmitOrder } from "./decorators/submit-order";
-import { traceVerifyOrder } from "./decorators/verify-order";
-import { instrumentApp } from "./http";
-import { createPinoLogger } from "./node/pino-logger";
+} from "#testing/fixtures.test-support";
+import { captureLogs, testTelemetry } from "#testing/telemetry.test-support";
+import { traceSubmitOrder } from "#telemetry/decorators/submit-order";
+import { traceVerifyOrder } from "#telemetry/decorators/verify-order";
+import { instrumentApp } from "#telemetry/http";
+import { createPinoLogger } from "#telemetry/node/pino-logger";
 
 const DURATION = "http.server.request.duration";
 

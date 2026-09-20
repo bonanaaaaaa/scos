@@ -25,7 +25,7 @@ import { promisify } from "node:util";
 import { seedWarehouses } from "@scos/persistence";
 import { Client } from "pg";
 
-import { openPool } from "./database";
+import { openPool } from "#test/support/database";
 
 const execFileAsync = promisify(execFile);
 

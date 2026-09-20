@@ -5,8 +5,8 @@ import {
   createPrismaInventoryReader,
   persistencePackage,
   readDatabaseUrl,
-} from "./index";
-import { createPrismaInventoryReader as inventoryReaderFactory } from "./inventory-reader";
+} from "#index";
+import { createPrismaInventoryReader as inventoryReaderFactory } from "#inventory-reader";
 
 describe("@scos/persistence", () => {
   test("the package root exposes the inventory reader adapter", () => {

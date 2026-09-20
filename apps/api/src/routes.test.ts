@@ -2,11 +2,11 @@ import { MAX_QUANTITY } from "@scos/core";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
-import { orderResponseSchema } from "./endpoints/submit-order/contract";
-import { submitOrderRequestSchema } from "./endpoints/submit-order/contract";
-import { verifyOrderRequestSchema } from "./endpoints/verify-order/contract";
-import { errorResponseSchema } from "./http/errors";
-import { routes } from "./routes";
+import { orderResponseSchema } from "#endpoints/submit-order/contract";
+import { submitOrderRequestSchema } from "#endpoints/submit-order/contract";
+import { verifyOrderRequestSchema } from "#endpoints/verify-order/contract";
+import { errorResponseSchema } from "#http/errors";
+import { routes } from "#routes";
 
 describe("response contract", () => {
   test("the route table lists every endpoint with its statuses", () => {

@@ -14,16 +14,16 @@
 import type { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { spawnApi, stopAllApiProcesses } from "./support/api-process";
-import { openPool, readState, resetDatabase, stockById } from "./support/database";
-import { expectErrorEnvelope, expectJson, postJson } from "./support/http";
+import { spawnApi, stopAllApiProcesses } from "#test/support/api-process";
+import { openPool, readState, resetDatabase, stockById } from "#test/support/database";
+import { expectErrorEnvelope, expectJson, postJson } from "#test/support/http";
 import {
   ABOVE_LIMIT,
   AT_LIMIT,
   afterDeducting,
   expectedEstimate,
   expectedOrder,
-} from "./support/oracle";
+} from "#test/support/oracle";
 import {
   AT_PARIS,
   FAR_AWAY,
@@ -33,8 +33,8 @@ import {
   TOTAL_STOCK,
   WAREHOUSES,
   warehouse,
-} from "./support/prd";
-import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
+} from "#test/support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
 
 const api = sharedApi();
 let pool: Pool;

@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
-import { createDatabasePool } from "./database";
-import { createPrismaClient } from "./prisma";
+import { createDatabasePool } from "#database";
+import { createPrismaClient } from "#prisma";
 
 test("Prisma uses the caller's pool and leaves ending it to the caller", async () => {
   const pool = createDatabasePool("postgresql://example:example@localhost:5432/example");

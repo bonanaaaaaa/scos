@@ -1,14 +1,22 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { verifyOrderResponseSchema } from "../src/index";
-import { AT_PARIS, Applications, FAR_AWAY, PARIS, WARSAW, postJson, snapshot } from "./support/app";
+import { verifyOrderResponseSchema } from "#index";
+import {
+  AT_PARIS,
+  Applications,
+  FAR_AWAY,
+  PARIS,
+  WARSAW,
+  postJson,
+  snapshot,
+} from "#test/support/app";
 import {
   type TestDatabase,
   createTestDatabase,
   readState,
   setAllStock,
   setStock,
-} from "./support/database";
+} from "#test/support/database";
 
 let db: TestDatabase;
 const applications = new Applications();

@@ -9,20 +9,20 @@
  * @module
  */
 
-import { type Destination, geoPointSchema } from "../shared/destination";
-import { DomainError } from "../shared/errors";
-import type { Money } from "../shared/money";
-import { type Quantity, quantitySchema } from "../shared/quantity";
+import { type Destination, geoPointSchema } from "#domain/shared/destination";
+import { DomainError } from "#domain/shared/errors";
+import type { Money } from "#domain/shared/money";
+import { type Quantity, quantitySchema } from "#domain/shared/quantity";
 
-import { type DiscountRate, priceMerchandise } from "../pricing/pricing";
+import { type DiscountRate, priceMerchandise } from "#domain/pricing/pricing";
 import {
   type InventorySnapshot,
   type ShippingPlan,
   allocateNearestFirst,
-} from "../shipping/allocation";
-import { isShippingWithinLimit, shippingCostFor } from "../shipping/shipping";
+} from "#domain/shipping/allocation";
+import { isShippingWithinLimit, shippingCostFor } from "#domain/shipping/shipping";
 
-import type { OrderRequest } from "./order-request";
+import type { OrderRequest } from "#domain/ordering/order-request";
 
 export type EstimateRejectionReason = "INSUFFICIENT_STOCK" | "SHIPPING_EXCEEDS_LIMIT";
 

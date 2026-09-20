@@ -1,10 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import {
-  errorResponseSchema,
-  orderResponseSchema,
-  rejectedSubmissionResponseSchema,
-} from "../src/index";
+import { errorResponseSchema, orderResponseSchema, rejectedSubmissionResponseSchema } from "#index";
 import {
   AT_PARIS,
   Applications,
@@ -13,14 +9,14 @@ import {
   PARIS,
   postJson,
   snapshot,
-} from "./support/app";
+} from "#test/support/app";
 import {
   type TestDatabase,
   createTestDatabase,
   readState,
   setStock,
   stockById,
-} from "./support/database";
+} from "#test/support/database";
 
 let db: TestDatabase;
 const applications = new Applications();

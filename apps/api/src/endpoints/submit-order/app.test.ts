@@ -1,9 +1,9 @@
 import { TransientSubmissionError, submissionKeySchema } from "@scos/core";
 import { describe, expect, test } from "vitest";
 
-import { errorResponseSchema } from "../../http/errors";
-import { estimateBody } from "../../http/estimate";
-import { MESSAGES } from "../../http/messages";
+import { errorResponseSchema } from "#http/errors";
+import { estimateBody } from "#http/estimate";
+import { MESSAGES } from "#http/messages";
 import {
   acceptedOrder,
   insufficientEstimate,
@@ -13,14 +13,14 @@ import {
   shippingEstimate,
   submitBody,
   verifyBody,
-} from "../../testing/fixtures.test-support";
+} from "#testing/fixtures.test-support";
 import {
   orderResponseSchema,
   rejectedSubmissionResponseSchema,
   submitOrderRoute,
-} from "./contract";
-import { harness } from "./harness.test-support";
-import { SUBMIT_ORDER_MESSAGES } from "./messages";
+} from "#endpoints/submit-order/contract";
+import { harness } from "#endpoints/submit-order/harness.test-support";
+import { SUBMIT_ORDER_MESSAGES } from "#endpoints/submit-order/messages";
 
 describe("POST /api/v1/orders", () => {
   const expectedOrder = {

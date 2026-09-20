@@ -23,8 +23,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
 
-import { apiBundle, apiDirectory } from "./environment";
-import { type LogRecord, parseLogRecords } from "./logs";
+import { apiBundle, apiDirectory } from "#test/support/environment";
+import { type LogRecord, parseLogRecords } from "#test/support/logs";
 
 /** How long a process has to report that it is listening. */
 const READY_TIMEOUT_MS = 30_000;

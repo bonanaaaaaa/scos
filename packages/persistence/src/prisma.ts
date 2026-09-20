@@ -1,10 +1,10 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { Pool } from "pg";
 
-import { PrismaClient } from "./generated/prisma/client";
+import { PrismaClient } from "#generated/prisma/client";
 
-export type { PrismaClient } from "./generated/prisma/client";
-export { Prisma } from "./generated/prisma/client";
+export type { PrismaClient } from "#generated/prisma/client";
+export { Prisma } from "#generated/prisma/client";
 
 /**
  * Builds a Prisma client over an existing pg pool from createDatabasePool.

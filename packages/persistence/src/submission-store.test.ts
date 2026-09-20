@@ -11,7 +11,7 @@ import {
 } from "@scos/core";
 import { describe, expect, test, vi } from "vitest";
 
-import { Prisma, type PrismaClient } from "./generated/prisma/client";
+import { Prisma, type PrismaClient } from "#generated/prisma/client";
 import {
   DEFAULT_SUBMISSION_TRANSACTION_OPTIONS,
   type OrderRow,
@@ -19,7 +19,7 @@ import {
   createPrismaSubmissionStore,
   toDomainOrder,
   toInventorySnapshot,
-} from "./submission-store";
+} from "#submission-store";
 
 const decimal = (value: string) => new Prisma.Decimal(value);
 const LA = "01996000-0000-7000-8000-000000000001";

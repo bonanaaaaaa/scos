@@ -11,7 +11,7 @@ import {
   type ComposedApplication,
   type CompositionOptions,
   composeApplication,
-} from "../../src/composition/node";
+} from "#composition/node";
 
 // Seeded warehouse IDs (packages/persistence/src/seed.ts), in lock order.
 export const LOS_ANGELES = "01996000-0000-7000-8000-000000000001";

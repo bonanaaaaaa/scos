@@ -1,7 +1,7 @@
 import { LATITUDE_LIMIT, LONGITUDE_LIMIT, MAX_QUANTITY } from "@scos/core";
 import { describe, expect, test } from "vitest";
 
-import { latitudeFieldSchema, longitudeFieldSchema, quantityFieldSchema } from "./schemas";
+import { latitudeFieldSchema, longitudeFieldSchema, quantityFieldSchema } from "#http/schemas";
 
 describe("shared request field schemas", () => {
   test("limits equal core's constants", () => {

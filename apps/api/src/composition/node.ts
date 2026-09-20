@@ -7,15 +7,15 @@
  * @module
  */
 
-import { createApp } from "../app";
-import { type ComposedApplication, composeOverDatabase, withLogger } from "./database";
+import { createApp } from "#app";
+import { type ComposedApplication, composeOverDatabase, withLogger } from "#composition/database";
 import {
   type SubmitOrderCompositionOptions,
   buildSubmitOrder,
-} from "../endpoints/submit-order/composition";
-import { buildVerifyOrder } from "../endpoints/verify-order/composition";
+} from "#endpoints/submit-order/composition";
+import { buildVerifyOrder } from "#endpoints/verify-order/composition";
 
-export type { ComposedApplication } from "./database";
+export type { ComposedApplication } from "#composition/database";
 
 /** Everything, for the local server: all options of both database endpoints. */
 export type CompositionOptions = SubmitOrderCompositionOptions;

@@ -23,7 +23,7 @@
 
 import { type Span, SpanKind } from "@opentelemetry/api";
 
-import { type Telemetry, recordFailure } from "../telemetry";
+import { type Telemetry, recordFailure } from "#telemetry/telemetry";
 
 export const ATTR_ESTIMATE_VALID = "scos.estimate.valid";
 export const ATTR_ESTIMATE_REASON = "scos.estimate.reason";

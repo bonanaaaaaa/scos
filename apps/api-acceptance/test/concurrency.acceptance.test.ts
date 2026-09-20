@@ -20,11 +20,11 @@ import {
   resetDatabase,
   setAllStock,
   stockById,
-} from "./support/database";
-import { type HttpResult, expectErrorEnvelope, expectJson, postJson } from "./support/http";
-import { expectedOrder } from "./support/oracle";
-import { AT_PARIS, warehouse } from "./support/prd";
-import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
+} from "#test/support/database";
+import { type HttpResult, expectErrorEnvelope, expectJson, postJson } from "#test/support/http";
+import { expectedOrder } from "#test/support/oracle";
+import { AT_PARIS, warehouse } from "#test/support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "#test/support/shared-api";
 
 const api = sharedApi();
 let pool: Pool;

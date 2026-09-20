@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import type { z } from "zod";
 
-import { MONEY_MAX } from "./money";
-import { UNIT_PRICE } from "./product";
-import { MAX_QUANTITY, quantitySchema } from "./quantity";
+import { MONEY_MAX } from "#domain/shared/money";
+import { UNIT_PRICE } from "#domain/shared/product";
+import { MAX_QUANTITY, quantitySchema } from "#domain/shared/quantity";
 
 /** The path and code of every issue, so assertions pin which field failed and why. */
 const issuesOf = (result: z.ZodSafeParseResult<unknown>) =>

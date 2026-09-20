@@ -1,11 +1,11 @@
 import { TransientSubmissionError, submissionKeySchema } from "@scos/core";
 import { describe, expect, test } from "vitest";
 
-import { createDatabasePool } from "../src/database";
-import { createPrismaClient } from "../src/prisma";
-import { classifySubmissionError } from "../src/submission-errors";
-import { createPrismaSubmissionStore } from "../src/submission-store";
-import { requireTestDatabaseUrl } from "./support/database";
+import { createDatabasePool } from "#database";
+import { createPrismaClient } from "#prisma";
+import { classifySubmissionError } from "#submission-errors";
+import { createPrismaSubmissionStore } from "#submission-store";
+import { requireTestDatabaseUrl } from "#test/support/database";
 
 // Real pg-pool behaviour: with its only connection checked out, the next
 // checkout waits connectionTimeoutMillis and fails before any statement is

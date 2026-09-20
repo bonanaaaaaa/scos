@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import * as core from "./index";
+import * as core from "#index";
 
 describe("@scos/core public entry point", () => {
   test("the core package exposes its public entry point", () => {

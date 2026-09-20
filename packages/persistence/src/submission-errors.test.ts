@@ -2,8 +2,8 @@ import { SubmissionKeyTakenError, TransientSubmissionError } from "@scos/core";
 import { DatabaseError } from "pg";
 import { describe, expect, test } from "vitest";
 
-import { Prisma } from "./generated/prisma/client";
-import { classifySubmissionError, databaseErrorDetails } from "./submission-errors";
+import { Prisma } from "#generated/prisma/client";
+import { classifySubmissionError, databaseErrorDetails } from "#submission-errors";
 
 // Shapes observed from Prisma 7.10 with @prisma/adapter-pg against PostgreSQL
 // 18 (see the integration suite): the pg error is converted by PrismaPg into

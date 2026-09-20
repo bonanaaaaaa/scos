@@ -2,6 +2,9 @@
   "name": "scos",
   "version": "0.0.0",
   "private": true,
+  "imports": {
+    "#scripts/*": "./scripts/*"
+  },
   "scripts": {
     "prepare": "husky",
     "api:dev": "turbo run dev --filter=@scos/api",

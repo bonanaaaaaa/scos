@@ -8,17 +8,17 @@ import {
 } from "@scos/core";
 import { describe, expect, test, vi } from "vitest";
 
-import { createApp } from "./app";
-import { API_PREFIX } from "./http/route-contract";
-import { routes } from "./routes";
-import { createHealthApp } from "./endpoints/health/app";
-import { createSubmitOrderApp } from "./endpoints/submit-order/app";
-import { rejectedSubmissionResponseSchema } from "./endpoints/submit-order/contract";
-import { SUBMIT_ORDER_MESSAGES } from "./endpoints/submit-order/messages";
-import { createVerifyOrderApp } from "./endpoints/verify-order/app";
-import { errorResponseSchema } from "./http/errors";
-import { defaultLogger } from "./http/logger";
-import { MESSAGES } from "./http/messages";
+import { createApp } from "#app";
+import { API_PREFIX } from "#http/route-contract";
+import { routes } from "#routes";
+import { createHealthApp } from "#endpoints/health/app";
+import { createSubmitOrderApp } from "#endpoints/submit-order/app";
+import { rejectedSubmissionResponseSchema } from "#endpoints/submit-order/contract";
+import { SUBMIT_ORDER_MESSAGES } from "#endpoints/submit-order/messages";
+import { createVerifyOrderApp } from "#endpoints/verify-order/app";
+import { errorResponseSchema } from "#http/errors";
+import { defaultLogger } from "#http/logger";
+import { MESSAGES } from "#http/messages";
 import {
   acceptedOrder,
   fakeLogger,
@@ -29,7 +29,7 @@ import {
   submitBody,
   validEstimate,
   verifyBody,
-} from "./testing/fixtures.test-support";
+} from "#testing/fixtures.test-support";
 import {
   type Case,
   combined,
@@ -42,7 +42,7 @@ import {
   submitCases,
   unknownCases,
   verifyCases,
-} from "./testing/requests.test-support";
+} from "#testing/requests.test-support";
 
 /** The combined app over fake use cases, as the local server builds it. */
 function harness(

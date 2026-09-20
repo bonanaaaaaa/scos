@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { z } from "zod";
 
-import { orderRequestSchema } from "./order-request";
+import { orderRequestSchema } from "#domain/ordering/order-request";
 
 /** The path and code of every issue, so assertions pin which field failed and why. */
 const issuesOf = (result: z.ZodSafeParseResult<unknown>) =>

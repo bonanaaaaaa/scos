@@ -11,8 +11,8 @@ import {
   type TelemetrySettings,
   parseEnvironment,
   telemetryEnvironmentSchema,
-} from "../../config";
-import { toTelemetryConfig } from "../../telemetry/config";
+} from "#config";
+import { toTelemetryConfig } from "#telemetry/config";
 
 export const healthEnvironmentSchema = telemetryEnvironmentSchema;
 

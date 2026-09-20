@@ -20,6 +20,10 @@
         ],
         "patterns": [
           {
+            "regex": "^\\.\\.?/",
+            "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+          },
+          {
             "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
             "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
           }
@@ -35,6 +39,10 @@
           "error",
           {
             "patterns": [
+              {
+                "regex": "^\\.\\.?/",
+                "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+              },
               {
                 "group": [
                   "@prisma/*",
@@ -79,11 +87,15 @@
             ],
             "patterns": [
               {
+                "regex": "^\\.\\.?/",
+                "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+              },
+              {
                 "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
                 "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
               },
               {
-                "group": ["**/application", "**/application/**"],
+                "group": ["#application", "#application/**"],
                 "message": "Hexagonal layering: domain must not depend on the application layer."
               }
             ]
@@ -113,21 +125,25 @@
             ],
             "patterns": [
               {
+                "regex": "^\\.\\.?/",
+                "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+              },
+              {
                 "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
                 "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
               },
               {
-                "group": ["**/application", "**/application/**"],
+                "group": ["#application", "#application/**"],
                 "message": "Hexagonal layering: domain must not depend on the application layer."
               },
               {
                 "group": [
-                  "**/pricing",
-                  "**/pricing/**",
-                  "**/shipping",
-                  "**/shipping/**",
-                  "**/ordering",
-                  "**/ordering/**"
+                  "#domain/pricing",
+                  "#domain/pricing/**",
+                  "#domain/shipping",
+                  "#domain/shipping/**",
+                  "#domain/ordering",
+                  "#domain/ordering/**"
                 ],
                 "message": "Domain layering: shared/ must not import pricing/, shipping/, ordering/ (shared value objects depend on no other domain concept). Allowed order: shared <- pricing, shipping <- ordering."
               }
@@ -158,15 +174,24 @@
             ],
             "patterns": [
               {
+                "regex": "^\\.\\.?/",
+                "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+              },
+              {
                 "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
                 "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
               },
               {
-                "group": ["**/application", "**/application/**"],
+                "group": ["#application", "#application/**"],
                 "message": "Hexagonal layering: domain must not depend on the application layer."
               },
               {
-                "group": ["**/shipping", "**/shipping/**", "**/ordering", "**/ordering/**"],
+                "group": [
+                  "#domain/shipping",
+                  "#domain/shipping/**",
+                  "#domain/ordering",
+                  "#domain/ordering/**"
+                ],
                 "message": "Domain layering: pricing/ must not import shipping/, ordering/ (pricing is independent of shipping and is used by ordering). Allowed order: shared <- pricing, shipping <- ordering."
               }
             ]
@@ -196,15 +221,24 @@
             ],
             "patterns": [
               {
+                "regex": "^\\.\\.?/",
+                "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+              },
+              {
                 "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
                 "message": "Hexagonal layering: core must not import adapter technology (Prisma, pg, Hono) or the persistence adapter. Declare a port in application/ports and implement it in an adapter."
               },
               {
-                "group": ["**/application", "**/application/**"],
+                "group": ["#application", "#application/**"],
                 "message": "Hexagonal layering: domain must not depend on the application layer."
               },
               {
-                "group": ["**/pricing", "**/pricing/**", "**/ordering", "**/ordering/**"],
+                "group": [
+                  "#domain/pricing",
+                  "#domain/pricing/**",
+                  "#domain/ordering",
+                  "#domain/ordering/**"
+                ],
                 "message": "Domain layering: shipping/ must not import pricing/, ordering/ (shipping is independent of pricing and is used by ordering). Allowed order: shared <- pricing, shipping <- ordering."
               }
             ]
