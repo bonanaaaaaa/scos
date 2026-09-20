@@ -19,7 +19,11 @@ import {
   type ShippingPlan,
   allocateNearestFirst,
 } from "#domain/shipping/allocation";
-import { isShippingWithinLimit, shippingCostFor } from "#domain/shipping/shipping";
+import {
+  isShippingWithinLimit,
+  publishedShippingLimitFor,
+  shippingCostFor,
+} from "#domain/shipping/shipping";
 
 import type { OrderRequest } from "./order-request";
 
@@ -28,6 +32,8 @@ export type EstimateRejectionReason = "INSUFFICIENT_STOCK" | "SHIPPING_EXCEEDS_L
 interface EstimateBase {
   readonly quantity: Quantity;
   readonly destination: Destination;
+  /** The price per unit the subtotal was calculated with. */
+  readonly unitPrice: Money;
   readonly merchandiseSubtotal: Money;
   readonly discountRate: DiscountRate;
   readonly discountAmount: Money;
@@ -39,6 +45,8 @@ export interface ValidOrderEstimate extends EstimateBase {
   readonly reason: null;
   readonly allocations: ShippingPlan;
   readonly shippingCost: Money;
+  /** The published (truncated) limit `shippingCost` was tested against. */
+  readonly shippingLimit: Money;
   readonly orderTotal: Money;
 }
 
@@ -47,6 +55,8 @@ export interface ShippingExceedsLimitEstimate extends EstimateBase {
   readonly reason: "SHIPPING_EXCEEDS_LIMIT";
   readonly allocations: ShippingPlan;
   readonly shippingCost: Money;
+  /** The published (truncated) limit `shippingCost` exceeded. */
+  readonly shippingLimit: Money;
   readonly orderTotal: Money;
 }
 
@@ -55,6 +65,7 @@ export interface InsufficientStockEstimate extends EstimateBase {
   readonly reason: "INSUFFICIENT_STOCK";
   readonly allocations: readonly [];
   readonly shippingCost: null;
+  readonly shippingLimit: null;
   readonly orderTotal: null;
 }
 
@@ -76,9 +87,14 @@ export type OrderEstimate =
  * discount   = subtotal · r
  * discounted = subtotal − discount
  * shipping   = round_half_up(Σᵢ qᵢ · 0.365 kg · 0.01 $/kg/km · dᵢ, 2)
+ * limit      = truncate_toward_zero(0.15 · discounted, 2)
  * total      = discounted + shipping
  * valid      ⇔ Σ qᵢ = q  ∧  shipping ≤ 0.15 · discounted
  * ```
+ *
+ * `limit` is published so a caller can see how far over the limit a rejected
+ * estimate was; the decision itself uses the exact, unrounded `0.15 ·
+ * discounted`, which the truncated limit agrees with on every cent amount.
  *
  * If available stock is below q the estimate is INSUFFICIENT_STOCK with null
  * shipping and total; if shipping exceeds the limit it is
@@ -117,11 +133,13 @@ export function estimateOrder(request: OrderRequest, inventory: InventorySnapsho
       reason: "INSUFFICIENT_STOCK",
       allocations: Object.freeze([]) as readonly [],
       shippingCost: null,
+      shippingLimit: null,
       orderTotal: null,
     });
   }
 
   const shippingCost = shippingCostFor(allocations);
+  const shippingLimit = publishedShippingLimitFor(base.discountedMerchandiseTotal);
   const orderTotal = base.discountedMerchandiseTotal.plus(shippingCost);
   if (!isShippingWithinLimit(shippingCost, base.discountedMerchandiseTotal)) {
     return Object.freeze({
@@ -130,6 +148,7 @@ export function estimateOrder(request: OrderRequest, inventory: InventorySnapsho
       reason: "SHIPPING_EXCEEDS_LIMIT",
       allocations,
       shippingCost,
+      shippingLimit,
       orderTotal,
     });
   }
@@ -139,6 +158,7 @@ export function estimateOrder(request: OrderRequest, inventory: InventorySnapsho
     reason: null,
     allocations,
     shippingCost,
+    shippingLimit,
     orderTotal,
   });
 }

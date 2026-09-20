@@ -18,11 +18,12 @@ import type { Quantity } from "#domain/shared/quantity";
 import { haversineDistanceKm } from "./distance";
 
 /**
- * Invariant check for one warehouse's stock: a non-empty ID, valid
- * coordinates and a non-negative safe-integer available count.
+ * Invariant check for one warehouse's stock: a non-empty ID, a non-empty name,
+ * valid coordinates and a non-negative safe-integer available count.
  */
 const warehouseStockSchema = z.object({
   warehouseId: z.string().min(1),
+  warehouseName: z.string().min(1),
   latitude: latitudeSchema,
   longitude: longitudeSchema,
   available: z.number().int().nonnegative(),
@@ -48,9 +49,14 @@ export type WarehouseStock = Readonly<z.infer<typeof warehouseStockSchema>>;
 
 export type InventorySnapshot = readonly WarehouseStock[];
 
-/** Units assigned to one warehouse, with its unrounded distance in km. */
+/**
+ * Units assigned to one warehouse, with its unrounded distance in km. The
+ * warehouse's name rides along from the snapshot so a caller can read the plan
+ * without a second lookup; it never takes part in ordering or tie-breaking.
+ */
 export interface WarehouseAllocation {
   readonly warehouseId: string;
+  readonly warehouseName: string;
   readonly quantity: number;
   readonly distanceKm: number;
 }
@@ -59,6 +65,7 @@ export type ShippingPlan = readonly [WarehouseAllocation, ...WarehouseAllocation
 
 interface RankedWarehouse {
   readonly warehouseId: string;
+  readonly warehouseName: string;
   readonly available: number;
   readonly distanceKm: number;
 }
@@ -85,7 +92,8 @@ function compareIds(left: string, right: string): number {
  *
  * Warehouses are ordered by distance ascending, then warehouse ID ascending for
  * deterministic equal-distance ties. Each takes min(remaining, available);
- * zero-stock warehouses are skipped and no warehouse exceeds its stock.
+ * zero-stock warehouses are skipped and no warehouse exceeds its stock. The
+ * warehouse name is copied onto each allocation and is never ranked on.
  *
  * Nearest-first greedy is the least-cost complete allocation because the cost
  * of each unit is linear in its warehouse's distance with an identical rate, so
@@ -107,6 +115,7 @@ export function allocateNearestFirst(
     .filter((warehouse) => warehouse.available > 0)
     .map((warehouse) => ({
       warehouseId: warehouse.warehouseId,
+      warehouseName: warehouse.warehouseName,
       available: warehouse.available,
       distanceKm: haversineDistanceKm(warehouse, destination),
     }))
@@ -123,6 +132,7 @@ export function allocateNearestFirst(
     allocations.push(
       Object.freeze({
         warehouseId: warehouse.warehouseId,
+        warehouseName: warehouse.warehouseName,
         quantity: units,
         distanceKm: warehouse.distanceKm,
       }),

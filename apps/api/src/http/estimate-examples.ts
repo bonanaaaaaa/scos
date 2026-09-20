@@ -11,7 +11,9 @@
  */
 
 const WARSAW = "01996000-0000-7000-8000-000000000005";
+const WARSAW_NAME = "Warsaw";
 const HONG_KONG = "01996000-0000-7000-8000-000000000006";
+const HONG_KONG_NAME = "Hong Kong";
 
 /** Berlin: 150 units, served from Warsaw, 15% discount. */
 export const validRequest = { quantity: 150, latitude: 52.52, longitude: 13.405 } as const;
@@ -35,13 +37,22 @@ export const validEstimateExample = {
   reason: null,
   quantity: 150,
   destination: { latitude: 52.52, longitude: 13.405 },
+  unitPrice: "150.00",
   merchandiseSubtotal: "22500.00",
   discountRate: "0.15",
   discountAmount: "3375.00",
   discountedMerchandiseTotal: "19125.00",
   shippingCost: "281.96",
+  shippingLimit: "2868.75",
   orderTotal: "19406.96",
-  allocations: [{ warehouseId: WARSAW, quantity: 150, distanceKm: 514.9927163724758 }],
+  allocations: [
+    {
+      warehouseId: WARSAW,
+      warehouseName: WARSAW_NAME,
+      quantity: 150,
+      distanceKm: 514.9927163724758,
+    },
+  ],
 } as const;
 
 export const insufficientStockEstimateExample = {
@@ -49,11 +60,13 @@ export const insufficientStockEstimateExample = {
   reason: "INSUFFICIENT_STOCK",
   quantity: 3000,
   destination: { latitude: 52.52, longitude: 13.405 },
+  unitPrice: "150.00",
   merchandiseSubtotal: "450000.00",
   discountRate: "0.20",
   discountAmount: "90000.00",
   discountedMerchandiseTotal: "360000.00",
   shippingCost: null,
+  shippingLimit: null,
   orderTotal: null,
   allocations: [],
 } as const;
@@ -63,11 +76,20 @@ export const shippingExceedsLimitEstimateExample = {
   reason: "SHIPPING_EXCEEDS_LIMIT",
   quantity: 10,
   destination: { latitude: -33.9, longitude: 151.2 },
+  unitPrice: "150.00",
   merchandiseSubtotal: "1500.00",
   discountRate: "0.00",
   discountAmount: "0.00",
   discountedMerchandiseTotal: "1500.00",
   shippingCost: "269.78",
+  shippingLimit: "225.00",
   orderTotal: "1769.78",
-  allocations: [{ warehouseId: HONG_KONG, quantity: 10, distanceKm: 7391.125691194222 }],
+  allocations: [
+    {
+      warehouseId: HONG_KONG,
+      warehouseName: HONG_KONG_NAME,
+      quantity: 10,
+      distanceKm: 7391.125691194222,
+    },
+  ],
 } as const;

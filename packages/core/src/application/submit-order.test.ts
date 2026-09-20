@@ -90,8 +90,9 @@ class FakeSubmissionStore implements SubmissionStore {
       discountRate: order.discountRate,
       discountAmount: order.discountAmount.toString(),
       shippingCost: order.shippingCost.toString(),
-      allocations: order.allocations.map(({ warehouseId, quantity }) => ({
+      allocations: order.allocations.map(({ warehouseId, warehouseName, quantity }) => ({
         warehouseId,
+        warehouseName,
         quantity,
       })),
     });
@@ -105,8 +106,8 @@ class FakeSubmissionStore implements SubmissionStore {
 }
 
 const INVENTORY: readonly WarehouseStock[] = [
-  { warehouseId: "a", latitude: 0, longitude: 1, available: 20 },
-  { warehouseId: "b", latitude: 0, longitude: 2, available: 20 },
+  { warehouseId: "a", warehouseName: "Los Angeles", latitude: 0, longitude: 1, available: 20 },
+  { warehouseId: "b", warehouseName: "New York", latitude: 0, longitude: 2, available: 20 },
 ];
 
 const input = (overrides: Record<string, unknown> = {}) => ({
@@ -207,8 +208,8 @@ describe("SubmitOrder acceptance", () => {
       shippingCost: order.shippingCost.toString(),
       orderTotal: order.orderTotal.toString(),
       allocations: [
-        { warehouseId: "a", quantity: 20 },
-        { warehouseId: "b", quantity: 10 },
+        { warehouseId: "a", warehouseName: "Los Angeles", quantity: 20 },
+        { warehouseId: "b", warehouseName: "New York", quantity: 10 },
       ],
     });
     expect(order.allocations.reduce((sum, a) => sum + a.quantity, 0)).toBe(order.quantity);
@@ -228,7 +229,9 @@ describe("SubmitOrder acceptance", () => {
     const { store, submitOrder } = setup();
     acceptedOrder(await submitOrder(input()));
     const second = await submitOrder(input({ submissionId: "key-2", quantity: 10 }));
-    expect(acceptedOrder(second).allocations).toStrictEqual([{ warehouseId: "b", quantity: 10 }]);
+    expect(acceptedOrder(second).allocations).toStrictEqual([
+      { warehouseId: "b", warehouseName: "New York", quantity: 10 },
+    ]);
     expect(store.stock()).toStrictEqual({ a: 0, b: 0 });
   });
 });
@@ -248,7 +251,7 @@ describe("SubmitOrder business rejections", () => {
 
   test("shipping over the limit is returned, writes nothing and is not retried", async () => {
     const { store, submitOrder } = setup([
-      { warehouseId: "far", latitude: 0, longitude: 179, available: 5 },
+      { warehouseId: "far", warehouseName: "Hong Kong", latitude: 0, longitude: 179, available: 5 },
     ]);
     const outcome = await submitOrder(input({ quantity: 1 }));
     expect(outcome).toMatchObject({ kind: "rejected", reason: "SHIPPING_EXCEEDS_LIMIT" });
@@ -260,7 +263,13 @@ describe("SubmitOrder business rejections", () => {
   test("a rejected key is not consumed: the same key is reevaluated and can succeed", async () => {
     const { store, submitOrder } = setup();
     expect((await submitOrder(input({ quantity: 41 }))).kind).toBe("rejected");
-    store.warehouses.push({ warehouseId: "c", latitude: 0, longitude: 3, available: 1 });
+    store.warehouses.push({
+      warehouseId: "c",
+      warehouseName: "Paris",
+      latitude: 0,
+      longitude: 3,
+      available: 1,
+    });
     const retry = await submitOrder(input({ quantity: 41 }));
     expect(acceptedOrder(retry).submissionKey).toBe("key-1");
   });
@@ -356,7 +365,7 @@ describe("SubmitOrder duplicate submissions", () => {
           discountRate: "0.00",
           discountAmount: "0.00",
           shippingCost: "0.00",
-          allocations: [{ warehouseId: "a", quantity }],
+          allocations: [{ warehouseId: "a", warehouseName: "Los Angeles", quantity }],
         }),
       );
       throw new SubmissionKeyTakenError("duplicate key value violates orders_submission_key_key");
@@ -490,8 +499,8 @@ describe("SubmitOrder unlocked lookup failures", () => {
 describe("SubmitOrder unexpected errors", () => {
   test("a DomainError propagates and is not retried", async () => {
     const { store, submitOrder } = setup([
-      { warehouseId: "a", latitude: 0, longitude: 1, available: 20 },
-      { warehouseId: "a", latitude: 0, longitude: 2, available: 20 },
+      { warehouseId: "a", warehouseName: "Los Angeles", latitude: 0, longitude: 1, available: 20 },
+      { warehouseId: "a", warehouseName: "New York", latitude: 0, longitude: 2, available: 20 },
     ]);
     await expect(submitOrder(input())).rejects.toThrow(DomainError);
     await expect(submitOrder(input())).rejects.toMatchObject({ code: "INVALID_INVENTORY" });

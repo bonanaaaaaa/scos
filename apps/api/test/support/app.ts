@@ -21,6 +21,16 @@ export const PARIS = "01996000-0000-7000-8000-000000000004";
 export const WARSAW = "01996000-0000-7000-8000-000000000005";
 export const HONG_KONG = "01996000-0000-7000-8000-000000000006";
 
+/** The seeded warehouse names, by warehouse ID, as an estimate reports them. */
+export const WAREHOUSE_NAMES: Readonly<Record<string, string>> = {
+  [LOS_ANGELES]: "Los Angeles",
+  [NEW_YORK]: "New York",
+  [SAO_PAULO]: "São Paulo",
+  [PARIS]: "Paris",
+  [WARSAW]: "Warsaw",
+  [HONG_KONG]: "Hong Kong",
+};
+
 /** Paris warehouse coordinates: no shipping distance for Paris stock. */
 export const AT_PARIS = { latitude: 49.009722, longitude: 2.547778 } as const;
 /** South of New Zealand: every warehouse is > 9 000 km away. */
@@ -77,6 +87,29 @@ export async function snapshot(response: Response | Promise<Response>): Promise<
     headers: resolved.headers,
     json: () => JSON.parse(text) as unknown,
   };
+}
+
+/**
+ * A two-decimal money string as exact integer cents. Amounts are compared as
+ * integers: `Number("0.15") * 1500` is a binary float and would not be exact.
+ */
+export function cents(amount: string): number {
+  const match = /^(\d+)\.(\d{2})$/.exec(amount);
+  if (match === null) {
+    throw new Error(`Not a two-decimal amount: ${amount}`);
+  }
+  return Number(match[1]) * 100 + Number(match[2]);
+}
+
+/**
+ * The published shipping limit for a discounted merchandise total: 15% of it
+ * truncated toward zero to two decimals, in exact integer cents. Every step is
+ * integer arithmetic, so the expectation never inherits a rounding error from
+ * the value it is checking.
+ */
+export function shippingLimitCents(discountedMerchandiseTotal: string): number {
+  const scaled = cents(discountedMerchandiseTotal) * 15; // an exact integer product
+  return (scaled - (scaled % 100)) / 100;
 }
 
 export type FailureStage =

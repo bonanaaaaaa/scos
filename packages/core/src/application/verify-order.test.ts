@@ -9,12 +9,48 @@ import type { InventorySnapshot, WarehouseStock } from "#domain/shipping/allocat
 import { createVerifyOrder } from "./verify-order";
 
 const PRD_WAREHOUSES: readonly WarehouseStock[] = [
-  { warehouseId: "wh-1-los-angeles", latitude: 33.9425, longitude: -118.408056, available: 355 },
-  { warehouseId: "wh-2-new-york", latitude: 40.639722, longitude: -73.778889, available: 578 },
-  { warehouseId: "wh-3-sao-paulo", latitude: -23.435556, longitude: -46.473056, available: 265 },
-  { warehouseId: "wh-4-paris", latitude: 49.009722, longitude: 2.547778, available: 694 },
-  { warehouseId: "wh-5-warsaw", latitude: 52.165833, longitude: 20.967222, available: 245 },
-  { warehouseId: "wh-6-hong-kong", latitude: 22.308889, longitude: 113.914444, available: 419 },
+  {
+    warehouseId: "wh-1-los-angeles",
+    warehouseName: "Los Angeles",
+    latitude: 33.9425,
+    longitude: -118.408056,
+    available: 355,
+  },
+  {
+    warehouseId: "wh-2-new-york",
+    warehouseName: "New York",
+    latitude: 40.639722,
+    longitude: -73.778889,
+    available: 578,
+  },
+  {
+    warehouseId: "wh-3-sao-paulo",
+    warehouseName: "São Paulo",
+    latitude: -23.435556,
+    longitude: -46.473056,
+    available: 265,
+  },
+  {
+    warehouseId: "wh-4-paris",
+    warehouseName: "Paris",
+    latitude: 49.009722,
+    longitude: 2.547778,
+    available: 694,
+  },
+  {
+    warehouseId: "wh-5-warsaw",
+    warehouseName: "Warsaw",
+    latitude: 52.165833,
+    longitude: 20.967222,
+    available: 245,
+  },
+  {
+    warehouseId: "wh-6-hong-kong",
+    warehouseName: "Hong Kong",
+    latitude: 22.308889,
+    longitude: 113.914444,
+    available: 419,
+  },
 ];
 
 const BANGKOK = { latitude: 13.75, longitude: 100.5 };
@@ -274,7 +310,13 @@ describe("VerifyOrder failures", () => {
 
   test("a corrupt snapshot surfaces DomainError INVALID_INVENTORY instead of an estimate", async () => {
     const inventory = createFakeInventoryReader([
-      { warehouseId: "wh-1-los-angeles", latitude: 33.9425, longitude: -118.408056, available: -1 },
+      {
+        warehouseId: "wh-1-los-angeles",
+        warehouseName: "Los Angeles",
+        latitude: 33.9425,
+        longitude: -118.408056,
+        available: -1,
+      },
     ]);
     const verifyOrder = createVerifyOrder({ inventoryReader: inventory.reader });
 

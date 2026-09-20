@@ -23,6 +23,9 @@ import { createWorkersTelemetry } from "#telemetry/workers/sdk";
 import { accumulateDeltas } from "#testing/workers-telemetry.test-support";
 
 const AT_PARIS = { latitude: 49.009722, longitude: 2.547778 } as const;
+/** The seeded Paris warehouse (packages/persistence/src/seed.ts). */
+const PARIS = "01996000-0000-7000-8000-000000000004";
+const PARIS_NAME = "Paris";
 const FAR_AWAY = { latitude: -45, longitude: 170 } as const;
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
 
@@ -110,12 +113,28 @@ describe("the Worker over Hyperdrive and PostgreSQL", () => {
       { traceparent: `00-${TRACE_ID}-00f067aa0ba902b7-01` },
     );
     expect(verify.status).toBe(200);
-    expect(await verify.json()).toMatchObject({ valid: true, quantity: 2, orderTotal: "300.00" });
+    expect(await verify.json()).toMatchObject({
+      valid: true,
+      quantity: 2,
+      unitPrice: "150.00",
+      orderTotal: "300.00",
+      // 15% of 300.00, truncated toward zero to two decimals.
+      shippingLimit: "45.00",
+      // The estimate names the warehouse as it stands now.
+      allocations: [{ warehouseId: PARIS, warehouseName: PARIS_NAME, quantity: 2, distanceKm: 0 }],
+    });
 
     const accepted = await harness.send("/api/v1/orders", order);
     expect(accepted.status).toBe(201);
     const acceptedBody = await accepted.text();
-    expect(JSON.parse(acceptedBody)).toMatchObject({ submissionId: key, quantity: 2 });
+    expect(JSON.parse(acceptedBody)).toMatchObject({
+      submissionId: key,
+      quantity: 2,
+      unitPrice: "150.00",
+      // Resolved through the allocation's warehouse_id; nothing is renamed
+      // between the two calls, so the replay below repeats it byte for byte.
+      allocations: [{ warehouseId: PARIS, warehouseName: PARIS_NAME, quantity: 2 }],
+    });
 
     const replay = await harness.send("/api/v1/orders", order);
     expect(replay.status).toBe(201);
@@ -127,7 +146,11 @@ describe("the Worker over Hyperdrive and PostgreSQL", () => {
       ...FAR_AWAY,
     });
     expect(rejected.status).toBe(422);
-    expect(await rejected.json()).toMatchObject({ error: { code: "SHIPPING_EXCEEDS_LIMIT" } });
+    expect(await rejected.json()).toMatchObject({
+      error: { code: "SHIPPING_EXCEEDS_LIMIT" },
+      // The limit shipping was tested against: 15% of 150.00, truncated.
+      estimate: { unitPrice: "150.00", shippingLimit: "22.50" },
+    });
 
     const conflict = await harness.send("/api/v1/orders", { ...order, quantity: 3 });
     expect(conflict.status).toBe(409);

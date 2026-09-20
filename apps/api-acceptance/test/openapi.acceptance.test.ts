@@ -267,6 +267,53 @@ test.describe("GET /openapi.json", () => {
     expect(Object.keys(paths)).not.toContain("/openapi.json");
     expect(Object.keys(paths)).not.toContain("/docs");
   });
+
+  test("WarehouseName is a component schema both allocation schemas require", () => {
+    const schemas = dig(spec.raw, "components", "schemas");
+    expect(Object.keys(schemas)).toContain("WarehouseName");
+    expect(dig(schemas, "WarehouseName").type).toBe("string");
+
+    // Every allocation names its warehouse, on an estimate and on an accepted
+    // Order alike, and both point at the one shared schema rather than
+    // spelling a string out twice.
+    for (const allocation of ["EstimateAllocation", "OrderAllocation"]) {
+      const schema = dig(schemas, allocation);
+      expect(schema.required, allocation).toEqual(
+        expect.arrayContaining(["warehouseId", "warehouseName", "quantity"]),
+      );
+      expect(dig(schema, "properties", "warehouseName").$ref, allocation).toBe(
+        "#/components/schemas/WarehouseName",
+      );
+    }
+  });
+
+  test("every estimate variant requires unitPrice and shippingLimit", () => {
+    const schemas = dig(spec.raw, "components", "schemas");
+    for (const variant of [
+      "ValidEstimate",
+      "ShippingExceedsLimitEstimate",
+      "InsufficientStockEstimate",
+    ]) {
+      expect(dig(schemas, variant).required, variant).toEqual(
+        expect.arrayContaining(["unitPrice", "shippingLimit"]),
+      );
+    }
+    // A priced estimate publishes the limit as Money; a stock rejection has
+    // nothing to charge, so its limit is documented as null.
+    for (const priced of ["ValidEstimate", "ShippingExceedsLimitEstimate"]) {
+      expect(dig(schemas, priced, "properties", "shippingLimit").$ref, priced).toBe(
+        "#/components/schemas/Money",
+      );
+    }
+    expect(dig(schemas, "InsufficientStockEstimate", "properties", "shippingLimit").type).toBe(
+      "null",
+    );
+
+    // The accepted Order gained no limit: it is what decided the acceptance,
+    // not a fact about the Order afterwards.
+    expect(Object.keys(dig(schemas, "Order", "properties"))).not.toContain("shippingLimit");
+    expect(dig(schemas, "Order").required).toContain("unitPrice");
+  });
 });
 
 test.describe("response conformance: real responses against the served schemas", () => {
@@ -297,7 +344,9 @@ test.describe("response conformance: real responses against the served schemas",
     expect(short).toMatchObject({
       valid: false,
       reason: "INSUFFICIENT_STOCK",
+      unitPrice: "150.00",
       shippingCost: null,
+      shippingLimit: null,
       orderTotal: null,
       allocations: [],
     });
@@ -361,7 +410,11 @@ test.describe("response conformance: real responses against the served schemas",
     expect(rejected.status).toBe(422);
     const body = expectConforms(spec, SUBMIT, "post", rejected) as JsonRecord;
     expect(dig(body, "error").code).toBe("INSUFFICIENT_STOCK");
-    expect(dig(body, "estimate")).toMatchObject({ shippingCost: null, orderTotal: null });
+    expect(dig(body, "estimate")).toMatchObject({
+      shippingCost: null,
+      shippingLimit: null,
+      orderTotal: null,
+    });
 
     // Nothing was stored, so the key is free and the identical request is evaluated afresh.
     await setStock(pool, { [warehouse("Paris").id]: 5 });

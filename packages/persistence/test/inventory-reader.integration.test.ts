@@ -50,17 +50,19 @@ describe("PostgreSQL inventory reader", { timeout: 30_000 }, () => {
     await setStock(WARSAW, 0);
     const rows = await db.pool.query<{
       id: string;
+      name: string;
       latitude: number;
       longitude: number;
       stock: number;
-    }>("SELECT id::text AS id, latitude, longitude, stock FROM warehouses ORDER BY id");
+    }>("SELECT id::text AS id, name, latitude, longitude, stock FROM warehouses ORDER BY id");
 
     const snapshot = await readSnapshot();
 
     expect(snapshot).toHaveLength(6);
     expect(snapshot).toStrictEqual(
-      rows.rows.map(({ id, latitude, longitude, stock }) => ({
+      rows.rows.map(({ id, name, latitude, longitude, stock }) => ({
         warehouseId: id,
+        warehouseName: name,
         latitude,
         longitude,
         available: stock,
@@ -74,6 +76,37 @@ describe("PostgreSQL inventory reader", { timeout: 30_000 }, () => {
       355, 578, 265, 694, 0, 419,
     ]);
     expect(Object.isFrozen(snapshot)).toBe(true);
+  });
+
+  // An estimate is advisory and computed from a fresh snapshot, so the name is
+  // read live beside the stock: a renamed warehouse is estimated under its
+  // current name.
+  test("the snapshot carries each warehouse's current name in ID order", async () => {
+    expect((await readSnapshot()).map((warehouse) => warehouse.warehouseName)).toStrictEqual([
+      "Los Angeles",
+      "New York",
+      "São Paulo",
+      "Paris",
+      "Warsaw",
+      "Hong Kong",
+    ]);
+    expect((await readSnapshot()).map((warehouse) => warehouse.warehouseName)).toStrictEqual(
+      warehouseSeeds.map((seed) => seed.name),
+    );
+
+    const renamed = await db.pool.query("UPDATE warehouses SET name = $2 WHERE id = $1::uuid", [
+      PARIS,
+      "Paris Charles de Gaulle",
+    ]);
+    expect(renamed.rowCount).toBe(1);
+    expect((await readSnapshot()).map((warehouse) => warehouse.warehouseName)).toStrictEqual([
+      "Los Angeles",
+      "New York",
+      "São Paulo",
+      "Paris Charles de Gaulle",
+      "Warsaw",
+      "Hong Kong",
+    ]);
   });
 
   test("the state comparison exposes a rewrite that leaves every stock value the same", async () => {

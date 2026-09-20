@@ -1,13 +1,22 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { errorResponseSchema, orderResponseSchema, rejectedSubmissionResponseSchema } from "#index";
+import {
+  errorResponseSchema,
+  orderResponseSchema,
+  rejectedSubmissionResponseSchema,
+  shippingExceedsLimitEstimateSchema,
+  verifyOrderResponseSchema,
+} from "#index";
 import {
   AT_PARIS,
   Applications,
   FAR_AWAY,
   HONG_KONG,
   PARIS,
+  WARSAW,
+  cents,
   postJson,
+  shippingLimitCents,
   snapshot,
 } from "#test/support/app";
 import {
@@ -62,7 +71,7 @@ describe("acceptance", () => {
       discountedMerchandiseTotal: "48000.00",
       shippingCost: "0.00",
       orderTotal: "48000.00",
-      allocations: [{ warehouseId: PARIS, quantity: 400 }],
+      allocations: [{ warehouseId: PARIS, warehouseName: "Paris", quantity: 400 }],
     });
 
     const after = await readState(db.pool);
@@ -72,6 +81,8 @@ describe("acceptance", () => {
       submission_key: "accept-1",
       quantity: 400,
     });
+    // An allocation row stores the warehouse's ID and quantity and no name:
+    // the name the 201 reported was resolved through this foreign key.
     expect(
       after.allocations.map(({ order_id, warehouse_id, quantity }) => ({
         order_id,
@@ -79,6 +90,12 @@ describe("acceptance", () => {
         quantity,
       })),
     ).toStrictEqual([{ order_id: after.orders[0]?.id, warehouse_id: PARIS, quantity: 400 }]);
+    const nameById = new Map(after.warehouses.map(({ id, name }) => [id, name]));
+    expect(
+      order.allocations.map(({ warehouseId, warehouseName }) => [warehouseId, warehouseName]),
+    ).toStrictEqual(
+      after.allocations.map(({ warehouse_id }) => [warehouse_id, nameById.get(warehouse_id)]),
+    );
 
     const stockAfter = await stockById(db.pool);
     expect(stockAfter).toStrictEqual({ ...stockBefore, [PARIS]: (stockBefore[PARIS] ?? 0) - 400 });
@@ -102,6 +119,41 @@ describe("acceptance", () => {
       expected[warehouseId] = (expected[warehouseId] ?? 0) - quantity;
     }
     expect(await stockById(db.pool)).toStrictEqual(expected);
+  });
+
+  test("a split Order names every warehouse it draws from, each name read from warehouses", async () => {
+    // Only 5 units left at Paris, so the plan reaches past it to Warsaw.
+    await setStock(db.pool, { [PARIS]: 5 });
+
+    const response = await submit({ submissionId: "split-names-1", quantity: 12, ...AT_PARIS });
+
+    expect(response.status, response.text).toBe(201);
+    const order = orderResponseSchema.strict().parse(response.json());
+    // Nearest first, ties by warehouseId: the name rides along, it never
+    // reorders the plan.
+    expect(
+      order.allocations.map(({ warehouseId, warehouseName, quantity }) => [
+        warehouseId,
+        warehouseName,
+        quantity,
+      ]),
+    ).toStrictEqual([
+      [PARIS, "Paris", 5],
+      [WARSAW, "Warsaw", 7],
+    ]);
+
+    // The rows store two warehouse IDs and no names; each reported name is the
+    // `warehouses` row for its own allocation's warehouse_id, not the first.
+    const { allocations, warehouses } = await readState(db.pool);
+    const nameById = new Map(warehouses.map(({ id, name }) => [id, name]));
+    expect(allocations.map(({ warehouse_id }) => warehouse_id).sort()).toStrictEqual(
+      [PARIS, WARSAW].sort(),
+    );
+    expect(
+      Object.fromEntries(
+        order.allocations.map(({ warehouseId, warehouseName }) => [warehouseId, warehouseName]),
+      ),
+    ).toStrictEqual({ [PARIS]: nameById.get(PARIS), [WARSAW]: nameById.get(WARSAW) });
   });
 
   test("the stored monetary facts of a split Order with shipping equal the 201 response", async () => {
@@ -173,7 +225,10 @@ describe("business rejections write nothing and leave the submissionId reusable"
     const rejection = rejectedSubmissionResponseSchema.parse(rejected.json());
     expect(rejection.error.code).toBe("INSUFFICIENT_STOCK");
     expect(rejection.estimate).toMatchObject({
+      unitPrice: "150.00",
       shippingCost: null,
+      // Nothing can be shipped, so there is no limit to compare against.
+      shippingLimit: null,
       orderTotal: null,
       allocations: [],
     });
@@ -194,6 +249,14 @@ describe("business rejections write nothing and leave the submissionId reusable"
     expect(rejected.status, rejected.text).toBe(422);
     const rejection = rejectedSubmissionResponseSchema.parse(rejected.json());
     expect(rejection.error.code).toBe("SHIPPING_EXCEEDS_LIMIT");
+    const estimate = shippingExceedsLimitEstimateSchema.parse(rejection.estimate);
+    expect(estimate.unitPrice).toBe("150.00");
+    // The limit the estimate was tested against: 15% of 150.00, truncated.
+    // Compared as integer cents, so no amount is ever a binary float.
+    expect(estimate.shippingLimit).toBe("22.50");
+    expect(cents(estimate.shippingLimit)).toBe(
+      shippingLimitCents(estimate.discountedMerchandiseTotal),
+    );
     expect(Number(rejection.estimate.shippingCost)).toBeGreaterThan(22.5);
     expect(await readState(db.pool)).toStrictEqual(before);
 
@@ -206,7 +269,7 @@ describe("business rejections write nothing and leave the submissionId reusable"
     const accepted = await submit(body);
     expect(accepted.status, accepted.text).toBe(201);
     expect(orderResponseSchema.parse(accepted.json()).allocations).toStrictEqual([
-      { warehouseId: HONG_KONG, quantity: 1 },
+      { warehouseId: HONG_KONG, warehouseName: "Hong Kong", quantity: 1 },
     ]);
   });
 
@@ -239,6 +302,64 @@ describe("repeats and conflicts", () => {
     expect(repeat.status).toBe(201);
     expect(repeat.text).toBe(first.text);
     expect(await readState(db.pool)).toStrictEqual(before);
+  });
+
+  test("a repeat after a rename reports the new warehouse name and every other field unchanged", async () => {
+    // Why the name moves and nothing else does: an allocation's warehouseName
+    // is resolved through order_allocations.warehouse_id, so it tracks the
+    // warehouse and a rename shows up in later reads of an Order already
+    // returned. The amounts, quantities and the plan itself are the genuine
+    // historical facts of the Order, so they are stored and a rename cannot
+    // touch them.
+    const composed = applications.compose(db.url);
+    const body = { submissionId: "rename-1", quantity: 10, ...AT_PARIS };
+    const first = await submit(body, composed);
+    expect(first.status, first.text).toBe(201);
+    const original = orderResponseSchema.strict().parse(first.json());
+    expect(original.allocations).toStrictEqual([
+      { warehouseId: PARIS, warehouseName: "Paris", quantity: 10 },
+    ]);
+
+    await db.pool.query("UPDATE warehouses SET name = $2 WHERE id = $1::uuid", [
+      PARIS,
+      "Paris Nord",
+    ]);
+    const before = await readState(db.pool);
+    const stockBefore = await stockById(db.pool);
+
+    const repeat = await submit(body, composed);
+
+    expect(repeat.status, repeat.text).toBe(201);
+    const repeated = orderResponseSchema.strict().parse(repeat.json());
+    // The one field that may differ: this allocation's warehouseName.
+    expect(repeated.allocations).toStrictEqual([
+      { warehouseId: PARIS, warehouseName: "Paris Nord", quantity: 10 },
+    ]);
+    // Everything else is exactly what it was — order number, submissionId,
+    // quantity, destination, every amount, and the allocation warehouse IDs
+    // and quantities in their original order.
+    const withoutNames = (order: typeof original) => ({
+      ...order,
+      allocations: order.allocations.map(({ warehouseId, quantity }) => ({
+        warehouseId,
+        quantity,
+      })),
+    });
+    expect(withoutNames(repeated)).toStrictEqual(withoutNames(original));
+    // No second deduction, and no row was rewritten: `before` was read after
+    // the rename, so the only change it already accounts for is the rename.
+    expect(await stockById(db.pool)).toStrictEqual(stockBefore);
+    expect(await readState(db.pool)).toStrictEqual(before);
+
+    // A fresh estimate plans against the warehouses as they stand, so it names
+    // the renamed warehouse too — the two sides agree.
+    const estimate = await snapshot(
+      postJson(composed, "/api/v1/orders/verify", { quantity: 10, ...AT_PARIS }),
+    );
+    expect(estimate.status, estimate.text).toBe(200);
+    expect(verifyOrderResponseSchema.parse(estimate.json()).allocations).toStrictEqual([
+      { warehouseId: PARIS, warehouseName: "Paris Nord", quantity: 10, distanceKm: 0 },
+    ]);
   });
 
   test("a repeat after a restart (new composition, new pool) returns the same Order", async () => {

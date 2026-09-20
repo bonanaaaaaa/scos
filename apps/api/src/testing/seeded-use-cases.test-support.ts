@@ -23,8 +23,9 @@ import { fakeLogger } from "./fixtures.test-support";
 
 /** Current stock of a freshly seeded database. */
 export function seedInventory(): InventorySnapshot {
-  return warehouseSeeds.map(({ id, latitude, longitude, stock }) => ({
+  return warehouseSeeds.map(({ id, name, latitude, longitude, stock }) => ({
     warehouseId: id,
+    warehouseName: name,
     latitude,
     longitude,
     available: stock,

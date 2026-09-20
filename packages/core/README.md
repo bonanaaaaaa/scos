@@ -58,6 +58,12 @@ adapter-technology ban; keep it in any override you add.
 - **Discounts** are exact at cents for every quantity; only the combined
   shipping charge is rounded, once, to cents half-up. Rounded shipping is
   compared to the exact 15% of the discounted merchandise total; equality passes.
+- **The published limit** (`publishedShippingLimitFor`) is that same exact 15%
+  truncated toward zero to cents, and is reported on an estimate as
+  `shippingLimit`. Truncation, not half-up, is what makes a client's own
+  `shippingCost <= shippingLimit` check agree with the server on every cent
+  amount; half-up could round the limit past an amount the server rejects. The
+  decision is still taken against the exact, unrounded limit.
 - **Distance:** Haversine with JavaScript `number`, Earth radius
   `EARTH_RADIUS_KM = 6371.0088` (IUGG mean radius), unrounded coordinates, the
   intermediate clamped to `[0, 1]`, and unrounded kilometres converted to decimal

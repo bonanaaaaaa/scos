@@ -41,6 +41,8 @@ export function discountRateFor(quantity: Quantity): DiscountRate {
 }
 
 export interface MerchandisePricing {
+  /** The price per unit the subtotal was calculated with. */
+  readonly unitPrice: Money;
   readonly merchandiseSubtotal: Money;
   readonly discountRate: DiscountRate;
   readonly discountAmount: Money;
@@ -57,6 +59,7 @@ export function priceMerchandise(quantity: Quantity): MerchandisePricing {
   const subtotal = UNIT_PRICE.times(quantity);
   const discount = subtotal.times(new DomainDecimal(discountRate));
   return Object.freeze({
+    unitPrice: Money.fromDecimal(UNIT_PRICE),
     merchandiseSubtotal: Money.fromDecimal(subtotal),
     discountRate,
     discountAmount: Money.fromDecimal(discount),

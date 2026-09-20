@@ -1,13 +1,20 @@
 import type { InventoryReader, InventorySnapshot } from "@scos/core";
 
-/** The columns the snapshot needs; names, timestamps and relations are not read. */
-const inventoryColumns = { id: true, latitude: true, longitude: true, stock: true } as const;
+/** The columns the snapshot needs; timestamps and relations are not read. */
+const inventoryColumns = {
+  id: true,
+  name: true,
+  latitude: true,
+  longitude: true,
+  stock: true,
+} as const;
 
 /** Stable ID order, matching the order in which submission locks warehouse rows. */
 const inventoryOrder = { id: "asc" } as const;
 
 interface WarehouseInventoryRow {
   readonly id: string;
+  readonly name: string;
   readonly latitude: number;
   readonly longitude: number;
   readonly stock: number;
@@ -37,7 +44,9 @@ export interface InventoryReaderClient {
  * values come from the same committed state: a concurrent submission that
  * deducts from several warehouses is seen either completely or not at all.
  * That makes an explicit transaction unnecessary; one would only be needed to
- * keep several statements coherent with each other.
+ * keep several statements coherent with each other. The warehouse name is read
+ * live with the stock: an estimate is advisory and computed from a fresh
+ * snapshot, so the current name is the right name to return.
  *
  * The read takes no row lock (`FOR UPDATE` / `FOR SHARE` are reserved for
  * submission), reserves nothing and writes nothing, so it never blocks or is
@@ -53,8 +62,14 @@ export function createPrismaInventoryReader(prisma: InventoryReaderClient): Inve
         orderBy: inventoryOrder,
       });
       return Object.freeze(
-        rows.map(({ id, latitude, longitude, stock }) =>
-          Object.freeze({ warehouseId: id, latitude, longitude, available: stock }),
+        rows.map(({ id, name, latitude, longitude, stock }) =>
+          Object.freeze({
+            warehouseId: id,
+            warehouseName: name,
+            latitude,
+            longitude,
+            available: stock,
+          }),
         ),
       );
     },

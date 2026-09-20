@@ -157,6 +157,7 @@ export interface OrderRow {
 
 export interface AllocationRow {
   order_id: string;
+  /** The only link to the warehouse: its name is resolved through this key. */
   warehouse_id: string;
   quantity: number;
   created_at: Date;

@@ -25,12 +25,23 @@ import type { OrderRequest } from "./order-request";
 import { type SubmissionKey, submissionKeySchema } from "./submission-key";
 
 /**
- * Units of an accepted Order taken from one warehouse. Only these two facts are
- * persisted; the distance used to price shipping is not, so an Order rebuilt
- * from storage equals the Order returned at acceptance.
+ * Units of an accepted Order taken from one warehouse, with that warehouse's
+ * name. Only the warehouse and the quantity are persisted on the allocation;
+ * the distance used to price shipping is not, so an Order rebuilt from storage
+ * equals the Order returned at acceptance.
+ *
+ * `warehouseName` is a label resolved from the warehouse the allocation
+ * references, not a fact frozen at acceptance: the adapter reads it through
+ * the foreign key, so it is always the warehouse's current name. Renaming a
+ * warehouse therefore changes it in later reads of an Order already returned.
+ * That is a deliberate trade — the alternative is copying the name onto every
+ * allocation row, which duplicates a fact the foreign key already identifies.
+ * The amounts, which are genuine historical facts, are stored and never
+ * recomputed.
  */
 export interface OrderAllocation {
   readonly warehouseId: string;
+  readonly warehouseName: string;
   readonly quantity: number;
 }
 
@@ -127,6 +138,10 @@ function assertAllocations(quantity: number, allocations: readonly OrderAllocati
       "Each allocation requires a warehouse id.",
     );
     invariant(
+      typeof allocation.warehouseName === "string" && allocation.warehouseName.length > 0,
+      "Each allocation requires a warehouse name.",
+    );
+    invariant(
       Number.isSafeInteger(allocation.quantity) && allocation.quantity > 0,
       "Each allocation quantity must be a positive integer.",
     );
@@ -142,7 +157,9 @@ function assertAllocations(quantity: number, allocations: readonly OrderAllocati
 
 function freezeAllocations(allocations: readonly OrderAllocation[]): OrderAllocations {
   return Object.freeze(
-    allocations.map(({ warehouseId, quantity }) => Object.freeze({ warehouseId, quantity })),
+    allocations.map(({ warehouseId, warehouseName, quantity }) =>
+      Object.freeze({ warehouseId, warehouseName, quantity }),
+    ),
   ) as readonly OrderAllocation[] as OrderAllocations;
 }
 
@@ -172,8 +189,8 @@ function assertSubmissionKey(submissionKey: string): asserts submissionKey is Su
  * amounts are immutable historical facts. Use {@link restoreOrder} for that.
  *
  * The estimate's shipping plan (including each warehouse's distance) is checked
- * here; the Order keeps only the warehouse and quantity of each allocation,
- * which are the persisted facts.
+ * here; of each allocation the Order persists only the warehouse and the
+ * quantity, and carries the warehouse's name alongside them.
  */
 export function createOrder(input: CreateOrderInput): NewOrder {
   const { orderNumber, submissionKey, estimate } = input;
@@ -253,8 +270,14 @@ export function createOrder(input: CreateOrderInput): NewOrder {
  * It checks structural invariants only: a non-empty id and order number, a
  * valid submission key and destination, a positive safe-integer quantity,
  * cent amounts within NUMERIC(12, 2), a two-decimal discount rate in [0, 1],
- * and non-empty allocations of positive integer quantities from distinct
- * warehouses summing to the quantity. The order number and quantity are
+ * and non-empty allocations of positive integer quantities from distinct,
+ * named warehouses summing to the quantity. The non-empty `warehouseName` rule
+ * holds for every stored Order because the adapter resolves the name through
+ * the allocation's foreign key: `warehouses.name` is `NOT NULL` with a
+ * non-blank CHECK and the FK is `ON DELETE RESTRICT`, so the related row
+ * always exists and always has a name. Relax either and replays of existing
+ * Orders start throwing INVALID_ORDER (HTTP 500) on requests that previously
+ * returned 201. The order number and quantity are
  * deliberately NOT checked against the current `ORDER_NUMBER_PATTERN` or
  * `MAX_QUANTITY`: tightening either later must not make repeats of Orders
  * stored under the old rules unreadable. `createOrder` applies both to new

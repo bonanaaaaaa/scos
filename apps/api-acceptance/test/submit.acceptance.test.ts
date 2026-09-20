@@ -80,7 +80,12 @@ test.describe("201 accepted", () => {
       discountedMerchandiseTotal: "4275.00",
       shippingCost: "2.28",
       orderTotal: "4277.28",
-      allocations: [{ warehouseId: warehouse("New York").id, quantity: 30 }],
+      // An accepted Order names the warehouse its allocation points at, and
+      // carries no `shippingLimit`: the limit decided the acceptance and is
+      // not a fact about the Order afterwards.
+      allocations: [
+        { warehouseId: warehouse("New York").id, warehouseName: "New York", quantity: 30 },
+      ],
     });
     expect(body).toStrictEqual(expectedOrder("qa-accept-1", 30, MANHATTAN));
     expect(response.text).not.toMatch(/"id"/);
@@ -95,11 +100,11 @@ test.describe("201 accepted", () => {
     const body = expectJson(
       await submit({ submissionId: "qa-split", quantity: 700, ...AT_PARIS }),
       201,
-    ) as { allocations: { warehouseId: string; quantity: number }[] };
+    ) as { allocations: { warehouseId: string; warehouseName: string; quantity: number }[] };
     expect(body).toStrictEqual(expectedOrder("qa-split", 700, AT_PARIS));
     expect(body.allocations).toStrictEqual([
-      { warehouseId: warehouse("Paris").id, quantity: 694 },
-      { warehouseId: warehouse("Warsaw").id, quantity: 6 },
+      { warehouseId: warehouse("Paris").id, warehouseName: "Paris", quantity: 694 },
+      { warehouseId: warehouse("Warsaw").id, warehouseName: "Warsaw", quantity: 6 },
     ]);
 
     const remaining = afterDeducting(WAREHOUSES, body.allocations);
@@ -199,6 +204,64 @@ test.describe("repeated submissionId", () => {
     );
   }
 
+  test("a repeat after the warehouse is renamed reports the new name and nothing else", async () => {
+    // An allocation's `warehouseName` is resolved through its warehouse, so a
+    // rename does reach an Order that was already returned. Every other field
+    // is a stored historical fact of the Order and must come back identical,
+    // so this pins the difference down to the names alone. The rename goes
+    // straight into PostgreSQL through this suite's own pool: the API exposes
+    // no way to do it, and `resetDatabase` reseeds the warehouses before the
+    // next test.
+    interface OrderBody {
+      allocations: { warehouseId: string; warehouseName: string; quantity: number }[];
+      [field: string]: unknown;
+    }
+    const request = { submissionId: "qa-rename", quantity: 30, ...MANHATTAN };
+    const accepted = await submit(request);
+    const original = expectJson(accepted, 201) as OrderBody;
+    expect(original).toStrictEqual(expectedOrder("qa-rename", 30, MANHATTAN));
+
+    const renamed = await pool.query("UPDATE warehouses SET name = $2 WHERE id = $1::uuid", [
+      warehouse("New York").id,
+      "New York (renamed)",
+    ]);
+    expect(renamed.rowCount).toBe(1);
+
+    const repeat = await submit(request);
+    const repeated = expectJson(repeat, 201) as OrderBody;
+
+    // The whole body with the allocation names taken out: order number,
+    // submissionId, quantity, destination, every amount, and the allocation
+    // warehouse IDs and quantities in their original order. Anything else
+    // moving — a reordered or extra allocation included — fails here.
+    const withoutNames = (body: OrderBody) => ({
+      ...body,
+      allocations: body.allocations.map(({ warehouseId, quantity }) => ({
+        warehouseId,
+        quantity,
+      })),
+    });
+    expect(withoutNames(repeated)).toStrictEqual(withoutNames(original));
+    // And the names that were taken out are the renamed warehouse's.
+    expect(original.allocations.map(({ warehouseName }) => warehouseName)).toStrictEqual([
+      "New York",
+    ]);
+    expect(repeated.allocations.map(({ warehouseName }) => warehouseName)).toStrictEqual([
+      "New York (renamed)",
+    ]);
+    // Byte for byte, the two responses differ in that one name and nowhere
+    // else — not even in field order or spacing.
+    expect(repeat.text).toBe(accepted.text.replaceAll('"New York"', '"New York (renamed)"'));
+
+    const estimate = expectJson(
+      await postJson(api, "/api/v1/orders/verify", { quantity: 1, ...MANHATTAN }),
+      200,
+    );
+    expect(estimate).toMatchObject({
+      allocations: [{ warehouseId: warehouse("New York").id, warehouseName: "New York (renamed)" }],
+    });
+  });
+
   test("submissionIds are case- and byte-sensitive: a different key is a new Order", async () => {
     const first = expectJson(
       await submit({ submissionId: "qa-Case", quantity: 1, ...AT_PARIS }),
@@ -231,11 +294,13 @@ test.describe("422 business rejections", () => {
       reason: "INSUFFICIENT_STOCK",
       quantity: 2557,
       destination: AT_PARIS,
+      unitPrice: "150.00",
       merchandiseSubtotal: "383550.00",
       discountRate: "0.20",
       discountAmount: "76710.00",
       discountedMerchandiseTotal: "306840.00",
       shippingCost: null,
+      shippingLimit: null,
       orderTotal: null,
       allocations: [],
     });
@@ -253,6 +318,34 @@ test.describe("422 business rejections", () => {
     expect(body.estimate).toStrictEqual(expectedEstimate(1, FAR_AWAY));
     expect(body.estimate).toMatchObject({ shippingCost: "34.28", orderTotal: "184.28" });
     expect(await readState(pool)).toStrictEqual(before);
+  });
+
+  test("the embedded estimate names every warehouse it planned from, nearest first", async () => {
+    // The whole inventory at Paris: rejected for shipping, but the estimate
+    // still has to be readable, so each of the six allocations names the
+    // warehouse its ID identifies.
+    const response = await submit({ submissionId: "qa-named", quantity: TOTAL_STOCK, ...AT_PARIS });
+    const body = expectJson(response, 422) as {
+      estimate: {
+        allocations: { warehouseId: string; warehouseName: string; quantity: number }[];
+      };
+    };
+
+    expect(
+      body.estimate.allocations.map(({ warehouseId, warehouseName, quantity }) => ({
+        warehouseId,
+        warehouseName,
+        quantity,
+      })),
+    ).toStrictEqual([
+      { warehouseId: warehouse("Paris").id, warehouseName: "Paris", quantity: 694 },
+      { warehouseId: warehouse("Warsaw").id, warehouseName: "Warsaw", quantity: 245 },
+      { warehouseId: warehouse("New York").id, warehouseName: "New York", quantity: 578 },
+      { warehouseId: warehouse("Los Angeles").id, warehouseName: "Los Angeles", quantity: 355 },
+      { warehouseId: warehouse("São Paulo").id, warehouseName: "São Paulo", quantity: 265 },
+      { warehouseId: warehouse("Hong Kong").id, warehouseName: "Hong Kong", quantity: 419 },
+    ]);
+    expect(body.estimate).toStrictEqual(expectedEstimate(TOTAL_STOCK, AT_PARIS));
   });
 
   test("the 422 estimate equals what /api/v1/orders/verify returns for the same input", async () => {

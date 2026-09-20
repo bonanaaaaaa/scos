@@ -30,6 +30,7 @@ import {
   quantityFieldSchema,
   responseQuantitySchema,
   warehouseIdSchema,
+  warehouseNameSchema,
 } from "#http/schemas";
 
 import { submitOrderRequestExamples, submitOrderResponseExamples } from "./examples";
@@ -79,11 +80,14 @@ export type SubmitOrderRequest = z.input<typeof submitOrderRequestSchema>;
 export const orderAllocationSchema = z
   .object({
     warehouseId: warehouseIdSchema,
+    /** The warehouse's current name, resolved through `warehouseId` on read. */
+    warehouseName: warehouseNameSchema,
     quantity: responseQuantitySchema,
   })
   .meta({
     id: "OrderAllocation",
-    description: "Units of an accepted Order taken from one warehouse.",
+    description:
+      "Units of an accepted Order taken from one warehouse, with that warehouse's current name. `warehouseId` and `quantity` are fixed at acceptance; `warehouseName` is resolved from the warehouse each time the Order is read, so renaming a warehouse changes it in later reads.",
   });
 
 /**
@@ -145,7 +149,7 @@ export const submitOrderRoute = {
     "`submissionId` is a client-generated key that makes retries safe; there is no `Idempotency-Key` header. Generate a new one for each new order and reuse it only to retry that order:",
     [
       "- An accepted Order keeps its submissionId indefinitely: keys are retained as long as their Orders.",
-      "- Repeating an accepted submissionId with the same quantity and destination returns the original Order (`201`, byte-identical body) without deducting stock again, even after stock changes.",
+      "- Repeating an accepted submissionId with the same quantity and destination returns the original Order (`201`) without deducting stock again, even after stock changes. The body is byte-identical, with one exception: each allocation's `warehouseName` is the warehouse's current name, so renaming a warehouse changes that field in later repeats. Nothing else about a stored Order can change.",
       "- Reusing it with a different quantity or destination is `409 SUBMISSION_ID_CONFLICT`; the existing Order is unchanged and not disclosed.",
       "- Business rejections (`422`), malformed requests (`400`) and transient failures (`503`) are not stored and consume no key. A rejected request can be retried with the same submissionId: it is evaluated again against current stock and may be accepted.",
       "- A `500` means the outcome is unknown (for example, the connection failed after the commit). Retry with the same submissionId and body: a stored Order is returned, never duplicated.",
@@ -157,7 +161,7 @@ export const submitOrderRoute = {
   responses: {
     201: {
       description:
-        "Accepted. A repeated submissionId with the same inputs returns the original Order unchanged (byte-identical body), without deducting stock again.",
+        "Accepted. A repeated submissionId with the same inputs returns the original Order without deducting stock again. Every stored field is unchanged; only an allocation's `warehouseName` can differ, and only if the warehouse has since been renamed.",
       schema: orderResponseSchema,
       examples: submitOrderResponseExamples[201],
     },

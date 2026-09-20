@@ -7,14 +7,20 @@ import { MAX_QUANTITY, type Quantity } from "#domain/shared/quantity";
 import type { WarehouseStock } from "#domain/shipping/allocation";
 
 import { type OrderEstimate, type ValidOrderEstimate, estimateOrder } from "./estimate";
-import { type StoredOrder, createOrder, hasSameRequest, restoreOrder } from "./order";
+import {
+  type OrderAllocation,
+  type StoredOrder,
+  createOrder,
+  hasSameRequest,
+  restoreOrder,
+} from "./order";
 import type { OrderRequest } from "./order-request";
 import type { SubmissionKey } from "./submission-key";
 
 const destination = { latitude: 0, longitude: 0 } as Destination;
 const inventory: readonly WarehouseStock[] = [
-  { warehouseId: "a", latitude: 0, longitude: 1, available: 20 },
-  { warehouseId: "b", latitude: 0, longitude: 2, available: 20 },
+  { warehouseId: "a", warehouseName: "Los Angeles", latitude: 0, longitude: 1, available: 20 },
+  { warehouseId: "b", warehouseName: "New York", latitude: 0, longitude: 2, available: 20 },
 ];
 
 function validEstimate(): ValidOrderEstimate {
@@ -41,6 +47,7 @@ const expectInvalid = (
       estimate: estimate as OrderEstimate,
     });
   expect(run).toThrow(DomainError);
+  expect(run).toThrow(expect.objectContaining({ code: "INVALID_ORDER" }));
   expect(run).toThrow(message);
 };
 
@@ -62,8 +69,8 @@ describe("createOrder", () => {
       orderTotal: estimate.orderTotal.toString(),
       // Only the persisted facts: the estimate's distances are dropped.
       allocations: [
-        { warehouseId: "a", quantity: 20 },
-        { warehouseId: "b", quantity: 10 },
+        { warehouseId: "a", warehouseName: "Los Angeles", quantity: 20 },
+        { warehouseId: "b", warehouseName: "New York", quantity: 10 },
       ],
     });
     expect("id" in order).toBe(false);
@@ -72,13 +79,23 @@ describe("createOrder", () => {
     expect(Object.isFrozen(order.allocations[0])).toBe(true);
   });
 
+  test("carries each allocation's warehouse name from the estimate", () => {
+    const order = createOrder({ orderNumber, submissionKey, estimate: validEstimate() });
+    expect(
+      order.allocations.map(({ warehouseId, warehouseName }) => [warehouseId, warehouseName]),
+    ).toStrictEqual([
+      ["a", "Los Angeles"],
+      ["b", "New York"],
+    ]);
+  });
+
   test("rejects insufficient-stock and shipping-limit estimates", () => {
     expectInvalid(
       estimateOrder({ quantity: 41 as Quantity, destination }, inventory),
       /INSUFFICIENT_STOCK/,
     );
     const far = estimateOrder({ quantity: 1 as Quantity, destination }, [
-      { warehouseId: "far", latitude: 0, longitude: 179, available: 1 },
+      { warehouseId: "far", warehouseName: "Hong Kong", latitude: 0, longitude: 179, available: 1 },
     ]);
     expect(far.reason).toBe("SHIPPING_EXCEEDS_LIMIT");
     expectInvalid(far, /SHIPPING_EXCEEDS_LIMIT/);
@@ -127,6 +144,21 @@ describe("createOrder", () => {
     expectInvalid({ ...base, allocations: [first] }, /sum to the ordered quantity/);
   });
 
+  test("requires a warehouse name on every allocation", () => {
+    const base = validEstimate();
+    const [first, second] = base.allocations;
+    expectInvalid(
+      { ...base, allocations: [{ ...first, warehouseName: "" }, second] },
+      /warehouse name/,
+    );
+    // A name missing altogether, which only an unvalidated caller can produce.
+    const { warehouseId, quantity, distanceKm } = first;
+    expectInvalid(
+      { ...base, allocations: [{ warehouseId, quantity, distanceKm }, second] },
+      /warehouse name/,
+    );
+  });
+
   test("enforces amount invariants", () => {
     const base = validEstimate();
     expect(base.discountRate).toBe("0.05");
@@ -165,7 +197,7 @@ describe("createOrder", () => {
 
   test("rejects shipping that differs from the charge recomputed from the allocations", () => {
     const atWarehouse = estimateOrder({ quantity: 1 as Quantity, destination }, [
-      { warehouseId: "here", latitude: 0, longitude: 0, available: 1 },
+      { warehouseId: "here", warehouseName: "Paris", latitude: 0, longitude: 0, available: 1 },
     ]);
     expect(atWarehouse.valid).toBe(true);
     expect(atWarehouse.shippingCost?.toString()).toBe("0.00");
@@ -182,7 +214,7 @@ describe("createOrder", () => {
 
   test("rejects shipping above the limit even when an estimate is marked valid", () => {
     const far = estimateOrder({ quantity: 1 as Quantity, destination }, [
-      { warehouseId: "far", latitude: 0, longitude: 179, available: 1 },
+      { warehouseId: "far", warehouseName: "Hong Kong", latitude: 0, longitude: 179, available: 1 },
     ]);
     expectInvalid({ ...far, valid: true, reason: null }, /exceeds 15%/);
   });
@@ -199,8 +231,8 @@ const storedOrder = (overrides: Partial<StoredOrder> = {}): StoredOrder => ({
   discountAmount: "225.00",
   shippingCost: "12.34",
   allocations: [
-    { warehouseId: "a", quantity: 20 },
-    { warehouseId: "b", quantity: 10 },
+    { warehouseId: "a", warehouseName: "Los Angeles", quantity: 20 },
+    { warehouseId: "b", warehouseName: "New York", quantity: 10 },
   ],
   ...overrides,
 });
@@ -229,8 +261,8 @@ describe("restoreOrder", () => {
       shippingCost: "12.34",
       orderTotal: "4287.34",
       allocations: [
-        { warehouseId: "a", quantity: 20 },
-        { warehouseId: "b", quantity: 10 },
+        { warehouseId: "a", warehouseName: "Los Angeles", quantity: 20 },
+        { warehouseId: "b", warehouseName: "New York", quantity: 10 },
       ],
     });
     expect(Object.isFrozen(order)).toBe(true);
@@ -254,6 +286,16 @@ describe("restoreOrder", () => {
       allocations: created.allocations.map((allocation) => ({ ...allocation })),
     });
     expect(plain(restored)).toStrictEqual(plain({ id: "id-1", ...created }));
+  });
+
+  test("carries the stored warehouse names through unchanged", () => {
+    // The stored name is a historical fact, returned as stored rather than
+    // looked up: these are not the names the current inventory carries.
+    const allocations = [
+      { warehouseId: "a", warehouseName: "São Paulo", quantity: 20 },
+      { warehouseId: "b", warehouseName: "Hong Kong", quantity: 10 },
+    ];
+    expect(restoreOrder(storedOrder({ allocations })).allocations).toStrictEqual(allocations);
   });
 
   test("keeps historical facts that current commercial rules would not produce", () => {
@@ -301,7 +343,7 @@ describe("restoreOrder", () => {
         quantity,
         unitPrice: "1.00",
         discountAmount: "0.00",
-        allocations: [{ warehouseId: "a", quantity }],
+        allocations: [{ warehouseId: "a", warehouseName: "Los Angeles", quantity }],
       }),
     );
     expect(order.quantity).toBe(quantity);
@@ -312,7 +354,10 @@ describe("restoreOrder", () => {
     "rejects stored quantity %s",
     (quantity) => {
       expectInvalidStored(
-        { quantity, allocations: [{ warehouseId: "a", quantity: 1 }] },
+        {
+          quantity,
+          allocations: [{ warehouseId: "a", warehouseName: "Los Angeles", quantity: 1 }],
+        },
         /quantity/,
       );
     },
@@ -335,8 +380,8 @@ describe("restoreOrder", () => {
     expectInvalidStored(
       {
         allocations: [
-          { warehouseId: "", quantity: 20 },
-          { warehouseId: "b", quantity: 10 },
+          { warehouseId: "", warehouseName: "Los Angeles", quantity: 20 },
+          { warehouseId: "b", warehouseName: "New York", quantity: 10 },
         ],
       },
       /warehouse id/,
@@ -344,8 +389,27 @@ describe("restoreOrder", () => {
     expectInvalidStored(
       {
         allocations: [
-          { warehouseId: "a", quantity: 0 },
-          { warehouseId: "b", quantity: 30 },
+          { warehouseId: "a", warehouseName: "", quantity: 20 },
+          { warehouseId: "b", warehouseName: "New York", quantity: 10 },
+        ],
+      },
+      /warehouse name/,
+    );
+    expectInvalidStored(
+      {
+        // A stored allocation with no name at all, as only a cast can build.
+        allocations: [
+          { warehouseId: "a", quantity: 20 } as unknown as OrderAllocation,
+          { warehouseId: "b", warehouseName: "New York", quantity: 10 },
+        ],
+      },
+      /warehouse name/,
+    );
+    expectInvalidStored(
+      {
+        allocations: [
+          { warehouseId: "a", warehouseName: "Los Angeles", quantity: 0 },
+          { warehouseId: "b", warehouseName: "New York", quantity: 30 },
         ],
       },
       /positive integer/,
@@ -353,8 +417,8 @@ describe("restoreOrder", () => {
     expectInvalidStored(
       {
         allocations: [
-          { warehouseId: "a", quantity: 19.5 },
-          { warehouseId: "b", quantity: 10.5 },
+          { warehouseId: "a", warehouseName: "Los Angeles", quantity: 19.5 },
+          { warehouseId: "b", warehouseName: "New York", quantity: 10.5 },
         ],
       },
       /positive integer/,
@@ -362,14 +426,14 @@ describe("restoreOrder", () => {
     expectInvalidStored(
       {
         allocations: [
-          { warehouseId: "a", quantity: 20 },
-          { warehouseId: "a", quantity: 10 },
+          { warehouseId: "a", warehouseName: "Los Angeles", quantity: 20 },
+          { warehouseId: "a", warehouseName: "Los Angeles", quantity: 10 },
         ],
       },
       /more than once/,
     );
     expectInvalidStored(
-      { allocations: [{ warehouseId: "a", quantity: 20 }] },
+      { allocations: [{ warehouseId: "a", warehouseName: "Los Angeles", quantity: 20 }] },
       /sum to the ordered quantity/,
     );
   });
@@ -395,7 +459,7 @@ describe("restoreOrder", () => {
       {
         quantity: 66_666_666,
         unitPrice: "151.00",
-        allocations: [{ warehouseId: "a", quantity: 66_666_666 }],
+        allocations: [{ warehouseId: "a", warehouseName: "Los Angeles", quantity: 66_666_666 }],
       },
       /Merchandise subtotal is not a storable amount/,
     );
@@ -405,7 +469,7 @@ describe("restoreOrder", () => {
         // 66,666,666 x 150.00 = 9,999,999,900.00; plus 100.00 exceeds 9,999,999,999.99.
         discountAmount: "0.00",
         shippingCost: "100.00",
-        allocations: [{ warehouseId: "a", quantity: 66_666_666 }],
+        allocations: [{ warehouseId: "a", warehouseName: "Los Angeles", quantity: 66_666_666 }],
       },
       /Order total is not a storable amount/,
     );
