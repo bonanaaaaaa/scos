@@ -247,10 +247,6 @@ list is in [README, Limitations and next steps](README.md#limitations-and-next-s
 
 **Known gaps in what is built:**
 
-- **Hosted-only behavior is not verified.** Hyperdrive transaction-mode pooling,
-  query caching staying disabled, the telemetry flush under `ctx.waitUntil`, and
-  Workers Logs ingestion are all reasoned about but not proven against the
-  account — listed in [docs/observability.md](docs/observability.md#workers-limitations).
 - **AWS Lambda is deferred** (#14, #16). The design and the per-endpoint
   composition roots are kept; no handler or packaging exists.
 - **A silently dropped database connection is unbounded** until the OS reports
