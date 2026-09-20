@@ -33,17 +33,30 @@ either in this repository or reachable at the hosted URL.
 **Pricing and shipping rules, as implemented**
 
 ```text
-subtotal   = 150 · q
-discount   = subtotal · r        r ∈ {0, .05, .10, .15, .20} at q ≥ {0, 25, 50, 100, 250}
-discounted = subtotal − discount
-shipping   = round_half_up( Σᵢ qᵢ · 0.365 kg · 0.01 $/kg/km · dᵢ , 2 )
+subtotal   = 150 * quantity
+discount   = subtotal * rate
+discounted = subtotal - discount
+
+rate = 0% below 25 units, 5% at 25+, 10% at 50+, 15% at 100+, 20% at 250+
+
+for each warehouse in the plan:
+  cost     = units * 0.365 kg * 0.01 per kg per km * distance_km
+shipping   = round(sum of those costs, 2 decimals)
+
 total      = discounted + shipping
-valid      ⇔ Σ qᵢ = q  ∧  shipping ≤ 0.15 · discounted
+
+valid      when every unit is allocated
+           and shipping <= 0.15 * discounted
 ```
 
-Distance `dᵢ` is the great-circle (Haversine) distance from warehouse `i` to the
-destination, on a sphere of radius 6 371.0088 km (the IUGG mean radius R1 of
-GRS80) — [`distance.ts`](packages/core/src/domain/shipping/distance.ts).
+For example, 150 units to Berlin served from Warsaw (515 km): subtotal
+`150 * 150 = 22500.00`, discount `22500 * 0.15 = 3375.00`, discounted
+`19125.00`, shipping `150 * 0.365 * 0.01 * 515 = 281.96`, total `19406.96`.
+Shipping is 1.5% of the discounted total, well inside the 15% limit.
+
+`distance_km` is the great-circle (Haversine) distance from the warehouse to
+the destination, on a sphere of radius 6 371.0088 km (the IUGG mean radius R1
+of GRS80) — [`distance.ts`](packages/core/src/domain/shipping/distance.ts).
 
 **Multi-warehouse allocation at lowest cost.** An order is filled nearest-first
 across the six warehouses, each taking `min(remaining, available)`, with ties
