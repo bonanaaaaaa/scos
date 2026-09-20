@@ -71,7 +71,19 @@ function selectedProjects(argv: readonly string[]): string[] {
 }
 
 const selected = selectedProjects(process.argv);
-const runs = (project: string) => selected.length === 0 || selected.includes(project);
+
+/**
+ * Which projects this invocation runs.
+ *
+ * With no `--project`, only `acceptance` runs. Playwright's own default would
+ * be "every project", which here would include `hosted` — and that submits a
+ * real Order against the live demonstration, permanently consuming one unit
+ * of a finite, never-replenished inventory. A bare `playwright test` (or
+ * `--grep`, `--last-failed`, `--ui`, `--shard` with no project) must not be
+ * able to spend it by accident, so the hosted project is opt-in only.
+ */
+const runs = (project: string) =>
+  selected.length === 0 ? project === "acceptance" : selected.includes(project);
 
 /**
  * Reports go to their own directory per selection, so the acceptance and
@@ -121,6 +133,12 @@ export default defineConfig({
     // a run that ends by launching a web server is a bad citizen in CI.
     ["html", { outputFolder: `${reportDirectory}/html`, open: "never" }],
   ],
+  // The hosted project is present only when it is asked for by name. Listing
+  // it unconditionally would make a bare `playwright test` (or `--grep`,
+  // `--last-failed`, `--ui`, `--shard` with no project) run it, and that
+  // submits a real Order against the live demonstration, permanently spending
+  // one unit of an inventory that is never replenished. Gating `globalSetup`
+  // alone does not prevent this: project collection is separate from it.
   projects: [
     {
       name: ACCEPTANCE,
@@ -131,18 +149,27 @@ export default defineConfig({
       // deduction behind a green run.
       retries: 0,
     },
-    {
-      name: HOSTED,
-      testDir: "./test/hosted",
-      testMatch: /.*\.hosted\.test\.ts$/,
-      // Reading the remote inventory takes a bounded series of round trips,
-      // and the first of them may wait for a cold start.
-      timeout: 180_000,
-      // Every assertion is a round trip to a remote Worker over the public
-      // internet, which may cold-start or drop a connection. A retry costs no
-      // stock: the run's submissionIds are stable (see SCOS_HOSTED_RUN_ID),
-      // so a repeated submission is a replay of the same Order.
-      retries: 1,
-    },
+    ...(selected.includes(HOSTED)
+      ? [
+          {
+            name: HOSTED,
+            testDir: "./test/hosted",
+            testMatch: /.*\.hosted\.test\.ts$/,
+            // Reading the remote inventory takes a bounded series of round trips,
+            // and the first of them may wait for a cold start.
+            timeout: 180_000,
+            // No retries, deliberately. A retry here costs no stock — the run's
+            // submissionIds are stable (see SCOS_HOSTED_RUN_ID), so a repeated
+            // submission replays the same Order — but it also cannot go green once
+            // the Order has been submitted: the replay deducts nothing, so
+            // "the accepted Order deducted its allocation" asserts stock <= stock - 1
+            // and fails every time. Worse, it fails reporting a deduction problem,
+            // which is exactly the bug class this suite exists to detect. A retry
+            // would only help for a failure before the submission, and a misleading
+            // red run is a poor trade for that. This suite is run by hand; rerun it.
+            retries: 0,
+          },
+        ]
+      : []),
   ],
 });

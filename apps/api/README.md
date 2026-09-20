@@ -591,7 +591,7 @@ DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
 
 # The QA acceptance suite against this API, served as a real process.
 DATABASE_TEST_URL=postgresql://scos_test:scos_test@localhost:5433/scos_test \
-  pnpm exec turbo run test:integration --filter=@scos/api-acceptance
+  pnpm exec turbo run test:acceptance --filter=@scos/api-acceptance
 ```
 
 The integration tests (`test/*.integration.test.ts`) create an isolated,

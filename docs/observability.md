@@ -508,7 +508,7 @@ received `POST /v1/traces` and `POST /v1/metrics` with
 | Workers: the `fetch` handler (config once per isolate, `waitUntil` flush, concurrent context) and the composition                                                                                                       | `src/entrypoints/worker.workers.test.ts`, `src/composition/worker.workers.test.ts` |
 | Workers: the Wrangler bundle (no Node-only telemetry, Prisma edge runtime, size)                                                                                                                                        | `src/entrypoints/worker.bundle.test.ts`                                            |
 | Workers against PostgreSQL through Hyperdrive: every endpoint, spans, metrics, logs, concurrent submissions, a collector that is down                                                                                   | `test/workers/worker.workers.integration.test.ts` (`pnpm test:integration`)        |
-| The served API end to end: W3C continuation, span and log correlation, concurrent-request isolation, the submission counter, the request-duration histogram, no request data or connection details, an unexpected error | `apps/api-acceptance/test/telemetry.acceptance.test.ts` (`pnpm test:integration`)  |
+| The served API end to end: W3C continuation, span and log correlation, concurrent-request isolation, the submission counter, the request-duration histogram, no request data or connection details, an unexpected error | `apps/api-acceptance/test/telemetry.acceptance.test.ts` (`pnpm test:acceptance`)   |
 
 ### Port contract tests
 

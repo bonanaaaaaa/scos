@@ -45,8 +45,6 @@
  * @module
  */
 
-import { randomUUID } from "node:crypto";
-
 import SwaggerParser from "@apidevtools/swagger-parser";
 import { expect } from "@playwright/test";
 import addFormatsModule from "ajv-formats";
@@ -123,7 +121,21 @@ export function hostedApi(): ApiUnderTest {
  * ../../playwright.config.ts seeds it in the main process; every worker
  * inherits it through the environment.
  */
-const RUN_ID = process.env.SCOS_HOSTED_RUN_ID ?? randomUUID();
+const RUN_ID = (() => {
+  const seeded = process.env.SCOS_HOSTED_RUN_ID;
+  if (seeded === undefined || seeded === "") {
+    // Never fall back to a fresh id. ../../playwright.config.ts always seeds
+    // this, so an empty value means the suite is running some other way — and
+    // minting one here is the single path that could submit a second Order and
+    // spend another unit of an inventory that is never replenished. Fail
+    // instead, loudly, before any request is made.
+    throw new Error(
+      "SCOS_HOSTED_RUN_ID is not set. Run this suite through its Playwright " +
+        "config (pnpm --filter @scos/api-acceptance run test:hosted), which seeds it.",
+    );
+  }
+  return seeded;
+})();
 
 /**
  * A submissionId no earlier run can have used, so re-running this suite never
