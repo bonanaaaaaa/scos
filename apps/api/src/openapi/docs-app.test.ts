@@ -17,6 +17,11 @@ function app() {
 }
 
 describe("documentation routes", () => {
+  /**
+   * The developer-owned home of "the served document is `renderOpenApiDocument()`":
+   * the QA acceptance suite never imports API source, so it pins the served
+   * document to the built `dist/openapi.json` artifact instead.
+   */
   test("GET /openapi.json serves the exported document byte for byte", async () => {
     const combined = app();
     for (let request = 0; request < 2; request += 1) {
@@ -58,7 +63,9 @@ describe("documentation routes", () => {
       createSubmitOrderApp({ submitOrder: noSubmit, logger: fakeLogger() }),
     ]) {
       for (const path of ["/openapi.json", "/docs"]) {
-        expect((await standalone.request(path)).status).toBe(404);
+        const response = await standalone.request(path);
+        expect(response.status).toBe(404);
+        expect((await json(response, errorResponseSchema)).error.code).toBe("NOT_FOUND");
       }
     }
   });

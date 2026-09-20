@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test:integration": {
+      "dependsOn": ["^build", "@scos/api#build"],
+      "cache": false,
+      "env": ["API_BASE_URL", "DATABASE_TEST_URL", "DATABASE_URL"],
+      "persistent": false
+    }
+  }
+}

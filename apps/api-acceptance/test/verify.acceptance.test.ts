@@ -2,43 +2,40 @@
  * QA API acceptance: GET /health and POST /api/v1/orders/verify over real HTTP.
  *
  * Literal amounts below are hand-computed from the PRD rules and seed data;
- * `expectedEstimate` is the independent oracle in ./support.ts.
+ * `expectedEstimate` is the independent oracle in ./support/oracle.ts.
+ *
+ * Verification is read-only, so the seed state is restored once for the file
+ * (as the old suite did) rather than before every test; the run shares one
+ * served API and one database, and `fileParallelism: false` keeps files apart.
+ *
+ * @module
  */
 
+import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { type TestDatabase, createTestDatabase, readState } from "../support/database";
+import { openPool, readState, resetDatabase } from "./support/database";
+import { expectJson, get, postJson } from "./support/http";
 import {
   ABOVE_LIMIT,
   AT_LIMIT,
-  AT_PARIS,
   BELOW_LIMIT,
-  FAR_AWAY,
   type LimitDestination,
-  MANHATTAN,
-  MAX_QUANTITY,
-  type RunningApi,
-  TOTAL_STOCK,
-  expectJson,
   expectedEstimate,
-  get,
-  postJson,
-  startApi,
-  warehouse,
-} from "./support";
+} from "./support/oracle";
+import { AT_PARIS, FAR_AWAY, MANHATTAN, MAX_QUANTITY, TOTAL_STOCK, warehouse } from "./support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
 
-let db: TestDatabase;
-let api: RunningApi;
+const api = sharedApi();
+let pool: Pool;
 
 beforeAll(async () => {
-  db = await createTestDatabase();
-  await db.reset();
-  api = await startApi(db.url);
+  pool = openPool(acceptanceDatabaseUrl());
+  await resetDatabase(pool);
 });
 
 afterAll(async () => {
-  await api?.stop();
-  await db?.drop();
+  await pool.end();
 });
 
 const verify = (body: unknown) => postJson(api, "/api/v1/orders/verify", body);
@@ -123,7 +120,7 @@ describe("POST /api/v1/orders/verify: valid estimates", () => {
   });
 
   test("verification stores nothing and changes no row", async () => {
-    const before = await readState(db.pool);
+    const before = await readState(pool);
     for (const body of [
       { quantity: 30, ...MANHATTAN },
       { quantity: 1, ...FAR_AWAY },
@@ -131,7 +128,7 @@ describe("POST /api/v1/orders/verify: valid estimates", () => {
     ]) {
       expectJson(await verify(body), 200);
     }
-    expect(await readState(db.pool)).toStrictEqual(before);
+    expect(await readState(pool)).toStrictEqual(before);
   });
 });
 
@@ -269,8 +266,9 @@ describe("POST /api/v1/orders/verify: coordinate endpoints are accepted", () => 
 
 describe("POST /api/v1/orders/verify: shipping limit boundary (1 unit, limit 22.50)", () => {
   // 15% of 150.00 = 22.50. Each destination is found and checked by the
-  // independent oracle in ./support.ts: one warehouse, a distance in the middle
-  // of the charge's rounding window, and every other warehouse >= 100 km farther.
+  // independent oracle in ./support/oracle.ts: one warehouse, a distance in the
+  // middle of the charge's rounding window, and every other warehouse >= 100 km
+  // farther.
   const coordinates = ({ latitude, longitude }: LimitDestination) => ({ latitude, longitude });
 
   test.each([

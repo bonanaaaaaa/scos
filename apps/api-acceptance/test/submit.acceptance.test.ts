@@ -1,47 +1,58 @@
 /**
  * QA API acceptance: POST /api/v1/orders over real HTTP — acceptance, repeats,
  * conflicts, business rejections and submissionId reuse.
+ *
+ * Every expectation comes from the independent oracle in ./support/oracle.ts,
+ * and stock is arranged and inspected through PostgreSQL alone, so nothing
+ * here agrees with the implementation by construction. The restart-recovery
+ * scenario needs listeners it can kill, so it starts its own API processes
+ * from the built artifact over the same database as the shared server.
+ *
+ * @module
  */
 
+import type { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import { type TestDatabase, createTestDatabase, readState, stockById } from "../support/database";
+import { spawnApi, stopAllApiProcesses } from "./support/api-process";
+import { openPool, readState, resetDatabase, stockById } from "./support/database";
+import { expectErrorEnvelope, expectJson, postJson } from "./support/http";
 import {
   ABOVE_LIMIT,
   AT_LIMIT,
+  afterDeducting,
+  expectedEstimate,
+  expectedOrder,
+} from "./support/oracle";
+import {
   AT_PARIS,
   FAR_AWAY,
   MANHATTAN,
   ORDER_KEYS,
   ORDER_NUMBER,
-  type RunningApi,
   TOTAL_STOCK,
   WAREHOUSES,
-  afterDeducting,
-  expectErrorEnvelope,
-  expectJson,
-  expectedEstimate,
-  expectedOrder,
-  postJson,
-  startApi,
   warehouse,
-} from "./support";
+} from "./support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
 
-let db: TestDatabase;
-let api: RunningApi;
+const api = sharedApi();
+let pool: Pool;
 
 beforeAll(async () => {
-  db = await createTestDatabase();
-  api = await startApi(db.url);
+  pool = openPool(acceptanceDatabaseUrl());
 });
 
 afterAll(async () => {
-  await api?.stop();
-  await db?.drop();
+  await pool.end();
 });
 
+// Any extra listener a test started, in case an assertion threw before its
+// own cleanup ran.
+afterAll(stopAllApiProcesses);
+
 beforeEach(async () => {
-  await db.reset();
+  await resetDatabase(pool);
 });
 
 const submit = (body: unknown) => postJson(api, "/api/v1/orders", body);
@@ -73,7 +84,7 @@ describe("201 accepted", () => {
     expect(body).toStrictEqual(expectedOrder("qa-accept-1", 30, MANHATTAN));
     expect(response.text).not.toMatch(/"id"/);
 
-    expect(await stockById(db.pool)).toStrictEqual({
+    expect(await stockById(pool)).toStrictEqual({
       ...seededStock(),
       [warehouse("New York").id]: 578 - 30,
     });
@@ -134,13 +145,13 @@ describe("repeated submissionId", () => {
     const request = { submissionId: "qa-repeat", quantity: 50, ...MANHATTAN };
     const first = await submit(request);
     expectJson(first, 201);
-    const before = await readState(db.pool);
+    const before = await readState(pool);
 
     const repeat = await submit(request);
 
     expectJson(repeat, 201);
     expect(repeat.text).toBe(first.text);
-    expect(await readState(db.pool)).toStrictEqual(before);
+    expect(await readState(pool)).toStrictEqual(before);
   });
 
   test("same input with fields in a different order is still a repeat", async () => {
@@ -163,7 +174,7 @@ describe("repeated submissionId", () => {
   ])("changed %s is 409 with no Order details and nothing changed", async (_field, changed) => {
     const accepted = await submit({ submissionId: "qa-conflict", quantity: 5, ...AT_PARIS });
     const order = expectJson(accepted, 201) as { orderNumber: string };
-    const before = await readState(db.pool);
+    const before = await readState(pool);
 
     const conflict = await submit({ submissionId: "qa-conflict", ...changed });
 
@@ -173,7 +184,7 @@ describe("repeated submissionId", () => {
     expect(conflict.text).not.toContain(order.orderNumber);
     expect(conflict.text).not.toMatch(/orderNumber|allocations|orderTotal|estimate/);
     expect(error.message).not.toContain(order.orderNumber);
-    expect(await readState(db.pool)).toStrictEqual(before);
+    expect(await readState(pool)).toStrictEqual(before);
 
     // The original Order is still returned for its own input.
     const repeat = await submit({ submissionId: "qa-conflict", quantity: 5, ...AT_PARIS });
@@ -196,7 +207,7 @@ describe("repeated submissionId", () => {
 
 describe("422 business rejections", () => {
   test("INSUFFICIENT_STOCK: error plus the estimate, nothing stored", async () => {
-    const before = await readState(db.pool);
+    const before = await readState(pool);
     const response = await submit({
       submissionId: "qa-short",
       quantity: TOTAL_STOCK + 1,
@@ -221,11 +232,11 @@ describe("422 business rejections", () => {
       orderTotal: null,
       allocations: [],
     });
-    expect(await readState(db.pool)).toStrictEqual(before);
+    expect(await readState(pool)).toStrictEqual(before);
   });
 
   test("SHIPPING_EXCEEDS_LIMIT: error plus the estimate with every amount, nothing stored", async () => {
-    const before = await readState(db.pool);
+    const before = await readState(pool);
     const response = await submit({ submissionId: "qa-far", quantity: 1, ...FAR_AWAY });
 
     const body = expectJson(response, 422) as Record<string, Record<string, unknown>>;
@@ -234,7 +245,7 @@ describe("422 business rejections", () => {
     expect(body.error?.code).toBe("SHIPPING_EXCEEDS_LIMIT");
     expect(body.estimate).toStrictEqual(expectedEstimate(1, FAR_AWAY));
     expect(body.estimate).toMatchObject({ shippingCost: "34.28", orderTotal: "184.28" });
-    expect(await readState(db.pool)).toStrictEqual(before);
+    expect(await readState(pool)).toStrictEqual(before);
   });
 
   test("the 422 estimate equals what /api/v1/orders/verify returns for the same input", async () => {
@@ -275,8 +286,8 @@ describe("422 business rejections", () => {
 });
 
 describe("shipping limit boundary (1 unit, limit 22.50)", () => {
-  // Destinations from the independent oracle in ./support.ts (one warehouse,
-  // rounded shipping exactly 22.50 or 22.51).
+  // Destinations from the independent oracle in ./support/oracle.ts (one
+  // warehouse, rounded shipping exactly 22.50 or 22.51).
   test("shipping equal to the limit (22.50) is accepted: 201 and stock deducted", async () => {
     const destination = { latitude: AT_LIMIT.latitude, longitude: AT_LIMIT.longitude };
     const body = expectJson(
@@ -289,7 +300,7 @@ describe("shipping limit boundary (1 unit, limit 22.50)", () => {
       orderTotal: "172.50",
       allocations: [{ warehouseId: AT_LIMIT.warehouse.id, quantity: 1 }],
     });
-    expect(await stockById(db.pool)).toStrictEqual({
+    expect(await stockById(pool)).toStrictEqual({
       ...seededStock(),
       [AT_LIMIT.warehouse.id]: AT_LIMIT.warehouse.stock - 1,
     });
@@ -297,7 +308,7 @@ describe("shipping limit boundary (1 unit, limit 22.50)", () => {
 
   test("shipping one cent over the limit (22.51) is 422 SHIPPING_EXCEEDS_LIMIT, nothing stored", async () => {
     const destination = { latitude: ABOVE_LIMIT.latitude, longitude: ABOVE_LIMIT.longitude };
-    const before = await readState(db.pool);
+    const before = await readState(pool);
     const body = expectJson(
       await submit({ submissionId: "qa-above-limit", quantity: 1, ...destination }),
       422,
@@ -311,7 +322,7 @@ describe("shipping limit boundary (1 unit, limit 22.50)", () => {
       shippingCost: "22.51",
       orderTotal: "172.51",
     });
-    expect(await readState(db.pool)).toStrictEqual(before);
+    expect(await readState(pool)).toStrictEqual(before);
   });
 });
 
@@ -319,7 +330,9 @@ describe("restart recovery", () => {
   test("a repeat on a new listener over the same database returns the original Order byte for byte", async () => {
     const request = { submissionId: "qa-restart", quantity: 40, ...MANHATTAN };
 
-    const first = await startApi(db.url);
+    // Two listeners this test owns, over the same database as the shared
+    // server: the shared one must stay up for the rest of the run.
+    const first = await spawnApi({ databaseUrl: acceptanceDatabaseUrl() });
     let original;
     try {
       original = await postJson(first, "/api/v1/orders", request);
@@ -327,13 +340,13 @@ describe("restart recovery", () => {
       await first.stop();
     }
     expect(expectJson(original, 201)).toStrictEqual(expectedOrder("qa-restart", 40, MANHATTAN));
-    const before = await readState(db.pool);
+    const before = await readState(pool);
     expect(before.orders).toHaveLength(1);
 
     // The first listener is closed: its pool and Prisma client are gone.
     await expect(fetch(`${first.baseUrl}/health`)).rejects.toThrow();
 
-    const second = await startApi(db.url);
+    const second = await spawnApi({ databaseUrl: acceptanceDatabaseUrl() });
     try {
       const repeat = await postJson(second, "/api/v1/orders", request);
       expectJson(repeat, 201);
@@ -341,8 +354,8 @@ describe("restart recovery", () => {
     } finally {
       await second.stop();
     }
-    expect(await readState(db.pool)).toStrictEqual(before);
-    expect(await stockById(db.pool)).toStrictEqual({
+    expect(await readState(pool)).toStrictEqual(before);
+    expect(await stockById(pool)).toStrictEqual({
       ...seededStock(),
       [warehouse("New York").id]: 578 - 40,
     });

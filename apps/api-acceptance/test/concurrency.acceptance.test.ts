@@ -1,47 +1,41 @@
 /**
  * QA API acceptance: a bounded batch of concurrent POST /api/v1/orders over
- * the real HTTP listener and an isolated database with scarce stock.
+ * the served API and the acceptance database with scarce stock.
  *
  * Only invariants are asserted (no oversell, no negative stock, at most one
  * Order per submissionId, documented statuses only). Timing is measured and
  * reported on one `SCOS_CONCURRENCY_REPORT ` line; no latency or throughput
  * target is asserted or implied.
+ *
+ * @module
  */
 
+import type { Pool } from "pg";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 import {
-  type TestDatabase,
-  createTestDatabase,
   lockWaiters,
+  openPool,
   readState,
+  resetDatabase,
   setAllStock,
   stockById,
-} from "../support/database";
-import {
-  AT_PARIS,
-  type HttpResult,
-  type RunningApi,
-  expectErrorEnvelope,
-  expectJson,
-  expectedOrder,
-  postJson,
-  startApi,
-  warehouse,
-} from "./support";
+} from "./support/database";
+import { type HttpResult, expectErrorEnvelope, expectJson, postJson } from "./support/http";
+import { expectedOrder } from "./support/oracle";
+import { AT_PARIS, warehouse } from "./support/prd";
+import { acceptanceDatabaseUrl, sharedApi } from "./support/shared-api";
 
-let db: TestDatabase;
-let api: RunningApi;
+const api = sharedApi();
+let pool: Pool;
 
 beforeAll(async () => {
-  db = await createTestDatabase();
-  await db.reset();
-  api = await startApi(db.url);
+  pool = openPool(acceptanceDatabaseUrl());
+  await resetDatabase(pool);
 });
 
 afterAll(async () => {
-  await api?.stop();
-  await db?.drop();
+  await pool.end();
 });
 
 /** Fixed parameters of the measured batch. */
@@ -95,8 +89,8 @@ const round = (value: number) => Math.round(value * 100) / 100;
 
 test("a bounded concurrent batch never oversells, never duplicates an Order and returns only documented statuses", async () => {
   const paris = warehouse("Paris").id;
-  await setAllStock(db.pool, { [paris]: PARAMETERS.initialStock.Paris });
-  const stockBefore = await stockById(db.pool);
+  await setAllStock(pool, { [paris]: PARAMETERS.initialStock.Paris });
+  const stockBefore = await stockById(pool);
   const initialTotal = Object.values(stockBefore).reduce((sum, value) => sum + value, 0);
   expect(initialTotal).toBe(PARAMETERS.initialStock.Paris);
 
@@ -124,7 +118,7 @@ test("a bounded concurrent batch never oversells, never duplicates an Order and 
   let samples = 0;
   const sampler = (async () => {
     while (sampling) {
-      peakLockWaiters = Math.max(peakLockWaiters, await lockWaiters(db.pool));
+      peakLockWaiters = Math.max(peakLockWaiters, await lockWaiters(pool));
       samples += 1;
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
@@ -186,7 +180,7 @@ test("a bounded concurrent batch never oversells, never duplicates an Order and 
   const acceptedIds = [...acceptedOrders.values()].map((order) => order.submissionId);
   expect(new Set(acceptedIds).size).toBe(acceptedIds.length);
   expect(sharedAcceptedTexts.size).toBeLessThanOrEqual(1);
-  const state = await readState(db.pool);
+  const state = await readState(pool);
   const keys = state.orders.map((order) => order.submission_key);
   expect(new Set(keys).size).toBe(keys.length);
   expect(state.orders.map((order) => order.order_number).sort()).toStrictEqual(
@@ -194,7 +188,7 @@ test("a bounded concurrent batch never oversells, never duplicates an Order and 
   );
 
   // No negative stock; accepted units equal the stock consumed and never exceed it.
-  const stockAfter = await stockById(db.pool);
+  const stockAfter = await stockById(pool);
   for (const value of Object.values(stockAfter)) {
     expect(value).toBeGreaterThanOrEqual(0);
   }

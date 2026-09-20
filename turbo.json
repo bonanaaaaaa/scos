@@ -36,7 +36,7 @@
     "test:integration": {
       "dependsOn": ["build", "^build"],
       "cache": false,
-      "env": ["DATABASE_TEST_URL", "DATABASE_URL"],
+      "env": ["API_BASE_URL", "DATABASE_TEST_URL", "DATABASE_URL"],
       "persistent": false
     },
     "openapi:export": {
