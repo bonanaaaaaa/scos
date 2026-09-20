@@ -138,6 +138,11 @@ lifecycle, expiry and release — is a much larger system, and the brief asks fo
 submission-time amounts, not held stock. Advisory verification is the honest
 model for what the brief describes.
 
+The [verification and submission sequence](docs/design-decisions.md#verification-and-submission-sequence)
+diagram shows this end to end: the advisory estimate that reserves nothing,
+another rep consuming stock in between, and the single transaction that locks
+the warehouse rows, recalculates and commits.
+
 ### Submission is idempotent by client key — [ADR 0004](docs/adr/0004-deduplicate-accepted-orders.md)
 
 A double-clicked button or a retry after a lost response must not create a second
