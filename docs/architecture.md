@@ -7,32 +7,7 @@ database and the hosting runtime, is a replaceable attachment on the outside. Th
 shape has no meaning of its own; it is drawn with many sides because an
 application can have many plugs.
 
-```mermaid
-flowchart LR
-    subgraph driving["Driving adapters (call in)"]
-        api["Hono HTTP API<br/>apps/api"]
-        worker["Cloudflare Worker<br/>apps/api (workerd)"]
-        lambda["Lambda handler<br/>(deferred, #14)"]
-    end
-
-    subgraph core["packages/core"]
-        direction TB
-        app["application/<br/>VerifyOrder, SubmitOrder<br/>(orchestration)"]
-        ports["application/ports<br/>InventoryReader, SubmissionStore,<br/>SubmissionTransaction<br/>(interfaces)"]
-        domain["domain/<br/>Money, Quantity, Destination, pricing,<br/>distance, allocation, estimate, Order<br/>(pure rules)"]
-        app --> domain
-        app --> ports
-    end
-
-    subgraph driven["Driven adapters (called out)"]
-        db["Prisma / PostgreSQL<br/>packages/persistence"]
-    end
-
-    api --> app
-    worker --> app
-    lambda --> app
-    db -. implements .-> ports
-```
+![SCOS hexagonal architecture: driving adapters, the core, and the driven adapter](images/hexagonal-architecture.svg)
 
 ## Repository map
 
@@ -151,6 +126,17 @@ Two splits are deliberate and easy to miss:
      deployment pipeline is #15, and the hosted demonstration is #33.
    - **Driven adapters** are called by the application. `packages/persistence`
      implements the ports with Prisma and SQL.
+
+## Numeric policy across the layers
+
+| Topic              | Rule                                                                                                                                                                                                           | Details                                                                     |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Decimal arithmetic | Money uses an isolated `decimal.js` clone with 40 significant digits and `ROUND_HALF_UP`; constants are built from strings. Discounts are exact at cents; only the shipping charge is rounded, once, to cents. | [core numeric policy](../packages/core/README.md#numeric-policy)            |
+| Money on the wire  | Decimal strings with two fractional digits (`"150.00"`); `discountRate` is a two-decimal string; `shippingCost` and `orderTotal` are `null` for insufficient stock.                                            | [API endpoints](../apps/api/README.md#endpoints)                            |
+| Distance           | Haversine in JavaScript `number` with Earth radius `EARTH_RADIUS_KM = 6371.0088` km (IUGG mean radius); `distanceKm` is returned unrounded.                                                                    | [core numeric policy](../packages/core/README.md#numeric-policy)            |
+| Quantity           | JSON integer from 1 to `MAX_QUANTITY` = 66,666,666 (floor(9,999,999,999.99 / 150)), a storage-representability bound rather than a business cap; larger values are `400`.                                      | [supported input bounds](../packages/core/README.md#supported-input-bounds) |
+| Coordinates        | JSON numbers, latitude -90 to 90 and longitude -180 to 180 inclusive, never coerced from strings; stored as `double precision`.                                                                                | [request validation](../apps/api/README.md#request-validation)              |
+| Stored money       | `NUMERIC(12,2)`, at most 9,999,999,999.99 and nonnegative; `discount_rate` is `NUMERIC(3,2)`. Out-of-range amounts fail instead of being rounded.                                                              | [money and coordinates](database-schema.md#money-and-coordinates)           |
 
 ## The dependency rule
 

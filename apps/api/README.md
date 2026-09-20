@@ -547,12 +547,125 @@ limit), for tests.
 
 ## Running
 
+`DATABASE_URL` is required: the server validates it at startup and exits
+nonzero without listening if it is missing or malformed. Turbo builds the
+workspace dependencies first.
+
 ```sh
 export DATABASE_URL=postgresql://scos:scos@localhost:5432/scos
 pnpm db:seed        # migrate and seed warehouses
 pnpm api:dev        # watch mode (or ./dev.sh, which sets DATABASE_URL)
-pnpm api:start      # built bundle
+pnpm api:start      # built bundle, production-style
 ```
+
+The server listens on port 3000 unless `PORT` says otherwise
+(`PORT=8080 pnpm api:dev`). `curl http://localhost:3000/health` returns
+`{"status":"ok"}` and does not need PostgreSQL to be reachable.
+
+Swagger UI is at `/docs` and the OpenAPI 3.1 specification at `/openapi.json`.
+The specification is generated from the route contracts and never committed;
+`pnpm build` writes the same bytes to `dist/openapi.json`, and
+`pnpm openapi:export` writes it on demand without a server or database.
+
+The same app runs as a Cloudflare Worker locally through Wrangler with a local
+Hyperdrive binding (`pnpm --filter @scos/api dev:worker`) — see
+[Cloudflare Worker](#cloudflare-worker).
+
+## Try it with curl
+
+These requests run against a freshly seeded database and the API on port 3000 (`BASE=http://localhost:3000`; use the URL `./dev.sh` prints instead if it chose another port). The amounts below are the actual responses; `orderNumber` is random, and later orders change stock and therefore amounts. Field meanings, every status code and the validation rules are in [Endpoints](#endpoints).
+
+```sh
+BASE=http://localhost:3000
+```
+
+Verify an order (advisory; stores and reserves nothing). 150 units to Berlin, served from the Warsaw warehouse with a 15% discount:
+
+```sh
+curl -sS "$BASE/api/v1/orders/verify" -H 'Content-Type: application/json' \
+  -d '{"quantity":150,"latitude":52.52,"longitude":13.405}'
+```
+
+```json
+{
+  "valid": true,
+  "reason": null,
+  "quantity": 150,
+  "destination": { "latitude": 52.52, "longitude": 13.405 },
+  "merchandiseSubtotal": "22500.00",
+  "discountRate": "0.15",
+  "discountAmount": "3375.00",
+  "discountedMerchandiseTotal": "19125.00",
+  "shippingCost": "281.96",
+  "orderTotal": "19406.96",
+  "allocations": [
+    {
+      "warehouseId": "01996000-0000-7000-8000-000000000005",
+      "quantity": 150,
+      "distanceKm": 514.9927163724758
+    }
+  ]
+}
+```
+
+Submit it with a client-generated `submissionId` (any 1-255 character string; generate a new one per order). `201 Created` returns the accepted Order and deducts 150 units of stock:
+
+```sh
+curl -sS -w '\nHTTP %{http_code}\n' "$BASE/api/v1/orders" -H 'Content-Type: application/json' \
+  -d '{"submissionId":"checkout-7f3a-attempt-1","quantity":150,"latitude":52.52,"longitude":13.405}'
+```
+
+```text
+{"orderNumber":"SO-2EP5S908HX6Y","submissionId":"checkout-7f3a-attempt-1","quantity":150,"destination":{"latitude":52.52,"longitude":13.405},"unitPrice":"150.00","merchandiseSubtotal":"22500.00","discountRate":"0.15","discountAmount":"3375.00","discountedMerchandiseTotal":"19125.00","shippingCost":"281.96","orderTotal":"19406.96","allocations":[{"warehouseId":"01996000-0000-7000-8000-000000000005","quantity":150}]}
+HTTP 201
+```
+
+Repeat exactly the same request (a double click, or a retry after a lost response). It returns `201` with the original Order, byte for byte, including the same `orderNumber`; no second Order is stored and stock is not deducted again.
+
+Reuse the `submissionId` with a different body (here 151 units). Nothing is stored or revealed about the original Order:
+
+```sh
+curl -sS -w '\nHTTP %{http_code}\n' "$BASE/api/v1/orders" -H 'Content-Type: application/json' \
+  -d '{"submissionId":"checkout-7f3a-attempt-1","quantity":151,"latitude":52.52,"longitude":13.405}'
+```
+
+```text
+{"error":{"code":"SUBMISSION_ID_CONFLICT","message":"This submissionId was already used for an Order with a different quantity or destination. Use a new submissionId for a different order."}}
+HTTP 409
+```
+
+A business rejection: more units than the six warehouses hold together (2,556). `422` carries the estimate that caused it; nothing is stored, so the same `submissionId` may be sent again later. Shipping above 15% of the discounted merchandise total is the other `422` (`SHIPPING_EXCEEDS_LIMIT`, for example 10 units to Sydney at `-33.9, 151.2`).
+
+```sh
+curl -sS -w '\nHTTP %{http_code}\n' "$BASE/api/v1/orders" -H 'Content-Type: application/json' \
+  -d '{"submissionId":"checkout-9b21-attempt-1","quantity":3000,"latitude":52.52,"longitude":13.405}'
+```
+
+```text
+{"error":{"code":"INSUFFICIENT_STOCK","message":"Available stock cannot fulfil the requested quantity. Nothing was stored; the same submissionId may be reused."},"estimate":{"valid":false,"reason":"INSUFFICIENT_STOCK","quantity":3000,"destination":{"latitude":52.52,"longitude":13.405},"merchandiseSubtotal":"450000.00","discountRate":"0.20","discountAmount":"90000.00","discountedMerchandiseTotal":"360000.00","shippingCost":null,"orderTotal":null,"allocations":[]}}
+HTTP 422
+```
+
+Malformed input is `400 INVALID_REQUEST` with one issue per failing field; it stores nothing and consumes no `submissionId`. Malformed JSON, a missing `Content-Type: application/json`, unknown fields and strings for numbers (`"quantity":"10"`) are `400` too.
+
+```sh
+curl -sS -w '\nHTTP %{http_code}\n' "$BASE/api/v1/orders" -H 'Content-Type: application/json' \
+  -d '{"submissionId":" checkout-7f3a-attempt-1","quantity":0,"latitude":52.52,"longitude":13.405}'
+```
+
+```text
+{"error":{"code":"INVALID_REQUEST","message":"The request body is invalid.","issues":[{"path":["submissionId"],"message":"Submission key must not have leading or trailing whitespace."},{"path":["quantity"],"message":"Too small: expected number to be >0"}]}}
+HTTP 400
+```
+
+**Retrying.** After `503 SERVICE_UNAVAILABLE` (sent with `Retry-After: 1`), a `500`, a client timeout, a dropped connection or any other response you did not receive, send the same body with the same `submissionId` again. If an earlier attempt committed, you get that Order back (`201`) and stock is not deducted twice; otherwise the request is evaluated afresh. Use a new `submissionId` only for a new order. curl can do this itself, because `--retry` resends the same body on `500`, `503` and `504` (and timeouts), honouring `Retry-After`:
+
+```sh
+curl -sS --retry 3 --max-time 90 "$BASE/api/v1/orders" -H 'Content-Type: application/json' \
+  -d '{"submissionId":"checkout-7f3a-attempt-1","quantity":150,"latitude":52.52,"longitude":13.405}'
+```
+
+See [transient failures and retries](#transient-failures-and-retries) for what `503` and `500` do and do not guarantee.
 
 ## Tests
 

@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1050" height="960" viewBox="0 0 1050 960" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Verification and submission sequence</title>
+  <desc>A user verifies an order: the API reads inventory, calculates pricing and shipping and returns an estimate, creating no Order and reserving no stock. Meanwhile another user submits an order, which deducts stock. The first user then submits with a new submissionId. Inside one database transaction the API locks the warehouse rows in stable ID order, reads current inventory, looks up the submissionId and finds none, and recalculates. If the order is fulfillable and shipping is within the limit it saves the Order with its allocations and deducts stock; otherwise it saves nothing and stock is unchanged. The transaction commits and the API returns the accepted Order or a business rejection.</desc>
+  <style>
+    .bg { fill: #ffffff; }
+    .actor rect { fill: #F1EFE8; stroke: #5F5E5A; }
+    .actor .th { fill: #444441; }
+    .sys rect { fill: #E1F5EE; stroke: #0F6E56; }
+    .sys .th { fill: #085041; }
+    .db rect { fill: #EEEDFE; stroke: #534AB7; }
+    .db .th { fill: #3C3489; }
+    .th { font-size: 13px; font-weight: 600; }
+    .life { stroke: #B4B2A9; stroke-width: 1; stroke-dasharray: 4 5; }
+    .msg { stroke: #888780; stroke-width: 1.5; fill: none; }
+    .ret { stroke: #888780; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+    .lbl { font-size: 12px; fill: #444441; }
+    .phase { font-size: 10.5px; font-weight: 700; fill: #5F5E5A; letter-spacing: .09em; }
+    .boxlbl { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; fill: #085041; }
+    .altlbl { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; fill: #5F5E5A; }
+    .note rect { fill: #FDF0DC; stroke: #A66A00; }
+    .note text { font-size: 12px; fill: #7A4E00; }
+    .txn { fill: #0F6E56; fill-opacity: .045; stroke: #0F6E56; stroke-width: 1; stroke-dasharray: 6 4; stroke-opacity: .65; }
+    .alt { fill: none; stroke: #888780; stroke-width: 1; stroke-dasharray: 5 4; stroke-opacity: .7; }
+    .altdiv { stroke: #888780; stroke-width: 1; stroke-dasharray: 4 4; stroke-opacity: .7; }
+    .legend { font-size: 12px; fill: #5F5E5A; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .actor rect { fill: #444441; stroke: #B4B2A9; } .actor .th { fill: #F1EFE8; }
+      .sys rect { fill: #085041; stroke: #5DCAA5; } .sys .th { fill: #E1F5EE; }
+      .db rect { fill: #3C3489; stroke: #AFA9EC; } .db .th { fill: #EEEDFE; }
+      .life { stroke: #5F5E5A; }
+      .msg, .ret { stroke: #B4B2A9; }
+      .lbl { fill: #D3D1C7; }
+      .phase, .altlbl, .altdiv, .alt { stroke: #B4B2A9; fill: #D3D1C7; }
+      .alt, .altdiv { fill: none; }
+      .boxlbl { fill: #9FE1CB; }
+      .note rect { fill: #7A4E00; stroke: #F0C27B; } .note text { fill: #FDF0DC; }
+      .txn { fill: #5DCAA5; fill-opacity: .07; stroke: #5DCAA5; }
+      .legend { fill: #D3D1C7; }
+    }
+  </style>
+  <defs>
+    <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1L9 5L1 9" fill="none" stroke="#888780" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1050" height="960"/>
+
+  <!-- lifelines -->
+  <line class="life" x1="150" y1="90" x2="150" y2="905"/>
+  <line class="life" x1="400" y1="90" x2="400" y2="905"/>
+  <line class="life" x1="680" y1="90" x2="680" y2="905"/>
+  <line class="life" x1="920" y1="90" x2="920" y2="905"/>
+
+  <!-- participants -->
+  <g class="actor"><rect x="65" y="44" width="170" height="46" rx="8"/><text class="th" x="150" y="73" text-anchor="middle">Sales rep</text></g>
+  <g class="sys"><rect x="315" y="44" width="170" height="46" rx="8"/><text class="th" x="400" y="73" text-anchor="middle">Hono API</text></g>
+  <g class="db"><rect x="595" y="44" width="170" height="46" rx="8"/><text class="th" x="680" y="73" text-anchor="middle">PostgreSQL</text></g>
+  <g class="actor"><rect x="835" y="44" width="170" height="46" rx="8"/><text class="th" x="920" y="73" text-anchor="middle">Another rep</text></g>
+
+  <!-- phase 1: verify -->
+  <text class="phase" x="525" y="118" text-anchor="middle">VERIFY — ADVISORY, NOTHING RESERVED</text>
+  <text class="lbl" x="275" y="136" text-anchor="middle">Verify quantity and destination</text>
+  <path class="msg" marker-end="url(#m)" d="M150 142 H396"/>
+  <text class="lbl" x="540" y="170" text-anchor="middle">Read available inventory</text>
+  <path class="msg" marker-end="url(#m)" d="M400 176 H676"/>
+  <text class="lbl" x="540" y="204" text-anchor="middle">Current stock</text>
+  <path class="ret" marker-end="url(#m)" d="M680 210 H404"/>
+  <path class="msg" marker-end="url(#m)" d="M400 236 H462 V262 H406"/>
+  <text class="lbl" x="474" y="253">Calculate pricing and shipping</text>
+  <text class="lbl" x="275" y="282" text-anchor="middle">Estimate and validity</text>
+  <path class="ret" marker-end="url(#m)" d="M400 288 H154"/>
+  <g class="note">
+    <rect x="340" y="304" width="400" height="34" rx="6"/>
+    <text x="540" y="326" text-anchor="middle">No Order created, no stock reserved or deducted</text>
+  </g>
+
+  <!-- phase 2: interleaving -->
+  <text class="phase" x="525" y="374" text-anchor="middle">MEANWHILE, ANOTHER ORDER CONSUMES STOCK</text>
+  <text class="lbl" x="660" y="392" text-anchor="middle">Submit another order</text>
+  <path class="msg" marker-end="url(#m)" d="M920 398 H404"/>
+  <text class="lbl" x="540" y="426" text-anchor="middle">Accept order and deduct stock atomically</text>
+  <path class="msg" marker-end="url(#m)" d="M400 432 H676"/>
+  <text class="lbl" x="660" y="460" text-anchor="middle">Order accepted</text>
+  <path class="ret" marker-end="url(#m)" d="M400 466 H916"/>
+
+  <!-- phase 3: submit -->
+  <text class="phase" x="525" y="504" text-anchor="middle">SUBMIT</text>
+  <text class="lbl" x="275" y="522" text-anchor="middle">Submit with a new submissionId</text>
+  <path class="msg" marker-end="url(#m)" d="M150 528 H396"/>
+
+  <rect class="txn" x="336" y="548" width="424" height="320" rx="10"/>
+  <text class="boxlbl" x="352" y="570">ONE DATABASE TRANSACTION</text>
+  <text class="lbl" x="540" y="590" text-anchor="middle">Lock warehouse rows in stable ID order</text>
+  <path class="msg" marker-end="url(#m)" d="M400 596 H676"/>
+  <text class="lbl" x="540" y="624" text-anchor="middle">Current inventory</text>
+  <path class="ret" marker-end="url(#m)" d="M680 630 H404"/>
+  <text class="lbl" x="540" y="658" text-anchor="middle">Look up Order by submissionId — none found</text>
+  <path class="msg" marker-end="url(#m)" d="M400 664 H676"/>
+  <path class="msg" marker-end="url(#m)" d="M400 688 H462 V714 H406"/>
+  <text class="lbl" x="474" y="705">Recalculate pricing and shipping</text>
+
+  <rect class="alt" x="352" y="730" width="392" height="106" rx="8"/>
+  <text class="altlbl" x="366" y="750">FULFILLABLE AND SHIPPING WITHIN LIMIT</text>
+  <text class="lbl" x="540" y="770" text-anchor="middle">Save Order with allocations, deduct stock</text>
+  <path class="msg" marker-end="url(#m)" d="M400 776 H676"/>
+  <line class="altdiv" x1="352" y1="792" x2="744" y2="792"/>
+  <text class="altlbl" x="366" y="810">ELSE — INSUFFICIENT STOCK, OR SHIPPING OVER LIMIT</text>
+  <text class="lbl" x="548" y="828" text-anchor="middle">Save nothing; stock unchanged</text>
+
+  <text class="lbl" x="540" y="852" text-anchor="middle">Commit</text>
+  <path class="msg" marker-end="url(#m)" d="M400 858 H676"/>
+
+  <text class="lbl" x="275" y="892" text-anchor="middle">Accepted Order, or a business rejection</text>
+  <path class="ret" marker-end="url(#m)" d="M400 898 H154"/>
+
+  <text class="legend" x="24" y="920">Solid arrows are calls; dashed arrows are returns. A repeated submissionId with the same inputs returns the original</text>
+  <text class="legend" x="24" y="938">Order without deducting stock again; reuse with different inputs is a conflict.</text>
+</svg>
