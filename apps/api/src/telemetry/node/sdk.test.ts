@@ -25,15 +25,16 @@ import { createVerifyOrderApp } from "#endpoints/verify-order/app";
 import { createConsoleJsonLogger } from "#http/logger";
 import { traceVerifyOrder } from "#telemetry/decorators/verify-order";
 import { instrumentApp } from "#telemetry/http";
+import { startBlackHole } from "#testing/black-hole.test-support";
+import { validEstimate, verifyBody } from "#testing/fixtures.test-support";
+import { captureLogs, parseTelemetryConfig } from "#testing/telemetry.test-support";
+
 import {
   DEFAULT_FLUSH_TIMEOUT_MS,
   createTelemetryRuntime,
   startTelemetry,
   summarizeDiagnostic,
-} from "#telemetry/node/sdk";
-import { startBlackHole } from "#testing/black-hole.test-support";
-import { validEstimate, verifyBody } from "#testing/fixtures.test-support";
-import { captureLogs, parseTelemetryConfig } from "#testing/telemetry.test-support";
+} from "./sdk";
 
 const environment = {
   OTEL_SERVICE_NAME: "scos-api-test",

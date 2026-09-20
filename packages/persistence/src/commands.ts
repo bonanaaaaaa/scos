@@ -1,6 +1,6 @@
-import { createDatabasePool } from "#database";
-import { confirmDatabaseReset } from "#reset";
-import { type SeedQueryable, seedWarehouses } from "#seed";
+import { createDatabasePool } from "./database";
+import { confirmDatabaseReset } from "./reset";
+import { type SeedQueryable, seedWarehouses } from "./seed";
 
 export interface SeedCommandDependencies {
   readonly createPool: () => SeedQueryable & { end(): Promise<void> };

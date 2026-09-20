@@ -1,10 +1,6 @@
 import { expect, test } from "vitest";
 
-import {
-  isValidPullRequestTitle,
-  runCli,
-  validatePullRequestTitle,
-} from "#scripts/validate-pr-title.mjs";
+import { isValidPullRequestTitle, runCli, validatePullRequestTitle } from "./validate-pr-title.mjs";
 
 const allowedTypes = [
   "feat",

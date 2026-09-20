@@ -29,7 +29,7 @@ import {
   type DecodedSpan,
   decodeMetricsRequest,
   decodeTraceRequest,
-} from "#test/support/otlp/decode";
+} from "./decode";
 
 /** The signal paths the exporters post to (`OTEL_EXPORTER_OTLP_ENDPOINT` + these). */
 export const TRACES_PATH = "/v1/traces";

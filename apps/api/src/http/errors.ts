@@ -10,7 +10,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { Context } from "hono";
 import { z } from "zod";
 
-import { MESSAGES } from "#http/messages";
+import { MESSAGES } from "./messages";
 
 /** Every error code any endpoint returns: the envelope's shared vocabulary. */
 export const ERROR_CODES = [

@@ -129,16 +129,17 @@ runtime entry point (`src/entrypoints/node.ts` locally) has validated the enviro
 
 ## Module specifiers
 
-No source or test file imports another file relatively. Every import names
-either the workspace package that exports it or the importing package's own
-`imports` map in `package.json`:
+No import leaves its own folder relatively. A file names its folder mates
+relatively (`./contract`); every other module is named by the workspace
+package that exports it or by the importing package's own `imports` map in
+`package.json`:
 
-| Target                               | Specifier                         | Example                          |
-| ------------------------------------ | --------------------------------- | -------------------------------- |
-| Another workspace package            | its package name, root entry only | `@scos/core`                     |
-| A file in the same package's `src/`  | `#<path under src>`               | `#domain/shared/money`           |
-| A file in the same package's `test/` | `#test/<path under test>`         | `#test/support/database`         |
-| A repository-root script             | `#scripts/<file>`                 | `#scripts/validate-pr-title.mjs` |
+| Target                               | Specifier                         | Example                  |
+| ------------------------------------ | --------------------------------- | ------------------------ |
+| A file in the same folder            | `./<file>`                        | `./contract`             |
+| Another workspace package            | its package name, root entry only | `@scos/core`             |
+| A file in the same package's `src/`  | `#<path under src>`               | `#domain/shared/money`   |
+| A file in the same package's `test/` | `#test/<path under test>`         | `#test/support/database` |
 
 The maps are small and mechanical; `apps/api`, for example, declares:
 
@@ -158,24 +159,33 @@ aliases, resolver plugins or per-tool configuration are needed.
 (`#generated/prisma/client`); its workerd build redirects that one specifier
 to `#generated/prisma-workerd/client` (`tsdown.config.ts`).
 
-The `no-restricted-imports` rule in `.oxlintrc.json` rejects any specifier
-starting with `./` or `../`. `packages/core/.oxlintrc.json` replaces the root
-configuration for that package, so it repeats the ban next to the layering
+Two `no-restricted-imports` patterns in `.oxlintrc.json` hold the line: one
+rejects a `..` segment anywhere in a specifier (`../x`, and `./../x`, which
+reaches the same file), the other rejects a descendant such as `./sub/x`. What
+is left is exactly the folder mate. `packages/core/.oxlintrc.json` replaces the
+root configuration for that package, so it repeats both next to the layering
 rules below. Tool configuration and build scripts (`vitest.*.mjs`,
 `*.config.mjs`, `build.mjs`) are exempt: their tool loads them by path, outside
-the module graph, and they address their siblings relatively.
+the module graph.
+
+Because a relative import cannot leave its folder, it can never cross a layer
+or a package boundary, so the layering rules below and the rule that adapters
+import only `@scos/core`'s root are unaffected by the exception: every
+specifier that reaches another folder is still absolute.
 
 Import order is part of the format rather than a review topic: Oxfmt sorts
-every import list (`sortImports` in `.oxfmtrc.json`) into Node built-ins,
-then packages, then this package's own `#...` modules, each group alphabetical
-and separated by a blank line. Side-effect imports keep their position, because
+every import list (`sortImports` in `.oxfmtrc.json`) into Node built-ins, then
+packages, then this package's own `#...` modules, then folder mates, each group
+alphabetical and separated by a blank line. Side-effect imports keep their position, because
 for them the order is the meaning.
 
-What this buys us: a specifier reads the same in every file, so it says where
-code lives rather than how far away it is; moving a file changes only its own
-path and never the `../../..` chains of the files that import it; and nothing
-can reach into another package's internals, because a package's files are
-addressable only from inside it.
+What this buys us: outside its own folder a module has exactly one name, so a
+specifier says where code lives rather than how far away it is, and finding
+every importer of a module is a plain search; moving a file changes only its
+own path, never the `../../..` chains of the files that import it; a cohesive
+folder still reads without repeating its own name in every line of its
+imports; and nothing can reach into another package's internals, because a
+package's files are addressable only from inside it.
 
 ## Where does code go?
 

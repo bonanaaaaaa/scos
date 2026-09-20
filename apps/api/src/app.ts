@@ -19,7 +19,8 @@ import { createEndpointApp } from "#http/endpoint-app";
 import { type Logger, defaultLogger } from "#http/logger";
 import { MESSAGES } from "#http/messages";
 import { createDocsApp } from "#openapi/docs-app";
-import { routes } from "#routes";
+
+import { routes } from "./routes";
 
 export interface AppDependencies {
   readonly verifyOrder: VerifyOrder;

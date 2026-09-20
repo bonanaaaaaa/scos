@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import * as api from "#index";
+import * as api from "./index";
 
 describe("API package surface", () => {
   test("the API composition root can import the inward packages", () => {

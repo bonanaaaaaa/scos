@@ -12,12 +12,13 @@ import type { Hono } from "hono";
 import { createEndpointApp } from "#http/endpoint-app";
 import type { Logger } from "#http/logger";
 import { MESSAGES } from "#http/messages";
+
 import {
   DOCS_PATH,
   OPENAPI_PATH,
   generateOpenApiDocument,
   serializeOpenApiDocument,
-} from "#openapi/document";
+} from "./document";
 
 export { DOCS_PATH, OPENAPI_PATH };
 

@@ -1,13 +1,14 @@
 import { expect, test } from "vitest";
 
 import { Prisma } from "#generated/prisma/client";
+
 import {
   formatDiscountRate,
   formatMoney,
   toOrderAllocationRecord,
   toOrderRecord,
   toWarehouseRecord,
-} from "#records";
+} from "./records";
 
 const createdAt = new Date("2026-09-18T01:02:03.456Z");
 const updatedAt = new Date("2026-09-18T04:05:06.789Z");

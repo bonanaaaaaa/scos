@@ -1,4 +1,4 @@
-import { readDatabaseUrl } from "#database";
+import { readDatabaseUrl } from "./database";
 
 export const resetConfirmationVariable = "SCOS_CONFIRM_DATABASE_RESET";
 

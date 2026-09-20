@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { createConsoleJsonLogger, defaultLogger } from "#http/logger";
 import { ensureContextManager } from "#telemetry/node/sdk";
 import { describeLoggerContract } from "#testing/logger-contract.test-support";
+
+import { createConsoleJsonLogger, defaultLogger } from "./logger";
 
 // The shared log record contract. Under Node the composition registers the
 // AsyncLocalStorage context manager; the Workers run of this suite

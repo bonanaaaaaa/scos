@@ -11,7 +11,7 @@ import {
   resourceAttributes,
   sanitizeDetails,
   sanitizeError,
-} from "#telemetry/log-record";
+} from "./log-record";
 
 test("OTEL_SEVERITY_NUMBERS maps each Pino level to its OTel range start", () => {
   expect(OTEL_SEVERITY_NUMBERS).toStrictEqual({

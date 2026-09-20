@@ -1,23 +1,15 @@
 import { describe, expect, test } from "vitest";
 
-import {
-  type OrderEstimate,
-  type ValidOrderEstimate,
-  estimateOrder,
-} from "#domain/ordering/estimate";
-import {
-  type StoredOrder,
-  createOrder,
-  hasSameRequest,
-  restoreOrder,
-} from "#domain/ordering/order";
-import type { OrderRequest } from "#domain/ordering/order-request";
-import type { SubmissionKey } from "#domain/ordering/submission-key";
 import type { Destination } from "#domain/shared/destination";
 import { DomainError } from "#domain/shared/errors";
 import { Money } from "#domain/shared/money";
 import { MAX_QUANTITY, type Quantity } from "#domain/shared/quantity";
 import type { WarehouseStock } from "#domain/shipping/allocation";
+
+import { type OrderEstimate, type ValidOrderEstimate, estimateOrder } from "./estimate";
+import { type StoredOrder, createOrder, hasSameRequest, restoreOrder } from "./order";
+import type { OrderRequest } from "./order-request";
+import type { SubmissionKey } from "./submission-key";
 
 const destination = { latitude: 0, longitude: 0 } as Destination;
 const inventory: readonly WarehouseStock[] = [

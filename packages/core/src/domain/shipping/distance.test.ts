@@ -1,12 +1,13 @@
 import { describe, expect, test } from "vitest";
 
 import type { GeoPoint } from "#domain/shared/destination";
+
 import {
   EARTH_RADIUS_KM,
   centralAngleFromHaversine,
   haversineDistanceKm,
   haversineIntermediate,
-} from "#domain/shipping/distance";
+} from "./distance";
 
 const point = (latitude: number, longitude: number): GeoPoint => ({ latitude, longitude });
 

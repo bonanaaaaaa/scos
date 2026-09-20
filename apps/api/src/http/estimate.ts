@@ -14,7 +14,7 @@ import {
   moneySchema,
   responseQuantitySchema,
   warehouseIdSchema,
-} from "#http/schemas";
+} from "./schemas";
 
 export const estimateAllocationSchema = z
   .object({

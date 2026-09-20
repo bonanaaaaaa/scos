@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
 
-import { parseHealthConfig } from "#endpoints/health/config";
 import { DEFAULT_TELEMETRY_CONFIG } from "#testing/telemetry.test-support";
+
+import { parseHealthConfig } from "./config";
 
 describe("parseHealthConfig", () => {
   test("health ignores every non-telemetry variable", () => {

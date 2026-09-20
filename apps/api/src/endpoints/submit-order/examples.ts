@@ -10,7 +10,6 @@
  * @module
  */
 
-import { SUBMIT_ORDER_MESSAGES } from "#endpoints/submit-order/messages";
 import { errorBody } from "#http/errors";
 import {
   insufficientStockEstimateExample,
@@ -22,6 +21,8 @@ import {
 } from "#http/estimate-examples";
 import { MESSAGES } from "#http/messages";
 import { type ExampleMap, invalidRequestExamples } from "#http/route-contract";
+
+import { SUBMIT_ORDER_MESSAGES } from "./messages";
 
 /** Any client-chosen string of 1-255 characters; not necessarily a UUID. */
 export const EXAMPLE_SUBMISSION_ID = "checkout-7f3a-attempt-1";

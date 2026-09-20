@@ -29,7 +29,7 @@ import {
   ATTR_SERVICE_VERSION,
 } from "@opentelemetry/semantic-conventions";
 
-import type { TelemetryResource } from "#telemetry/config";
+import type { TelemetryResource } from "./config";
 
 export type LogLevelName = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 

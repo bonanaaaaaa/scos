@@ -8,7 +8,7 @@
  * @module
  */
 
-import { type Decimal, DomainDecimal } from "#domain/shared/decimal";
+import { type Decimal, DomainDecimal } from "./decimal";
 
 export const UNIT_PRICE: Decimal = new DomainDecimal("150");
 export const UNIT_WEIGHT_KG: Decimal = new DomainDecimal("0.365");

@@ -9,8 +9,8 @@ vi.mock("@scos/persistence", async (importOriginal) =>
 );
 
 const persistence = await import("@scos/persistence");
-const { composeHealthApplication } = await import("#endpoints/health/composition");
-const { parseHealthConfig } = await import("#endpoints/health/config");
+const { composeHealthApplication } = await import("./composition");
+const { parseHealthConfig } = await import("./config");
 const { calls } = factorySpies(persistence);
 
 afterEach(() => {

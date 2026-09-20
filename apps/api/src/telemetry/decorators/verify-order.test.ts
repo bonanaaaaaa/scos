@@ -2,10 +2,11 @@ import { SpanStatusCode } from "@opentelemetry/api";
 import { createVerifyOrder, orderRequestSchema } from "@scos/core";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { traceInventoryReader } from "#telemetry/decorators/inventory-reader";
-import { traceVerifyOrder } from "#telemetry/decorators/verify-order";
 import { inventory, verifyBody } from "#testing/fixtures.test-support";
 import { testTelemetry } from "#testing/telemetry.test-support";
+
+import { traceInventoryReader } from "./inventory-reader";
+import { traceVerifyOrder } from "./verify-order";
 
 let harness = testTelemetry();
 

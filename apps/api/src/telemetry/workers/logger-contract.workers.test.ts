@@ -8,9 +8,10 @@
  */
 
 import { createConsoleJsonLogger } from "#http/logger";
-import { ensureWorkersContextManager } from "#telemetry/workers/context";
-import { logRecord } from "#telemetry/workers/sdk";
 import { describeLoggerContract } from "#testing/logger-contract.test-support";
+
+import { ensureWorkersContextManager } from "./context";
+import { logRecord } from "./sdk";
 
 describeLoggerContract("Cloudflare Workers logger (console.log of the record)", () => {
   ensureWorkersContextManager();

@@ -10,7 +10,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "vitest";
@@ -116,15 +116,18 @@ function specifiers(path: string): string[] {
 }
 
 /**
- * The src/-relative module a specifier names, if it is one of ours. Imports of
- * this package's own files are "#<path under src>" (package.json "imports";
- * docs/architecture.md, "Module specifiers"); everything else is a package.
+ * The src/-relative module a specifier names, if it is one of ours: a folder
+ * mate ("./contract") or this package's own "#<path under src>" (package.json
+ * "imports"; docs/architecture.md, "Module specifiers"). Anything else is a
+ * package.
  */
-function resolveLocal(specifier: string): string | undefined {
-  if (!specifier.startsWith("#")) {
+function resolveLocal(from: string, specifier: string): string | undefined {
+  if (!specifier.startsWith("#") && !specifier.startsWith(".")) {
     return undefined;
   }
-  const base = specifier.slice(1);
+  const base = specifier.startsWith("#")
+    ? specifier.slice(1)
+    : join(dirname(from), specifier).split("\\").join("/");
   return [`${base}.ts`, `${base}/index.ts`].find((candidate) =>
     existsSync(join(sourceDirectory, candidate)),
   );
@@ -142,10 +145,10 @@ function reachable(entry: string): Map<string, string[]> {
     const found = specifiers(path);
     seen.set(
       path,
-      found.filter((specifier) => !specifier.startsWith("#")),
+      found.filter((specifier) => !specifier.startsWith("#") && !specifier.startsWith(".")),
     );
     for (const specifier of found) {
-      const local = resolveLocal(specifier);
+      const local = resolveLocal(path, specifier);
       if (local !== undefined) {
         pending.push(local);
       }
@@ -175,7 +178,11 @@ describe("the Workers runtime never loads Node-only telemetry", () => {
 
   test("from the Worker entrypoint, no Node-only module or package is reachable", () => {
     const graph = reachable("entrypoints/worker.ts");
+    // Both specifier forms are followed: "#telemetry/workers/sdk" from the
+    // entry point, and that module's folder mate "./context". A walk that
+    // stopped at either would leave the checks below with nothing to reject.
     expect(graph.has("telemetry/workers/sdk.ts")).toBe(true);
+    expect(graph.has("telemetry/workers/context.ts")).toBe(true);
     for (const [path, packages] of graph) {
       expect(isNodeOnly(path), `${path} is Node-only`).toBe(false);
       for (const name of packages) {
@@ -186,7 +193,7 @@ describe("the Workers runtime never loads Node-only telemetry", () => {
 
   test.each(workersModules)("%s imports no Node-only module or package", (path) => {
     for (const specifier of specifiers(path)) {
-      const local = resolveLocal(specifier);
+      const local = resolveLocal(path, specifier);
       if (local === undefined) {
         expect(NODE_ONLY_PACKAGES.test(specifier), `${path} imports ${specifier}`).toBe(false);
       } else {
@@ -208,7 +215,7 @@ describe("the Node runtime never loads Workers modules", () => {
 
   test.each(all.filter(isNodeOnly))("%s imports no Workers module", (path) => {
     for (const specifier of specifiers(path)) {
-      const local = resolveLocal(specifier);
+      const local = resolveLocal(path, specifier);
       expect(local !== undefined && isWorkersOnly(local), `${path} imports ${local}`).toBe(false);
       expect(specifier.startsWith("cloudflare:"), `${path} imports ${specifier}`).toBe(false);
     }

@@ -15,9 +15,8 @@ vi.mock("@scos/persistence", async (importOriginal) =>
 );
 
 const persistence = await import("@scos/persistence");
-const { composeApplication } = await import("#composition/node");
-const { DEFAULT_CONNECTION_TIMEOUT_MS, databasePoolTimeouts } =
-  await import("#composition/database");
+const { composeApplication } = await import("./node");
+const { DEFAULT_CONNECTION_TIMEOUT_MS, databasePoolTimeouts } = await import("./database");
 const { calls, watchNextPool } = factorySpies(persistence);
 const databaseUrl = unreachable;
 

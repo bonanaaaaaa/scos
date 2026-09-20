@@ -9,7 +9,6 @@
  * @module
  */
 
-import type { OrderRequest } from "#domain/ordering/order-request";
 import { type DiscountRate, priceMerchandise } from "#domain/pricing/pricing";
 import { type Destination, geoPointSchema } from "#domain/shared/destination";
 import { DomainError } from "#domain/shared/errors";
@@ -21,6 +20,8 @@ import {
   allocateNearestFirst,
 } from "#domain/shipping/allocation";
 import { isShippingWithinLimit, shippingCostFor } from "#domain/shipping/shipping";
+
+import type { OrderRequest } from "./order-request";
 
 export type EstimateRejectionReason = "INSUFFICIENT_STOCK" | "SHIPPING_EXCEEDS_LIMIT";
 

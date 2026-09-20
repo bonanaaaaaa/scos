@@ -8,8 +8,9 @@
 
 import type { Order, RejectedSubmission } from "@scos/core";
 
-import type { OrderResponse } from "#endpoints/submit-order/contract";
 import { type RejectedEstimate, destinationBody, estimateBody } from "#http/estimate";
+
+import type { OrderResponse } from "./contract";
 
 export function rejectedEstimateBody(estimate: RejectedSubmission["estimate"]): RejectedEstimate {
   return estimateBody(estimate) as RejectedEstimate;

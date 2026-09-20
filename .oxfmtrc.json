@@ -1,11 +1,11 @@
 {
   "ignorePatterns": ["dist", ".turbo", "pnpm-lock.yaml", "packages/persistence/src/generated"],
   // Import order is part of the format, not a review topic: Node built-ins,
-  // then packages, then this package's own modules ("#..."; there are no
-  // relative imports, see docs/architecture.md, "Module specifiers"), each
-  // group alphabetical and separated by a blank line. Side-effect imports keep
-  // their position, since their order is their meaning.
+  // then packages, then this package's own modules ("#..."), then folder mates
+  // ("./contract"; see docs/architecture.md, "Module specifiers"), each group
+  // alphabetical and separated by a blank line. Side-effect imports keep their
+  // position, since their order is their meaning.
   "sortImports": {
-    "groups": ["builtin", "external", "subpath", "unknown"]
+    "groups": ["builtin", "external", "subpath", ["sibling", "index"], "unknown"]
   }
 }

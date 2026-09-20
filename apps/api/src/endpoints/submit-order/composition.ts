@@ -18,9 +18,10 @@ import {
   composeOverDatabase,
   withLogger,
 } from "#composition/database";
-import { createSubmitOrderApp } from "#endpoints/submit-order/app";
 import { traceSubmissionStore } from "#telemetry/decorators/submission-store";
 import { traceSubmitOrder } from "#telemetry/decorators/submit-order";
+
+import { createSubmitOrderApp } from "./app";
 
 export interface SubmitOrderCompositionOptions extends DatabaseCompositionOptions {
   /** Transaction timeouts for submissions; persistence defaults apply otherwise. */

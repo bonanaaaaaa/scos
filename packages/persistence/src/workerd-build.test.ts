@@ -42,7 +42,7 @@ describe("the workerd build", () => {
   });
 
   test("exports the same public API as the Node build", async () => {
-    const node = await import("#index");
+    const node = await import("./index");
     const exported = [...readFileSync(workerdEntry, "utf8").matchAll(/export \{([^}]*)\}/g)]
       .flatMap((match) => (match[1] ?? "").split(","))
       .map(

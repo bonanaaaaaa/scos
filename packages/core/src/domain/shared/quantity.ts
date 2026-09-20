@@ -10,8 +10,8 @@
 
 import { z } from "zod";
 
-import { MONEY_MAX } from "#domain/shared/money";
-import { UNIT_PRICE } from "#domain/shared/product";
+import { MONEY_MAX } from "./money";
+import { UNIT_PRICE } from "./product";
 
 /**
  * Largest quantity whose merchandise subtotal (quantity x $150) fits

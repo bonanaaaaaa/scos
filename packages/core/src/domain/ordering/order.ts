@@ -10,10 +10,6 @@
  * @module
  */
 
-import type { OrderEstimate } from "#domain/ordering/estimate";
-import { ORDER_NUMBER_PATTERN } from "#domain/ordering/order-number";
-import type { OrderRequest } from "#domain/ordering/order-request";
-import { type SubmissionKey, submissionKeySchema } from "#domain/ordering/submission-key";
 import { discountRateFor } from "#domain/pricing/pricing";
 import { DomainDecimal } from "#domain/shared/decimal";
 import { type Destination, type GeoPoint, destinationSchema } from "#domain/shared/destination";
@@ -22,6 +18,11 @@ import { Money } from "#domain/shared/money";
 import { UNIT_PRICE } from "#domain/shared/product";
 import { type Quantity, MAX_QUANTITY } from "#domain/shared/quantity";
 import { isShippingWithinLimit, shippingCostFor } from "#domain/shipping/shipping";
+
+import type { OrderEstimate } from "./estimate";
+import { ORDER_NUMBER_PATTERN } from "./order-number";
+import type { OrderRequest } from "./order-request";
+import { type SubmissionKey, submissionKeySchema } from "./submission-key";
 
 /**
  * Units of an accepted Order taken from one warehouse. Only these two facts are

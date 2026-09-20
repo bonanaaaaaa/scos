@@ -47,6 +47,7 @@ import { traceSubmitOrder } from "#telemetry/decorators/submit-order";
 import { traceVerifyOrder } from "#telemetry/decorators/verify-order";
 import { instrumentApp } from "#telemetry/http";
 import type { Telemetry } from "#telemetry/telemetry";
+
 import {
   acceptedOrder,
   fakeLogger,
@@ -56,7 +57,7 @@ import {
   submitBody,
   validEstimate,
   verifyBody,
-} from "#testing/fixtures.test-support";
+} from "./fixtures.test-support";
 
 export interface TelemetryContractHarness {
   /** The runtime's Telemetry port, backed by test exporters. */

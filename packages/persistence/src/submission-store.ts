@@ -9,8 +9,9 @@ import {
 } from "@scos/core";
 
 import { Prisma, type PrismaClient } from "#generated/prisma/client";
-import { formatDiscountRate, formatMoney } from "#records";
-import { classifySubmissionError } from "#submission-errors";
+
+import { formatDiscountRate, formatMoney } from "./records";
+import { classifySubmissionError } from "./submission-errors";
 
 /**
  * Prisma adapter for the SubmissionStore port (ADR 0004,

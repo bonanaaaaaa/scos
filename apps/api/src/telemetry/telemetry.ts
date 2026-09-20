@@ -32,8 +32,8 @@ import {
   METRIC_HTTP_SERVER_REQUEST_DURATION,
 } from "@opentelemetry/semantic-conventions";
 
-import { PACKAGE_VERSION } from "#telemetry/config";
-import { sanitizeError } from "#telemetry/log-record";
+import { PACKAGE_VERSION } from "./config";
+import { sanitizeError } from "./log-record";
 
 /** Instrumentation scope name of every span and metric this adapter records. */
 export const INSTRUMENTATION_SCOPE = "@scos/api";

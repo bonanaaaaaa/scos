@@ -5,18 +5,26 @@
   // packages/persistence) are linted with this file;
   // packages/core/.oxlintrc.json replaces it and repeats the rules below.
   "rules": {
-    // No relative imports: every module is named by the workspace package that
-    // exports it (@scos/core) or by its package's "imports" map ("#..." in
-    // package.json). Module specifiers then read the same wherever they appear,
-    // moving a file changes only its own path, and no source can reach into
-    // another package's internals. See docs/architecture.md, "Module specifiers".
+    // A relative import may not leave its own folder. A file names its folder
+    // mates relatively ("./contract"); everything else is named by the
+    // workspace package that exports it (@scos/core) or by its package's
+    // "imports" map ("#..." in package.json). Cross-folder specifiers then read
+    // the same wherever they appear, a module has one name outside its folder,
+    // and no source can reach into another package's internals. See
+    // docs/architecture.md, "Module specifiers".
     "no-restricted-imports": [
       "error",
       {
         "patterns": [
           {
-            "regex": "^\\.\\.?/",
-            "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+            // "../x", and "./../x", which reaches the same file.
+            "regex": "(?:^|/)\\.\\.(?:/|$)",
+            "message": "A relative import may not leave its folder: name the module by its package's \"imports\" map (\"#...\") or by the workspace package that exports it (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+          },
+          {
+            // "./sub/x": a descendant is not a folder mate.
+            "regex": "^\\./[^/]+/",
+            "message": "Only a folder mate may be imported relatively (\"./contract\"): name a module in another folder through its package's \"imports\" map (\"#...\"). See docs/architecture.md, \"Module specifiers\"."
           }
         ]
       }

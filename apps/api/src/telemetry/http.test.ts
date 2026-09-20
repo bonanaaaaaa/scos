@@ -11,7 +11,6 @@ import { createVerifyOrderApp } from "#endpoints/verify-order/app";
 import type { Logger } from "#http/logger";
 import { traceSubmitOrder } from "#telemetry/decorators/submit-order";
 import { traceVerifyOrder } from "#telemetry/decorators/verify-order";
-import { instrumentApp } from "#telemetry/http";
 import { createPinoLogger } from "#telemetry/node/pino-logger";
 import {
   acceptedOrder,
@@ -21,6 +20,8 @@ import {
   verifyBody,
 } from "#testing/fixtures.test-support";
 import { captureLogs, testTelemetry } from "#testing/telemetry.test-support";
+
+import { instrumentApp } from "./http";
 
 const DURATION = "http.server.request.duration";
 

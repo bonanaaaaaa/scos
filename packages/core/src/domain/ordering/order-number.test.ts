@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { ORDER_NUMBER_PATTERN, generateOrderNumber } from "#domain/ordering/order-number";
+import { ORDER_NUMBER_PATTERN, generateOrderNumber } from "./order-number";
 
 describe("generateOrderNumber", () => {
   test("generates SO- followed by 12 Crockford base32 characters", () => {

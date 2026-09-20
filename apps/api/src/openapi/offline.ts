@@ -13,11 +13,12 @@ import type { Hono } from "hono";
 
 import { createApp } from "#app";
 import type { Logger } from "#http/logger";
+
 import {
   type OpenApiDocument,
   generateOpenApiDocument,
   serializeOpenApiDocument,
-} from "#openapi/document";
+} from "./document";
 
 function unused(): never {
   throw new Error("The offline OpenAPI app does not handle requests.");

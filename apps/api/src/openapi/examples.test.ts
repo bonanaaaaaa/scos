@@ -15,12 +15,13 @@ import {
   type RouteContract,
   notFoundResponse,
 } from "#http/route-contract";
-import type { JsonObject } from "#openapi/document";
-import { buildOpenApiDocument } from "#openapi/offline";
 import { routes } from "#routes";
 import { post } from "#testing/fixtures.test-support";
 import { ajvAccepts, specValidator } from "#testing/openapi.test-support";
 import { type SeededAppOptions, seededApp } from "#testing/seeded-use-cases.test-support";
+
+import type { JsonObject } from "./document";
+import { buildOpenApiDocument } from "./offline";
 
 const document = await buildOpenApiDocument();
 const validator = specValidator(document);

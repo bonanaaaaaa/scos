@@ -11,16 +11,17 @@ import type { ExecutionContext } from "hono";
 import { describe, expect, test, vi } from "vitest";
 
 import { composeWorkerApplication } from "#composition/worker";
+import { MESSAGES } from "#http/messages";
+import { createWorkersTelemetry } from "#telemetry/workers/sdk";
+import { UNREACHABLE_DATABASE_URL } from "#testing/workers-telemetry.test-support";
+
 import handler, {
   type WorkerEnv,
   type WorkerRuntime,
   createWorkerHandler,
   workerEnvironment,
   workersRuntime,
-} from "#entrypoints/worker";
-import { MESSAGES } from "#http/messages";
-import { createWorkersTelemetry } from "#telemetry/workers/sdk";
-import { UNREACHABLE_DATABASE_URL } from "#testing/workers-telemetry.test-support";
+} from "./worker";
 
 const HYPERDRIVE = { connectionString: UNREACHABLE_DATABASE_URL };
 

@@ -12,9 +12,9 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { MiddlewareHandler } from "hono";
 import { validator } from "hono-openapi";
 
-import { SPEC_CONVERSION } from "#http/describe-route";
-import { invalidRequest, toIssues } from "#http/errors";
-import { MESSAGES } from "#http/messages";
+import { SPEC_CONVERSION } from "./describe-route";
+import { invalidRequest, toIssues } from "./errors";
+import { MESSAGES } from "./messages";
 
 /** Same test Hono's validator uses to decide whether it parses the body. */
 const JSON_CONTENT_TYPE = /^application\/([a-z-.]+\+)?json(;\s*[a-zA-Z0-9-]+=([^;]+))*$/i;

@@ -62,12 +62,9 @@ import { type StructuredLogger, createConsoleJsonLogger } from "#http/logger";
 import type { WorkersTelemetryConfig } from "#telemetry/config";
 import { resourceAttributes } from "#telemetry/log-record";
 import { type Telemetry, createTelemetry } from "#telemetry/telemetry";
-import { ensureWorkersContextManager } from "#telemetry/workers/context";
-import {
-  OtlpFetchMetricExporter,
-  OtlpFetchSpanExporter,
-  type OtlpSignal,
-} from "#telemetry/workers/otlp-exporter";
+
+import { ensureWorkersContextManager } from "./context";
+import { OtlpFetchMetricExporter, OtlpFetchSpanExporter, type OtlpSignal } from "./otlp-exporter";
 
 /**
  * Bounds of the span buffer. A request produces fewer than ten spans; the

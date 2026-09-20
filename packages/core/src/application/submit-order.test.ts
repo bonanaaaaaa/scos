@@ -6,16 +6,17 @@ import {
   SubmissionKeyTakenError,
   TransientSubmissionError,
 } from "#application/ports/submission-store";
-import {
-  MAX_SUBMISSION_ATTEMPTS,
-  type SubmitOrderOutcome,
-  createSubmitOrder,
-} from "#application/submit-order";
 import { type NewOrder, type Order, restoreOrder } from "#domain/ordering/order";
 import { ORDER_NUMBER_PATTERN } from "#domain/ordering/order-number";
 import type { SubmissionKey } from "#domain/ordering/submission-key";
 import { DomainError } from "#domain/shared/errors";
 import type { WarehouseStock } from "#domain/shipping/allocation";
+
+import {
+  MAX_SUBMISSION_ATTEMPTS,
+  type SubmitOrderOutcome,
+  createSubmitOrder,
+} from "./submit-order";
 
 /**
  * In-memory SubmissionStore. A transaction works on a copy of the state and

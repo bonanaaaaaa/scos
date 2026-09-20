@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
-import { createDatabasePool } from "#database";
-import { createPrismaInventoryReader, type InventoryReaderClient } from "#inventory-reader";
-import { createPrismaClient } from "#prisma";
+import { createDatabasePool } from "./database";
+import { createPrismaInventoryReader, type InventoryReaderClient } from "./inventory-reader";
+import { createPrismaClient } from "./prisma";
 
 type FindManyArgs = Parameters<InventoryReaderClient["warehouse"]["findMany"]>[0];
 type Rows = Awaited<ReturnType<InventoryReaderClient["warehouse"]["findMany"]>>;

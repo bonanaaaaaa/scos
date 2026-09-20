@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { z } from "zod";
 
-import { SUBMISSION_KEY_MAX_LENGTH, submissionKeySchema } from "#domain/ordering/submission-key";
+import { SUBMISSION_KEY_MAX_LENGTH, submissionKeySchema } from "./submission-key";
 
 /** The path and code of every issue, so assertions pin which check failed. */
 const issuesOf = (result: z.ZodSafeParseResult<unknown>) =>

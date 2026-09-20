@@ -17,7 +17,7 @@ import { corePackage } from "@scos/core";
 import { persistencePackage } from "@scos/persistence";
 
 // Apps
-export { type AppDependencies, createApp } from "#app";
+export { type AppDependencies, createApp } from "./app";
 export { type HealthAppOptions, createHealthApp } from "#endpoints/health/app";
 export { type SubmitOrderAppDependencies, createSubmitOrderApp } from "#endpoints/submit-order/app";
 export { type VerifyOrderAppDependencies, createVerifyOrderApp } from "#endpoints/verify-order/app";
@@ -53,11 +53,11 @@ export {
   type ServerConfig,
   parseConfig,
   parseDatabaseConfig,
-} from "#config";
+} from "./config";
 export { type HealthConfig, parseHealthConfig } from "#endpoints/health/config";
 
 // Contracts
-export { routes } from "#routes";
+export { routes } from "./routes";
 export {
   type ErrorCode,
   type ErrorIssue,

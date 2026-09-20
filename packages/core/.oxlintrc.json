@@ -20,8 +20,12 @@
         ],
         "patterns": [
           {
-            "regex": "^\\.\\.?/",
-            "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+            "regex": "(?:^|/)\\.\\.(?:/|$)",
+            "message": "A relative import may not leave its folder: name the module by its package's \"imports\" map (\"#...\") or by the workspace package that exports it (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+          },
+          {
+            "regex": "^\\./[^/]+/",
+            "message": "Only a folder mate may be imported relatively (\"./contract\"): name a module in another folder through its package's \"imports\" map (\"#...\"). See docs/architecture.md, \"Module specifiers\"."
           },
           {
             "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
@@ -40,8 +44,12 @@
           {
             "patterns": [
               {
-                "regex": "^\\.\\.?/",
-                "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+                "regex": "(?:^|/)\\.\\.(?:/|$)",
+                "message": "A relative import may not leave its folder: name the module by its package's \"imports\" map (\"#...\") or by the workspace package that exports it (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+              },
+              {
+                "regex": "^\\./[^/]+/",
+                "message": "Only a folder mate may be imported relatively (\"./contract\"): name a module in another folder through its package's \"imports\" map (\"#...\"). See docs/architecture.md, \"Module specifiers\"."
               },
               {
                 "group": [
@@ -87,8 +95,12 @@
             ],
             "patterns": [
               {
-                "regex": "^\\.\\.?/",
-                "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+                "regex": "(?:^|/)\\.\\.(?:/|$)",
+                "message": "A relative import may not leave its folder: name the module by its package's \"imports\" map (\"#...\") or by the workspace package that exports it (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+              },
+              {
+                "regex": "^\\./[^/]+/",
+                "message": "Only a folder mate may be imported relatively (\"./contract\"): name a module in another folder through its package's \"imports\" map (\"#...\"). See docs/architecture.md, \"Module specifiers\"."
               },
               {
                 "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
@@ -125,8 +137,12 @@
             ],
             "patterns": [
               {
-                "regex": "^\\.\\.?/",
-                "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+                "regex": "(?:^|/)\\.\\.(?:/|$)",
+                "message": "A relative import may not leave its folder: name the module by its package's \"imports\" map (\"#...\") or by the workspace package that exports it (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+              },
+              {
+                "regex": "^\\./[^/]+/",
+                "message": "Only a folder mate may be imported relatively (\"./contract\"): name a module in another folder through its package's \"imports\" map (\"#...\"). See docs/architecture.md, \"Module specifiers\"."
               },
               {
                 "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
@@ -174,8 +190,12 @@
             ],
             "patterns": [
               {
-                "regex": "^\\.\\.?/",
-                "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+                "regex": "(?:^|/)\\.\\.(?:/|$)",
+                "message": "A relative import may not leave its folder: name the module by its package's \"imports\" map (\"#...\") or by the workspace package that exports it (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+              },
+              {
+                "regex": "^\\./[^/]+/",
+                "message": "Only a folder mate may be imported relatively (\"./contract\"): name a module in another folder through its package's \"imports\" map (\"#...\"). See docs/architecture.md, \"Module specifiers\"."
               },
               {
                 "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],
@@ -221,8 +241,12 @@
             ],
             "patterns": [
               {
-                "regex": "^\\.\\.?/",
-                "message": "Relative imports are not allowed: import through the package's \"imports\" map (\"#...\") or the workspace package name (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+                "regex": "(?:^|/)\\.\\.(?:/|$)",
+                "message": "A relative import may not leave its folder: name the module by its package's \"imports\" map (\"#...\") or by the workspace package that exports it (\"@scos/core\"). See docs/architecture.md, \"Module specifiers\"."
+              },
+              {
+                "regex": "^\\./[^/]+/",
+                "message": "Only a folder mate may be imported relatively (\"./contract\"): name a module in another folder through its package's \"imports\" map (\"#...\"). See docs/architecture.md, \"Module specifiers\"."
               },
               {
                 "group": ["@prisma/*", "hono/*", "@hono/*", "@scos/persistence/*"],

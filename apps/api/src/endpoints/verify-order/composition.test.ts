@@ -12,7 +12,7 @@ vi.mock("@scos/persistence", async (importOriginal) =>
 );
 
 const persistence = await import("@scos/persistence");
-const { composeVerifyOrderApplication } = await import("#endpoints/verify-order/composition");
+const { composeVerifyOrderApplication } = await import("./composition");
 const { spies, calls, watchNextPool } = factorySpies(persistence);
 
 afterEach(() => {

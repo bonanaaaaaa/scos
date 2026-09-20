@@ -12,10 +12,11 @@ import {
   notFoundResponse,
 } from "#http/route-contract";
 import { warehouseIdSchema } from "#http/schemas";
-import type { JsonObject } from "#openapi/document";
-import { buildOpenApiDocument, renderOpenApiDocument } from "#openapi/offline";
 import { routes } from "#routes";
 import { ajvAccepts, specValidator } from "#testing/openapi.test-support";
+
+import type { JsonObject } from "./document";
+import { buildOpenApiDocument, renderOpenApiDocument } from "./offline";
 
 const document = await buildOpenApiDocument();
 const schemas = document.components.schemas;

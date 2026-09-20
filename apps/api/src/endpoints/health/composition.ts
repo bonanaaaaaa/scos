@@ -5,9 +5,10 @@
  */
 
 import { type ComposedApplication, withHttpTelemetry } from "#composition/database";
-import { createHealthApp } from "#endpoints/health/app";
 import type { Logger } from "#http/logger";
 import type { Telemetry } from "#telemetry/telemetry";
+
+import { createHealthApp } from "./app";
 
 export interface HealthCompositionOptions {
   readonly logger?: Logger;

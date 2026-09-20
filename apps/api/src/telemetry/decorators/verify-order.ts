@@ -8,8 +8,9 @@
 import type { Attributes } from "@opentelemetry/api";
 import type { OrderEstimate, VerifyOrder } from "@scos/core";
 
-import { ATTR_ESTIMATE_REASON, ATTR_ESTIMATE_VALID, inSpan } from "#telemetry/decorators/span";
 import type { Telemetry } from "#telemetry/telemetry";
+
+import { ATTR_ESTIMATE_REASON, ATTR_ESTIMATE_VALID, inSpan } from "./span";
 
 function estimateAttributes(estimate: OrderEstimate): Attributes {
   return estimate.valid

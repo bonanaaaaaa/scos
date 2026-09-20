@@ -8,7 +8,6 @@ import {
 } from "@scos/core";
 import { describe, expect, test, vi } from "vitest";
 
-import { createApp } from "#app";
 import { createHealthApp } from "#endpoints/health/app";
 import { createSubmitOrderApp } from "#endpoints/submit-order/app";
 import { rejectedSubmissionResponseSchema } from "#endpoints/submit-order/contract";
@@ -18,7 +17,6 @@ import { errorResponseSchema } from "#http/errors";
 import { defaultLogger } from "#http/logger";
 import { MESSAGES } from "#http/messages";
 import { API_PREFIX } from "#http/route-contract";
-import { routes } from "#routes";
 import {
   acceptedOrder,
   fakeLogger,
@@ -43,6 +41,9 @@ import {
   unknownCases,
   verifyCases,
 } from "#testing/requests.test-support";
+
+import { createApp } from "./app";
+import { routes } from "./routes";
 
 /** The combined app over fake use cases, as the local server builds it. */
 function harness(

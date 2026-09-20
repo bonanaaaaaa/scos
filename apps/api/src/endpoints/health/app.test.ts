@@ -1,9 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { createHealthApp } from "#endpoints/health/app";
-import { healthResponseSchema, healthRoute } from "#endpoints/health/contract";
 import { errorResponseSchema } from "#http/errors";
 import { submitBody, verifyBody } from "#testing/fixtures.test-support";
+
+import { createHealthApp } from "./app";
+import { healthResponseSchema, healthRoute } from "./contract";
 
 describe("createHealthApp", () => {
   test("GET /health reports liveness as JSON", async () => {

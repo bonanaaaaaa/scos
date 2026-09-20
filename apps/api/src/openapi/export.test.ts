@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { createApp } from "#app";
+import { fakeLogger } from "#testing/fixtures.test-support";
+import { noSubmit, noVerify } from "#testing/requests.test-support";
+
 import {
   OPENAPI_EXPORT_FILE,
   OPENAPI_EXPORT_PATH,
@@ -12,10 +15,8 @@ import {
   exportOpenApiDocument,
   exportPath,
   writeFileCreatingDirectory,
-} from "#openapi/export";
-import { renderOpenApiDocument } from "#openapi/offline";
-import { fakeLogger } from "#testing/fixtures.test-support";
-import { noSubmit, noVerify } from "#testing/requests.test-support";
+} from "./export";
+import { renderOpenApiDocument } from "./offline";
 
 let directory = "";
 
