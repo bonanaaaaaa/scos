@@ -258,9 +258,8 @@ list is in [README, Limitations and next steps](README.md#limitations-and-next-s
 
 ### What is still tracked, and why
 
-Work is planned as GitHub issues on
-[project board 1](https://github.com/users/bonanaaaaaa/projects/1/views/1).
-Everything in the core track (#2, #7–#13, #17, #28, #15) is merged. Four items
+Work was planned as GitHub issues, each with its own acceptance criteria.
+Everything in the core track (#2, #7–#13, #17, #28, #15) is merged. Four issues
 remain open, and it is worth being precise about why, because none of them is
 unfinished business logic:
 
@@ -279,9 +278,3 @@ billing and connection-budget criteria — they are the ones that would tell us
 whether the connection-budget arithmetic in
 [the deployment design](docs/cloudflare-deployment-design.md#connection-budget)
 actually holds under Hyperdrive.
-
-**Scope note.** The brief recommends about four hours. This went well past that:
-the extra time went into the hosted deployment, the infrastructure-as-code and
-CI/CD pipeline, and the written decision record — the "plus" items and the
-production-system framing, rather than more business logic. The functional core
-is small and was settled early.
