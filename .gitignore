@@ -1,25 +1,35 @@
-# Local issue-loop memory and evidence
-.loop/
+# macOS and editor metadata
+.DS_Store
+.idea/
+*.swp
 
-# Local agent skills
-.claude/skills/
-.claude/agents/
-.agents/skills/
-.codex/agents/
-.env
-.turbo
-coverage
-dist
-node_modules
+# Dependencies and package-manager state
+node_modules/
+.pnpm-store/
+
+# Build output and task caches
+dist/
+.turbo/
+*.tsbuildinfo
 
 # Generated Prisma client (rebuilt by the turbo generate task)
 packages/persistence/src/generated/
 
-# Wrangler (apps/api Worker): local state and local secrets
-.wrangler
+# Secrets and local environment overrides
+.env
+.env.*
+!.env.example
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
+
+# Test and coverage artifacts
+coverage/
+test-results/
+playwright-report/
+
+# Wrangler (apps/api Worker): local development state
+.wrangler/
 
 # Terraform (infra/): provider caches, state, plans and crash logs are never
 # committed; state and plans hold secrets. .terraform.lock.hcl stays tracked.
@@ -31,6 +41,17 @@ tfplan
 crash.log
 crash.*.log
 
-# Playwright reports and artifacts (apps/api-acceptance)
-test-results/
-playwright-report/
+# Local agent state: issue-loop memory and evidence, skills, worktrees
+.loop/
+.claude/skills/
+.claude/agents/
+.claude/worktrees/
+.agents/skills/
+.codex/agents/
+
+# Scratch and temporary working directories
+tmp/
+.tmp/
+
+# Local issue drafts kept outside version control
+docs/issue-drafts/
