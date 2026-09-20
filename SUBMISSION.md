@@ -245,19 +245,13 @@ list is in [README, Limitations and next steps](README.md#limitations-and-next-s
    stock. A real warehouse system needs restocking, transfers and corrections,
    which in turn means an inventory ledger rather than a mutable counter.
 
-**Known gaps in what is built:**
-
-- **AWS Lambda is deferred.** The design and the per-endpoint
-  composition roots are kept; no handler or packaging exists.
-
-### What remains
-
-The core is complete and verified, and the hosted demonstration is live and
-verified from the outside
+**What remains.** The core is complete and verified, and the hosted
+demonstration is live and verified from the outside
 ([evidence](docs/hosted-demonstration.md#verification-evidence)). None of what
 is left is unfinished business logic:
 
-- **The second cloud target, deliberately postponed.** An AWS account issue
+- **The second cloud target is deliberately postponed.** An AWS account issue
   stopped the Lambda track before the deadline
-  ([ADR 0005](docs/adr/0005-cloudflare-first-deployment.md)), so its design is
-  kept but unbuilt.
+  ([ADR 0005](docs/adr/0005-cloudflare-first-deployment.md)). The design and
+  the per-endpoint composition roots are kept, but no Lambda handler or
+  packaging exists.
