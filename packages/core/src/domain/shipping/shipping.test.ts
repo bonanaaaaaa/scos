@@ -6,6 +6,7 @@ import { Money } from "#domain/shared/money";
 import type { WarehouseAllocation } from "./allocation";
 import {
   isShippingWithinLimit,
+  publishedShippingLimitFor,
   shippingCostFor,
   shippingLimitFor,
   unroundedShippingCost,
@@ -13,13 +14,15 @@ import {
 
 const allocation = ({
   warehouseId = "a",
+  warehouseName = `Warehouse ${warehouseId}`,
   quantity,
   distanceKm,
 }: {
   warehouseId?: string;
+  warehouseName?: string;
   quantity: number;
   distanceKm: number;
-}): WarehouseAllocation => ({ warehouseId, quantity, distanceKm });
+}): WarehouseAllocation => ({ warehouseId, warehouseName, quantity, distanceKm });
 
 describe("shipping cost", () => {
   test("is units x 0.365 kg x $0.01/kg/km x distance", () => {
@@ -112,5 +115,66 @@ describe("shipping limit", () => {
     const net = Money.parse("3562.50");
     expect(isShippingWithinLimit(Money.parse("534.37"), net)).toBe(true);
     expect(isShippingWithinLimit(Money.parse("534.38"), net)).toBe(false);
+  });
+});
+
+describe("published shipping limit", () => {
+  /** Discounted totals whose exact 15% limit has digits below the cent. */
+  const SUB_CENT_LIMITS = ["150.05", "1500.01", "3562.50", "233.33"];
+
+  test("truncates the exact limit toward zero to cents", () => {
+    // 15% of 1500.01 is exactly 225.0015: four decimals, all discarded.
+    expect(publishedShippingLimitFor(Money.parse("1500.01")).toString()).toBe("225.00");
+    expect(publishedShippingLimitFor(Money.parse("3562.50")).toString()).toBe("534.37");
+    // A limit already at cent scale is published unchanged.
+    expect(publishedShippingLimitFor(Money.parse("100.00")).toString()).toBe("15.00");
+    expect(publishedShippingLimitFor(Money.parse("0.00")).toString()).toBe("0.00");
+  });
+
+  test("truncates rather than rounding half-up", () => {
+    // Half-up would publish 22.51 and so admit a cost the server rejects.
+    const discounted = Money.parse("150.05");
+    expect(shippingLimitFor(discounted).toString()).toBe("22.5075");
+    expect(publishedShippingLimitFor(discounted).toString()).toBe("22.50");
+    expect(isShippingWithinLimit(Money.parse("22.51"), discounted)).toBe(false);
+  });
+
+  test("decides the same as the exact limit at the boundary cent and either side", () => {
+    for (const total of SUB_CENT_LIMITS) {
+      const discounted = Money.parse(total);
+      const published = publishedShippingLimitFor(discounted);
+      // Truncation really moved the limit here, so the two could disagree.
+      expect(shippingLimitFor(discounted).equals(published.toDecimal())).toBe(false);
+      for (const offset of ["-0.01", "0.00", "0.01"]) {
+        const cost = Money.fromDecimal(published.toDecimal().plus(new DomainDecimal(offset)));
+        expect(isShippingWithinLimit(cost, discounted)).toBe(
+          cost.toDecimal().lessThanOrEqualTo(published.toDecimal()),
+        );
+      }
+    }
+  });
+
+  test("decides the same as the exact limit across a range of discounted totals", () => {
+    for (let cents = 100; cents <= 500_000; cents += 997) {
+      const discounted = Money.fromDecimal(new DomainDecimal(cents).dividedBy(100));
+      const published = publishedShippingLimitFor(discounted);
+      for (const offset of ["-0.01", "0.00", "0.01"]) {
+        const cost = Money.fromDecimal(published.toDecimal().plus(new DomainDecimal(offset)));
+        expect(isShippingWithinLimit(cost, discounted)).toBe(
+          cost.toDecimal().lessThanOrEqualTo(published.toDecimal()),
+        );
+      }
+    }
+  });
+
+  test("is never above the exact limit", () => {
+    for (let cents = 0; cents <= 500_000; cents += 997) {
+      const discounted = Money.fromDecimal(new DomainDecimal(cents).dividedBy(100));
+      expect(
+        publishedShippingLimitFor(discounted)
+          .toDecimal()
+          .lessThanOrEqualTo(shippingLimitFor(discounted)),
+      ).toBe(true);
+    }
   });
 });

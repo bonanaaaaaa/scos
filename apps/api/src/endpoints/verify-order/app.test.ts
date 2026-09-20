@@ -20,6 +20,7 @@ import {
   validEstimate,
   verifyBody,
 } from "#testing/fixtures.test-support";
+import { seedInventory, seededApp } from "#testing/seeded-use-cases.test-support";
 
 import { createVerifyOrderApp } from "./app";
 import { verifyOrderResponseSchema, verifyOrderRoute } from "./contract";
@@ -44,15 +45,18 @@ describe("POST /api/v1/orders/verify", () => {
       reason: null,
       quantity: 30,
       destination: { latitude: 0, longitude: 0.5 },
+      unitPrice: "150.00",
       merchandiseSubtotal: "4500.00",
       discountRate: "0.05",
       discountAmount: "225.00",
       discountedMerchandiseTotal: "4275.00",
       shippingCost: validEstimate.shippingCost?.toString(),
+      shippingLimit: validEstimate.shippingLimit?.toString(),
       orderTotal: validEstimate.orderTotal?.toString(),
       allocations: [
         {
           warehouseId: inventory[0]?.warehouseId,
+          warehouseName: inventory[0]?.warehouseName,
           quantity: 30,
           distanceKm: validEstimate.allocations[0]?.distanceKm,
         },
@@ -74,9 +78,11 @@ describe("POST /api/v1/orders/verify", () => {
     expect(body).toMatchObject({
       valid: false,
       reason: "SHIPPING_EXCEEDS_LIMIT",
+      unitPrice: "150.00",
       merchandiseSubtotal: "150.00",
       discountRate: "0.00",
       shippingCost: shippingEstimate.shippingCost?.toString(),
+      shippingLimit: shippingEstimate.shippingLimit?.toString(),
       orderTotal: shippingEstimate.orderTotal?.toString(),
     });
     expect(body.allocations).toHaveLength(1);
@@ -96,11 +102,13 @@ describe("POST /api/v1/orders/verify", () => {
       reason: "INSUFFICIENT_STOCK",
       quantity: 1_000,
       destination: { latitude: 0, longitude: 0 },
+      unitPrice: "150.00",
       merchandiseSubtotal: "150000.00",
       discountRate: "0.20",
       discountAmount: "30000.00",
       discountedMerchandiseTotal: "120000.00",
       shippingCost: null,
+      shippingLimit: null,
       orderTotal: null,
       allocations: [],
     });
@@ -153,6 +161,37 @@ describe("POST /api/v1/orders/verify", () => {
       "http.route": "/api/v1/orders/verify",
       error: expect.any(Error),
     });
+  });
+});
+
+describe("POST /api/v1/orders/verify over the seeded inventory", () => {
+  test("200 names every warehouse of a multi-warehouse plan, nearest first", async () => {
+    // 300 units to Berlin are more than Warsaw's 245, so the nearest-first plan
+    // runs on to the next warehouse and both allocations must carry a name.
+    const response = await post(seededApp(), "/api/v1/orders/verify", {
+      quantity: 300,
+      latitude: 52.52,
+      longitude: 13.405,
+    });
+
+    expect(response.status).toBe(200);
+    const body = await json(response, verifyOrderResponseSchema);
+    expect(
+      body.allocations.map(({ warehouseName, quantity }) => [warehouseName, quantity]),
+    ).toStrictEqual([
+      ["Warsaw", 245],
+      ["Paris", 55],
+    ]);
+    // Each name is the seeded warehouse's own, matched on the stable ID rather
+    // than on position, and the existing nearest-first order is unchanged.
+    const seeded = new Map(
+      seedInventory().map(({ warehouseId, warehouseName }) => [warehouseId, warehouseName]),
+    );
+    for (const { warehouseId, warehouseName } of body.allocations) {
+      expect(warehouseName, warehouseId).toBe(seeded.get(warehouseId));
+    }
+    const distances = body.allocations.map(({ distanceKm }) => distanceKm);
+    expect(distances).toStrictEqual(distances.toSorted((left, right) => left - right));
   });
 });
 

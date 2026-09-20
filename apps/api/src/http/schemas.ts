@@ -74,6 +74,17 @@ export const warehouseIdSchema = z.guid().meta({
     "A warehouse's ID in canonical UUID form (8-4-4-4-12 hex digits). Warehouses are created with UUIDv7 IDs (the seeded warehouses and the database default), but the version is not guaranteed: treat it as an opaque identifier.",
 });
 
+/**
+ * A warehouse's display name, such as "Warsaw". Unique among warehouses and
+ * never empty, but it is a label, not a key: an allocation's `warehouseId` is
+ * the stable identifier.
+ */
+export const warehouseNameSchema = z.string().min(1).meta({
+  id: "WarehouseName",
+  description:
+    "The warehouse's name, such as \"Warsaw\". Unique among warehouses and never empty. It is a label for display, not an identifier: match warehouses on `warehouseId`, which never changes. The name is always the warehouse's current name, on an estimate and on an accepted Order alike — it is read through the allocation's warehouse rather than copied onto the Order, so renaming a warehouse changes it in later reads of an Order already returned. Every other field of an accepted Order is fixed at acceptance.",
+});
+
 /** The destination as validated from the request, echoed back. */
 export const destinationResponseSchema = z
   .object({

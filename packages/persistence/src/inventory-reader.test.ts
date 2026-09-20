@@ -23,12 +23,14 @@ function stubClient(rows: () => Rows) {
 
 const losAngeles = {
   id: "01996000-0000-7000-8000-000000000001",
+  name: "Los Angeles",
   latitude: 33.9425,
   longitude: -118.408056,
   stock: 355,
 };
 const warsaw = {
   id: "01996000-0000-7000-8000-000000000005",
+  name: "Warsaw",
   latitude: 52.165833,
   longitude: 20.967222,
   stock: 0,
@@ -43,12 +45,14 @@ describe("createPrismaInventoryReader", () => {
     expect(snapshot).toStrictEqual([
       {
         warehouseId: "01996000-0000-7000-8000-000000000001",
+        warehouseName: "Los Angeles",
         latitude: 33.9425,
         longitude: -118.408056,
         available: 355,
       },
       {
         warehouseId: "01996000-0000-7000-8000-000000000005",
+        warehouseName: "Warsaw",
         latitude: 52.165833,
         longitude: 20.967222,
         available: 0,
@@ -67,10 +71,27 @@ describe("createPrismaInventoryReader", () => {
 
     expect(calls).toStrictEqual([
       {
-        select: { id: true, latitude: true, longitude: true, stock: true },
+        select: { id: true, name: true, latitude: true, longitude: true, stock: true },
         orderBy: { id: "asc" },
       },
     ]);
+  });
+
+  // An estimate is advisory, so the name belongs to the same live read as the
+  // stock: whatever the warehouse is called now is what the estimate names.
+  test("the snapshot carries each warehouse's current name", async () => {
+    let name = "Warsaw";
+    const { client } = stubClient(() => [losAngeles, { ...warsaw, name }]);
+    const reader = createPrismaInventoryReader(client);
+
+    expect(
+      (await reader.readInventorySnapshot()).map((warehouse) => warehouse.warehouseName),
+    ).toStrictEqual(["Los Angeles", "Warsaw"]);
+
+    name = "Warszawa";
+    expect(
+      (await reader.readInventorySnapshot()).map((warehouse) => warehouse.warehouseName),
+    ).toStrictEqual(["Los Angeles", "Warszawa"]);
   });
 
   test("nothing is cached: every read queries again and sees current stock", async () => {

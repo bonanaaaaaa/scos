@@ -129,14 +129,14 @@ Two splits are deliberate and easy to miss:
 
 ## Numeric policy across the layers
 
-| Topic              | Rule                                                                                                                                                                                                           | Details                                                                     |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Decimal arithmetic | Money uses an isolated `decimal.js` clone with 40 significant digits and `ROUND_HALF_UP`; constants are built from strings. Discounts are exact at cents; only the shipping charge is rounded, once, to cents. | [core numeric policy](../packages/core/README.md#numeric-policy)            |
-| Money on the wire  | Decimal strings with two fractional digits (`"150.00"`); `discountRate` is a two-decimal string; `shippingCost` and `orderTotal` are `null` for insufficient stock.                                            | [API endpoints](../apps/api/README.md#endpoints)                            |
-| Distance           | Haversine in JavaScript `number` with Earth radius `EARTH_RADIUS_KM = 6371.0088` km (IUGG mean radius); `distanceKm` is returned unrounded.                                                                    | [core numeric policy](../packages/core/README.md#numeric-policy)            |
-| Quantity           | JSON integer from 1 to `MAX_QUANTITY` = 66,666,666 (floor(9,999,999,999.99 / 150)), a storage-representability bound rather than a business cap; larger values are `400`.                                      | [supported input bounds](../packages/core/README.md#supported-input-bounds) |
-| Coordinates        | JSON numbers, latitude -90 to 90 and longitude -180 to 180 inclusive, never coerced from strings; stored as `double precision`.                                                                                | [request validation](../apps/api/README.md#request-validation)              |
-| Stored money       | `NUMERIC(12,2)`, at most 9,999,999,999.99 and nonnegative; `discount_rate` is `NUMERIC(3,2)`. Out-of-range amounts fail instead of being rounded.                                                              | [money and coordinates](database-schema.md#money-and-coordinates)           |
+| Topic              | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Details                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Decimal arithmetic | Money uses an isolated `decimal.js` clone with 40 significant digits and `ROUND_HALF_UP`; constants are built from strings. Discounts are exact at cents. Two amounts are reduced to cents, by different rules: the shipping charge is rounded once, half-up, and the published `shippingLimit` is truncated toward zero, so a client's own `shippingCost <= shippingLimit` check agrees with the server on every amount. The accept/reject decision itself uses the exact, unrounded 15%. | [core numeric policy](../packages/core/README.md#numeric-policy)            |
+| Money on the wire  | Decimal strings with two fractional digits (`"150.00"`); `discountRate` is a two-decimal string; `shippingCost`, `shippingLimit` and `orderTotal` are `null` for insufficient stock.                                                                                                                                                                                                                                                                                                       | [API endpoints](../apps/api/README.md#endpoints)                            |
+| Distance           | Haversine in JavaScript `number` with Earth radius `EARTH_RADIUS_KM = 6371.0088` km (IUGG mean radius); `distanceKm` is returned unrounded.                                                                                                                                                                                                                                                                                                                                                | [core numeric policy](../packages/core/README.md#numeric-policy)            |
+| Quantity           | JSON integer from 1 to `MAX_QUANTITY` = 66,666,666 (floor(9,999,999,999.99 / 150)), a storage-representability bound rather than a business cap; larger values are `400`.                                                                                                                                                                                                                                                                                                                  | [supported input bounds](../packages/core/README.md#supported-input-bounds) |
+| Coordinates        | JSON numbers, latitude -90 to 90 and longitude -180 to 180 inclusive, never coerced from strings; stored as `double precision`.                                                                                                                                                                                                                                                                                                                                                            | [request validation](../apps/api/README.md#request-validation)              |
+| Stored money       | `NUMERIC(12,2)`, at most 9,999,999,999.99 and nonnegative; `discount_rate` is `NUMERIC(3,2)`. Out-of-range amounts fail instead of being rounded.                                                                                                                                                                                                                                                                                                                                          | [money and coordinates](database-schema.md#money-and-coordinates)           |
 
 ## The dependency rule
 
@@ -270,8 +270,9 @@ function `(request: OrderRequest) => Promise<OrderEstimate>` that:
 
 The result is a typed outcome, not an HTTP response: a valid estimate, or
 `valid: false` with reason `SHIPPING_EXCEEDS_LIMIT` (all amounts and Warehouse
-Allocations kept) or `INSUFFICIENT_STOCK` (merchandise and discount amounts
-kept, no allocations, `null` shipping cost and order total). Business rejections
+Allocations kept, including the shipping limit the cost exceeded) or
+`INSUFFICIENT_STOCK` (merchandise and discount amounts kept, no allocations,
+`null` shipping cost, shipping limit and order total). Business rejections
 are returned; only port failures and `DomainError` reject the promise. Mapping
 to status codes belongs to the HTTP adapter.
 
@@ -283,8 +284,9 @@ whatever stock is current, and submission recalculates from the stock it locks.
 **`InventoryReader`** is the port: `readInventorySnapshot()` resolves to one
 coherent, complete, point-in-time `InventorySnapshot`, read-only and without
 locks. `createPrismaInventoryReader` in `packages/persistence` implements it
-with a single `SELECT` over `warehouses`. One statement sees one MVCC snapshot,
-so the stock values are mutually consistent without a transaction (see
+with a single `SELECT` over `warehouses`, reading each warehouse's current name
+alongside its stock. One statement sees one MVCC snapshot, so the stock values
+are mutually consistent without a transaction (see
 [Read pattern for verification](database-schema.md#read-pattern-for-verification-9)).
 The composition root wires the two together:
 
@@ -326,23 +328,36 @@ Solid diamonds are composition (the owner holds the value); dashed arrows are
   throws `DomainError`. The database assigns the `id` on insert. A stored Order
   is rebuilt with `restoreOrder`, which checks structure and derived totals but
   not current commercial rules, because accepted amounts are historical facts.
-  An Order's allocations (`OrderAllocation`) keep only the warehouse and
-  quantity, the facts that are stored, so a rebuilt Order equals the one
-  returned at acceptance. The order number is `SO-` plus 12 random Crockford
-  base32 characters (see [database schema](database-schema.md#identifiers-and-keys)).
+  An Order's allocations (`OrderAllocation`) persist only the warehouse and the
+  quantity, so a rebuilt Order equals the one returned at acceptance. Each also
+  carries its warehouse's name, which the adapter resolves through the
+  allocation's foreign key rather than storing: the name depends on the
+  warehouse, not on the Order, so copying it onto every allocation row would
+  duplicate a fact the key already identifies. The contract states the
+  consequence — an allocation's `warehouseName` is the warehouse's current
+  name, so a rename shows up in later reads of an Order already returned (see
+  [database schema](database-schema.md#normalization-3nf)). The order number is
+  `SO-` plus 12 random Crockford base32 characters (see
+  [database schema](database-schema.md#identifiers-and-keys)).
 - **Value objects** have no identity and are immutable: `Quantity`,
   `Destination` and `SubmissionKey` (branded, produced by the Zod input
   schemas), `Money`,
   `DiscountRate`, `WarehouseAllocation`, `ShippingPlan` (a non-empty list of
   allocations), `OrderRequest` and `OrderEstimate`. An estimate carries the
   request's quantity and destination, the priced amounts, and either a
-  `ShippingPlan` or a rejection `reason`. `SubmissionKey` is the client's retry
-  key, stored verbatim as the accepted Order's unique `submission_key`; it is
-  not part of what is ordered, so it is not in `OrderRequest`.
-- **Domain services** are stateless functions: pricing (discount tiers,
-  merchandise totals), shipping (combined cost rounded once, exact 15% limit),
-  allocation (nearest-first; it returns no plan when stock is insufficient) and
-  distance (Haversine). `estimateOrder` composes them into an estimate.
+  `ShippingPlan` or a rejection `reason`. A `WarehouseAllocation` carries its
+  warehouse's name from the snapshot it was planned against, so a caller can
+  read a plan without a second lookup; the name is never ranked on, and the
+  plan is still chosen by distance and broken by `warehouseId`.
+  `SubmissionKey` is the client's retry key, stored verbatim as the accepted
+  Order's unique `submission_key`; it is not part of what is ordered, so it is
+  not in `OrderRequest`.
+- **Domain services** are stateless functions: pricing (unit price, discount
+  tiers, merchandise totals), shipping (combined cost rounded once, the exact
+  15% limit that decides validity, and the published limit truncated toward
+  zero to cents that the estimate reports), allocation (nearest-first; it
+  returns no plan when stock is insufficient) and distance (Haversine).
+  `estimateOrder` composes them into an estimate.
 
 What is deliberately absent:
 

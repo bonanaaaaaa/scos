@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1060" height="970" viewBox="0 0 1060 970" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
   <title>The SCOS Ordering domain model</title>
-  <desc>An Order Request and an Inventory Snapshot of Warehouse Stock feed the domain services. EstimateOrder orchestrates Pricing, Allocation and Shipping, and Allocation uses Distance; it returns an Order Estimate, which carries Warehouse Allocations, while Allocation returns a Shipping Plan of the same. The CreateOrder factory takes an Order Estimate and a Submission Key, re-verifies the amounts with Pricing and Shipping, and returns the Order aggregate root, which owns its Order Allocations. Quantity, Destination, Money, DiscountRate and SubmissionKey are shared value objects composed into Order, Order Estimate and Order Request.</desc>
+  <desc>An Order Request and an Inventory Snapshot of Warehouse Stock feed the domain services. EstimateOrder orchestrates Pricing, Allocation and Shipping, and Allocation uses Distance; it returns an Order Estimate, which carries the unit price, the published shipping limit and Warehouse Allocations, each naming its warehouse, while Allocation returns a Shipping Plan of the same. The CreateOrder factory takes an Order Estimate and a Submission Key, re-verifies the amounts with Pricing and Shipping, and returns the Order aggregate root, which owns its Order Allocations. Quantity, Destination, Money, DiscountRate and SubmissionKey are shared value objects composed into Order, Order Estimate and Order Request.</desc>
   <style>
     .bg { fill: #ffffff; }
     .gray rect { fill: #F1EFE8; stroke: #5F5E5A; }
@@ -69,12 +69,13 @@
     <text class="ts" x="40" y="240">«ReadModel»</text>
   </g>
   <g class="gray">
-    <rect x="24" y="286" width="200" height="112" rx="8"/>
+    <rect x="24" y="286" width="200" height="130" rx="8"/>
     <text class="th" x="40" y="310">WarehouseStock</text>
     <text class="ts" x="40" y="328">«ReadModel»</text>
     <text class="ts" x="40" y="352">warehouseId</text>
-    <text class="ts" x="40" y="370">latitude, longitude</text>
-    <text class="ts" x="40" y="388">available</text>
+    <text class="ts" x="40" y="370">warehouseName</text>
+    <text class="ts" x="40" y="388">latitude, longitude</text>
+    <text class="ts" x="40" y="406">available</text>
   </g>
 
   <!-- Column 2: domain services -->
@@ -106,39 +107,42 @@
     <text class="ts" x="284" y="512">haversineDistanceKm(a, b)</text>
   </g>
   <g class="teal">
-    <rect x="268" y="556" width="220" height="114" rx="8"/>
+    <rect x="268" y="556" width="220" height="132" rx="8"/>
     <text class="th" x="284" y="578">Shipping</text>
     <text class="ts" x="284" y="596">«DomainService»</text>
     <text class="ts" x="284" y="620">shippingCostFor(allocations)</text>
     <text class="ts" x="284" y="638">shippingLimitFor(total)</text>
-    <text class="ts" x="284" y="656">isShippingWithinLimit(…)</text>
+    <text class="ts" x="284" y="656">publishedShippingLimitFor(…)</text>
+    <text class="ts" x="284" y="674">isShippingWithinLimit(…)</text>
   </g>
 
   <!-- Column 3: estimate result -->
   <g class="purple">
-    <rect x="532" y="70" width="220" height="186" rx="8"/>
+    <rect x="532" y="70" width="220" height="204" rx="8"/>
     <text class="th" x="548" y="92">OrderEstimate</text>
     <text class="ts" x="548" y="110">«ValueObject»</text>
     <text class="ts" x="548" y="134">valid, reason</text>
     <text class="ts" x="548" y="152">quantity, destination</text>
-    <text class="ts" x="548" y="170">merchandiseSubtotal</text>
+    <text class="ts" x="548" y="170">unitPrice, merchandiseSubtotal</text>
     <text class="ts" x="548" y="188">discountRate, discountAmount</text>
     <text class="ts" x="548" y="206">discountedMerchandiseTotal</text>
-    <text class="ts" x="548" y="224">shippingCost, orderTotal</text>
-    <text class="ts" x="548" y="242">allocations 0..*</text>
+    <text class="ts" x="548" y="224">shippingCost, shippingLimit</text>
+    <text class="ts" x="548" y="242">orderTotal</text>
+    <text class="ts" x="548" y="260">allocations 0..*</text>
   </g>
   <g class="purple">
-    <rect x="532" y="286" width="220" height="60" rx="8"/>
-    <text class="th" x="548" y="310">ShippingPlan</text>
-    <text class="ts" x="548" y="330">«ValueObject» · 1..* allocations</text>
+    <rect x="532" y="304" width="220" height="60" rx="8"/>
+    <text class="th" x="548" y="328">ShippingPlan</text>
+    <text class="ts" x="548" y="348">«ValueObject» · 1..* allocations</text>
   </g>
   <g class="purple">
-    <rect x="532" y="376" width="220" height="112" rx="8"/>
-    <text class="th" x="548" y="400">WarehouseAllocation</text>
-    <text class="ts" x="548" y="418">«ValueObject»</text>
-    <text class="ts" x="548" y="442">warehouseId</text>
-    <text class="ts" x="548" y="460">quantity</text>
-    <text class="ts" x="548" y="478">distanceKm</text>
+    <rect x="532" y="394" width="220" height="130" rx="8"/>
+    <text class="th" x="548" y="418">WarehouseAllocation</text>
+    <text class="ts" x="548" y="436">«ValueObject»</text>
+    <text class="ts" x="548" y="460">warehouseId</text>
+    <text class="ts" x="548" y="478">warehouseName</text>
+    <text class="ts" x="548" y="496">quantity</text>
+    <text class="ts" x="548" y="514">distanceKm</text>
   </g>
 
   <!-- Column 4: the aggregate -->
@@ -166,11 +170,12 @@
     <text class="ts" x="816" y="424">allocations: OrderAllocation[]</text>
   </g>
   <g class="purple">
-    <rect x="800" y="472" width="236" height="96" rx="8"/>
+    <rect x="800" y="472" width="236" height="114" rx="8"/>
     <text class="th" x="816" y="496">OrderAllocation</text>
     <text class="ts" x="816" y="514">«ValueObject»</text>
     <text class="ts" x="816" y="538">warehouseId</text>
-    <text class="ts" x="816" y="556">quantity</text>
+    <text class="ts" x="816" y="556">warehouseName</text>
+    <text class="ts" x="816" y="574">quantity</text>
   </g>
 
   <!-- Edges -->
@@ -185,9 +190,9 @@
 
   <path class="uses" marker-end="url(#at)" d="M488 118 H526"/>
   <text class="elabel" x="507" y="110" text-anchor="middle">returns</text>
-  <path class="uses" marker-end="url(#at)" d="M488 370 H504 Q514 370 514 356 V322 Q514 316 522 316 H526"/>
+  <path class="uses" marker-end="url(#at)" d="M488 370 H504 Q514 370 514 358 V344 Q514 334 522 334 H526"/>
 
-  <path class="comp" marker-start="url(#dia)" d="M642 346 V376"/>
+  <path class="comp" marker-start="url(#dia)" d="M642 364 V394"/>
   <path class="comp" marker-start="url(#dia)" d="M752 240 H768 Q776 240 776 252 V420 Q776 432 768 432 H758"/>
 
   <path class="uses" marker-end="url(#at)" d="M752 118 H794"/>

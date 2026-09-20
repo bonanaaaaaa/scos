@@ -12,15 +12,23 @@ const asQuantity = (value: number): Quantity => value as Quantity;
 /** A warehouse stock entry; latitude defaults to the equator (the destination's latitude). */
 const warehouse = ({
   id,
+  name = `Warehouse ${id}`,
   latitude = 0,
   longitude,
   available,
 }: {
   id: string;
+  name?: string;
   latitude?: number;
   longitude: number;
   available: number;
-}): WarehouseStock => ({ warehouseId: id, latitude, longitude, available });
+}): WarehouseStock => ({
+  warehouseId: id,
+  warehouseName: name,
+  latitude,
+  longitude,
+  available,
+});
 
 describe("allocateNearestFirst", () => {
   test("takes everything from the nearest warehouse when it suffices", () => {
@@ -46,6 +54,43 @@ describe("allocateNearestFirst", () => {
       ["c", 3],
     ]);
     expect(plan?.[0]?.distanceKm).toBeLessThan(plan?.[1]?.distanceKm ?? 0);
+  });
+
+  test("carries each warehouse's name onto its allocation, in nearest-first order", () => {
+    const plan = allocateNearestFirst(asQuantity(10), destination, [
+      warehouse({ id: "wh-3", name: "São Paulo", longitude: 30, available: 100 }),
+      warehouse({ id: "wh-1", name: "Paris", longitude: 10, available: 3 }),
+      warehouse({ id: "wh-2", name: "Warsaw", longitude: 20, available: 4 }),
+    ]);
+    expect(
+      plan?.map(({ warehouseId, warehouseName, quantity }) => [
+        warehouseId,
+        warehouseName,
+        quantity,
+      ]),
+    ).toEqual([
+      ["wh-1", "Paris", 3],
+      ["wh-2", "Warsaw", 4],
+      ["wh-3", "São Paulo", 3],
+    ]);
+  });
+
+  test("ranks on distance and ID alone: permuting the names leaves the plan identical", () => {
+    // The same three warehouses, differing only in which name sits on which.
+    const planFor = ([near, middle, far]: readonly [string, string, string]) =>
+      allocateNearestFirst(asQuantity(10), destination, [
+        warehouse({ id: "wh-a", name: near, longitude: 10, available: 3 }),
+        warehouse({ id: "wh-b", name: middle, longitude: 20, available: 4 }),
+        warehouse({ id: "wh-c", name: far, longitude: 30, available: 100 }),
+      ])?.map(({ warehouseId, quantity, distanceKm }) => [warehouseId, quantity, distanceKm]);
+
+    const plan = planFor(["Los Angeles", "New York", "Hong Kong"]);
+    expect(plan?.map(([warehouseId, quantity]) => [warehouseId, quantity])).toEqual([
+      ["wh-a", 3],
+      ["wh-b", 4],
+      ["wh-c", 3],
+    ]);
+    expect(planFor(["Hong Kong", "New York", "Los Angeles"])).toEqual(plan);
   });
 
   test("skips zero-stock warehouses even when nearest", () => {
@@ -96,6 +141,18 @@ describe("allocateNearestFirst", () => {
         ["wh-c", 2],
       ]);
     }
+  });
+
+  test("breaks an equal-distance tie on the ID even when the names sort the other way", () => {
+    // Mirror-image warehouses again, named so that name order contradicts ID order.
+    const plan = allocateNearestFirst(asQuantity(2), destination, [
+      warehouse({ id: "wh-a", name: "Warsaw", longitude: -10, available: 1 }),
+      warehouse({ id: "wh-b", name: "Hong Kong", longitude: 10, available: 1 }),
+    ]);
+    expect(plan?.map(({ warehouseId, warehouseName }) => [warehouseId, warehouseName])).toEqual([
+      ["wh-a", "Warsaw"],
+      ["wh-b", "Hong Kong"],
+    ]);
   });
 
   test("uses code-unit ordering for tie-breaks, not locale ordering", () => {
@@ -149,6 +206,30 @@ describe("allocateNearestFirst", () => {
   ])("rejects an invalid snapshot %#", (inventory, message) => {
     expect(() => allocateNearestFirst(asQuantity(1), destination, inventory)).toThrow(DomainError);
     expect(() => allocateNearestFirst(asQuantity(1), destination, inventory)).toThrow(message);
+  });
+
+  test.each([
+    [
+      "missing",
+      // Only a cast can build an entry without the name the schema requires.
+      {
+        warehouseId: "a",
+        latitude: 0,
+        longitude: 1,
+        available: 1,
+      } as unknown as WarehouseStock,
+      /expected string, received undefined\n.*\[0\]\.warehouseName/,
+    ],
+    [
+      "empty",
+      warehouse({ id: "a", name: "", longitude: 1, available: 1 }),
+      /expected string to have >=1 characters\n.*\[0\]\.warehouseName/,
+    ],
+  ])("rejects a snapshot whose warehouse name is %s", (_label, entry, message) => {
+    const run = () => allocateNearestFirst(asQuantity(1), destination, [entry]);
+    expect(run).toThrow(DomainError);
+    expect(run).toThrow(expect.objectContaining({ code: "INVALID_INVENTORY" }));
+    expect(run).toThrow(message);
   });
 
   test("reports every problem in an invalid snapshot at once", () => {

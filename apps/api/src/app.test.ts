@@ -14,6 +14,12 @@ import { rejectedSubmissionResponseSchema } from "#endpoints/submit-order/contra
 import { SUBMIT_ORDER_MESSAGES } from "#endpoints/submit-order/messages";
 import { createVerifyOrderApp } from "#endpoints/verify-order/app";
 import { errorResponseSchema } from "#http/errors";
+import { estimateResponseSchema } from "#http/estimate";
+import {
+  insufficientStockRequest,
+  shippingExceedsLimitRequest,
+  validRequest,
+} from "#http/estimate-examples";
 import { defaultLogger } from "#http/logger";
 import { MESSAGES } from "#http/messages";
 import { API_PREFIX } from "#http/route-contract";
@@ -41,6 +47,7 @@ import {
   unknownCases,
   verifyCases,
 } from "#testing/requests.test-support";
+import { seededApp } from "#testing/seeded-use-cases.test-support";
 
 import { createApp } from "./app";
 import { routes } from "./routes";
@@ -114,6 +121,68 @@ describe("the combined app across endpoints", () => {
       expect(response.headers.get("retry-after")).toBeNull();
     }
   });
+});
+
+/**
+ * Money is compared as exact cent integers: every amount is a two-decimal
+ * Money string, so dropping the point yields its cents and no comparison ever
+ * goes through a JS float.
+ */
+const cents = (money: string) => Number(money.replace(".", ""));
+
+/** A two-decimal Money string, as `moneySchema` publishes it. */
+const MONEY = /^\d{1,10}\.\d{2}$/;
+
+/**
+ * Every Order Estimate the API can publish over the seeded inventory: all
+ * three variants from verification (200), and the two rejections a submission
+ * embeds (422). A valid estimate is accepted, so it never reaches a 422.
+ */
+const estimateCases = [
+  { name: "200 valid", status: 200, request: validRequest },
+  { name: "200 SHIPPING_EXCEEDS_LIMIT", status: 200, request: shippingExceedsLimitRequest },
+  { name: "200 INSUFFICIENT_STOCK", status: 200, request: insufficientStockRequest },
+  { name: "422 SHIPPING_EXCEEDS_LIMIT", status: 422, request: shippingExceedsLimitRequest },
+  { name: "422 INSUFFICIENT_STOCK", status: 422, request: insufficientStockRequest },
+] as const;
+
+async function seededEstimate({ status, request }: (typeof estimateCases)[number]) {
+  const app = seededApp();
+  const response =
+    status === 200
+      ? await post(app, "/api/v1/orders/verify", request)
+      : await post(app, "/api/v1/orders", { submissionId: "estimate-amounts", ...request });
+  expect(response.status).toBe(status);
+  const body = (await response.json()) as { estimate?: unknown };
+  return estimateResponseSchema.parse(status === 200 ? body : body.estimate);
+}
+
+describe("every Order Estimate publishes the amounts its totals were built from", () => {
+  test.each(estimateCases)(
+    "$name: quantity times unitPrice is the merchandise subtotal",
+    async (example) => {
+      const estimate = await seededEstimate(example);
+      expect(estimate.unitPrice).toMatch(MONEY);
+      expect(estimate.quantity * cents(estimate.unitPrice)).toBe(
+        cents(estimate.merchandiseSubtotal),
+      );
+    },
+  );
+
+  test.each(estimateCases)(
+    "$name: shippingCost is within shippingLimit exactly when the estimate is valid",
+    async (example) => {
+      const estimate = await seededEstimate(example);
+      // Nothing was allocated, so there is no shipping cost to limit.
+      if (estimate.reason === "INSUFFICIENT_STOCK") {
+        expect(estimate.shippingLimit).toBeNull();
+        expect(estimate.shippingCost).toBeNull();
+        return;
+      }
+      expect(estimate.shippingLimit).toMatch(MONEY);
+      expect(cents(estimate.shippingCost) <= cents(estimate.shippingLimit)).toBe(estimate.valid);
+    },
+  );
 });
 
 describe("unknown routes", () => {

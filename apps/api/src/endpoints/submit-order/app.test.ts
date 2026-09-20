@@ -14,6 +14,7 @@ import {
   submitBody,
   verifyBody,
 } from "#testing/fixtures.test-support";
+import { seedInventory, seededApp } from "#testing/seeded-use-cases.test-support";
 
 import {
   orderResponseSchema,
@@ -36,7 +37,13 @@ describe("POST /api/v1/orders", () => {
     discountedMerchandiseTotal: "4275.00",
     shippingCost: acceptedOrder.shippingCost.toString(),
     orderTotal: acceptedOrder.orderTotal.toString(),
-    allocations: [{ warehouseId: inventory[0]?.warehouseId, quantity: 30 }],
+    allocations: [
+      {
+        warehouseId: inventory[0]?.warehouseId,
+        warehouseName: inventory[0]?.warehouseName,
+        quantity: 30,
+      },
+    ],
   };
 
   test("201 with the new Order; the internal id is not exposed", async () => {
@@ -147,6 +154,68 @@ describe("POST /api/v1/orders", () => {
     expect(SUBMIT_ORDER_MESSAGES.internal).toMatch(/could not be confirmed/);
     expect(SUBMIT_ORDER_MESSAGES.internal).toMatch(/same submissionId/);
     expect(logger.error).toHaveBeenCalledOnce();
+  });
+});
+
+describe("POST /api/v1/orders over the seeded inventory", () => {
+  const berlin = { latitude: 52.52, longitude: 13.405 };
+
+  test("201 carries the warehouse name on every allocation", async () => {
+    // 300 units are more than Warsaw's 245, so the accepted Order spans two
+    // warehouses and each allocation must name the one it was taken from.
+    const response = await post(seededApp(), "/api/v1/orders", {
+      submissionId: "seeded-multi-warehouse",
+      quantity: 300,
+      ...berlin,
+    });
+
+    expect(response.status).toBe(201);
+    const body = await json(response, orderResponseSchema.strict());
+    expect(
+      body.allocations.map(({ warehouseName, quantity }) => [warehouseName, quantity]),
+    ).toStrictEqual([
+      ["Warsaw", 245],
+      ["Paris", 55],
+    ]);
+    // The stored name is the seeded warehouse's own, matched on its stable ID.
+    const seeded = new Map(
+      seedInventory().map(({ warehouseId, warehouseName }) => [warehouseId, warehouseName]),
+    );
+    for (const { warehouseId, warehouseName } of body.allocations) {
+      expect(warehouseName, warehouseId).toBe(seeded.get(warehouseId));
+    }
+  });
+
+  test("422 SHIPPING_EXCEEDS_LIMIT embeds an estimate whose allocations are named", async () => {
+    // 10 units to Sydney are served from Hong Kong, over the shipping limit.
+    const response = await post(seededApp(), "/api/v1/orders", {
+      submissionId: "seeded-sydney",
+      quantity: 10,
+      latitude: -33.9,
+      longitude: 151.2,
+    });
+
+    expect(response.status).toBe(422);
+    const body = await json(response, rejectedSubmissionResponseSchema.strict());
+    expect(body.error.code).toBe("SHIPPING_EXCEEDS_LIMIT");
+    expect(body.estimate.allocations.map(({ warehouseName }) => warehouseName)).toStrictEqual([
+      "Hong Kong",
+    ]);
+  });
+
+  test("422 INSUFFICIENT_STOCK has no allocation to name", async () => {
+    // More units than all six warehouses hold together: nothing was allocated,
+    // so there is no warehouse to name.
+    const response = await post(seededApp(), "/api/v1/orders", {
+      submissionId: "seeded-too-many",
+      quantity: 3000,
+      ...berlin,
+    });
+
+    expect(response.status).toBe(422);
+    const body = await json(response, rejectedSubmissionResponseSchema.strict());
+    expect(body.error.code).toBe("INSUFFICIENT_STOCK");
+    expect(body.estimate.allocations).toStrictEqual([]);
   });
 });
 

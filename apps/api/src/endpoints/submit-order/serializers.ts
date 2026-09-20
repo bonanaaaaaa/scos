@@ -29,6 +29,10 @@ export function orderBody(order: Order): OrderResponse {
     discountedMerchandiseTotal: order.discountedMerchandiseTotal.toString(),
     shippingCost: order.shippingCost.toString(),
     orderTotal: order.orderTotal.toString(),
-    allocations: order.allocations.map(({ warehouseId, quantity }) => ({ warehouseId, quantity })),
+    allocations: order.allocations.map(({ warehouseId, warehouseName, quantity }) => ({
+      warehouseId,
+      warehouseName,
+      quantity,
+    })),
   };
 }

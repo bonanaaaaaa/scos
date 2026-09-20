@@ -142,6 +142,7 @@ describe("OpenAPI document", () => {
     expect(schemas.InsufficientStockEstimate).toMatchObject({
       properties: {
         shippingCost: { type: "null" },
+        shippingLimit: { type: "null" },
         orderTotal: { type: "null" },
         allocations: { type: "array", maxItems: 0 },
       },
@@ -151,6 +152,41 @@ describe("OpenAPI document", () => {
       { $ref: "#/components/schemas/ShippingExceedsLimitEstimate" },
       { $ref: "#/components/schemas/InsufficientStockEstimate" },
     ]);
+  });
+
+  test("both allocation shapes require the warehouse name, as one component", () => {
+    expect(schemas.WarehouseName).toMatchObject({ type: "string", minLength: 1 });
+    // The name is a label: the description must send clients to the ID instead.
+    expect(schemas.WarehouseName?.description).toContain("not an identifier");
+    expect(schemas.WarehouseName?.description).toContain("warehouseId");
+    for (const name of ["EstimateAllocation", "OrderAllocation"] as const) {
+      expect(schemas[name]?.properties, name).toMatchObject({
+        warehouseName: { $ref: "#/components/schemas/WarehouseName" },
+      });
+      expect(schemas[name]?.required, name).toContain("warehouseName");
+    }
+  });
+
+  test("every estimate variant requires unitPrice and shippingLimit", () => {
+    for (const name of [
+      "ValidEstimate",
+      "ShippingExceedsLimitEstimate",
+      "InsufficientStockEstimate",
+    ] as const) {
+      expect(schemas[name]?.required, name).toEqual(
+        expect.arrayContaining(["unitPrice", "shippingLimit"]),
+      );
+      // The unit price is a Money amount on every variant; only the limit
+      // differs, and InsufficientStockEstimate's null one is asserted above.
+      expect(schemas[name]?.properties, name).toMatchObject({
+        unitPrice: { $ref: "#/components/schemas/Money" },
+      });
+    }
+    for (const name of ["ValidEstimate", "ShippingExceedsLimitEstimate"] as const) {
+      expect(schemas[name]?.properties, name).toMatchObject({
+        shippingLimit: { $ref: "#/components/schemas/Money" },
+      });
+    }
   });
 
   test("503 documents Retry-After and 404 is a reusable response", () => {
@@ -334,6 +370,7 @@ describe("OpenAPI document", () => {
       "ValidEstimate",
       "VerifyOrderRequest",
       "WarehouseId",
+      "WarehouseName",
     ]);
   });
 

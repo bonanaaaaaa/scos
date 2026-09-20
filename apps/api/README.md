@@ -241,15 +241,18 @@ nothing, and does not promise that a later submission is accepted.
   "reason": null,
   "quantity": 30,
   "destination": { "latitude": 49.0097, "longitude": 2.5478 },
+  "unitPrice": "150.00",
   "merchandiseSubtotal": "4500.00",
   "discountRate": "0.05",
   "discountAmount": "225.00",
   "discountedMerchandiseTotal": "4275.00",
   "shippingCost": "0.00",
+  "shippingLimit": "641.25",
   "orderTotal": "4275.00",
   "allocations": [
     {
       "warehouseId": "01996000-0000-7000-8000-000000000004",
+      "warehouseName": "Paris",
       "quantity": 30,
       "distanceKm": 0.0029255906921376654
     }
@@ -257,11 +260,17 @@ nothing, and does not promise that a later submission is accepted.
 }
 ```
 
+`unitPrice` and `shippingLimit` are there so a caller can re-derive every
+amount from the response alone: `quantity x unitPrice` is the subtotal, and
+`shippingLimit` is 15% of `discountedMerchandiseTotal`, truncated toward zero
+to cents so that a client's own `shippingCost <= shippingLimit` check agrees
+with the server on every amount.
+
 - `valid: false, reason: "SHIPPING_EXCEEDS_LIMIT"` keeps every amount and
-  allocation.
+  allocation, including the `shippingLimit` the cost exceeded.
 - `valid: false, reason: "INSUFFICIENT_STOCK"` keeps the merchandise and
-  discount amounts, with `shippingCost: null`, `orderTotal: null` and
-  `allocations: []`.
+  discount amounts, with `shippingCost: null`, `shippingLimit: null`,
+  `orderTotal: null` and `allocations: []`.
 
 ### `POST /api/v1/orders`
 
@@ -288,15 +297,24 @@ no `Idempotency-Key` header is used.
   "discountedMerchandiseTotal": "4275.00",
   "shippingCost": "0.00",
   "orderTotal": "4275.00",
-  "allocations": [{ "warehouseId": "01996000-0000-7000-8000-000000000004", "quantity": 30 }]
+  "allocations": [
+    {
+      "warehouseId": "01996000-0000-7000-8000-000000000004",
+      "warehouseName": "Paris",
+      "quantity": 30
+    }
+  ]
 }
 ```
 
 Repeating a `submissionId` with the same quantity and destination returns the
-original Order (`201`, byte-identical body) without deducting stock again,
-even after stock changes or a restart. Reusing it with a different quantity or
-destination is `409`. Business rejections (`422`) are not stored, so the same
-`submissionId` is re-evaluated when repeated and may later succeed.
+original Order (`201`) without deducting stock again, even after stock changes
+or a restart. Every stored field repeats exactly; the one field that can differ
+is an allocation's `warehouseName`, which is resolved from the warehouse on
+each read rather than stored, so renaming a warehouse shows up in later
+repeats. Reusing the key with a different quantity or destination is `409`.
+Business rejections (`422`) are not stored, so the same `submissionId` is
+re-evaluated when repeated and may later succeed.
 
 `422` body: the error plus the estimate that caused it, in the same shape as a
 `valid: false` verification:
@@ -592,15 +610,18 @@ curl -sS "$BASE/api/v1/orders/verify" -H 'Content-Type: application/json' \
   "reason": null,
   "quantity": 150,
   "destination": { "latitude": 52.52, "longitude": 13.405 },
+  "unitPrice": "150.00",
   "merchandiseSubtotal": "22500.00",
   "discountRate": "0.15",
   "discountAmount": "3375.00",
   "discountedMerchandiseTotal": "19125.00",
   "shippingCost": "281.96",
+  "shippingLimit": "2868.75",
   "orderTotal": "19406.96",
   "allocations": [
     {
       "warehouseId": "01996000-0000-7000-8000-000000000005",
+      "warehouseName": "Warsaw",
       "quantity": 150,
       "distanceKm": 514.9927163724758
     }
@@ -616,7 +637,7 @@ curl -sS -w '\nHTTP %{http_code}\n' "$BASE/api/v1/orders" -H 'Content-Type: appl
 ```
 
 ```text
-{"orderNumber":"SO-2EP5S908HX6Y","submissionId":"checkout-7f3a-attempt-1","quantity":150,"destination":{"latitude":52.52,"longitude":13.405},"unitPrice":"150.00","merchandiseSubtotal":"22500.00","discountRate":"0.15","discountAmount":"3375.00","discountedMerchandiseTotal":"19125.00","shippingCost":"281.96","orderTotal":"19406.96","allocations":[{"warehouseId":"01996000-0000-7000-8000-000000000005","quantity":150}]}
+{"orderNumber":"SO-2EP5S908HX6Y","submissionId":"checkout-7f3a-attempt-1","quantity":150,"destination":{"latitude":52.52,"longitude":13.405},"unitPrice":"150.00","merchandiseSubtotal":"22500.00","discountRate":"0.15","discountAmount":"3375.00","discountedMerchandiseTotal":"19125.00","shippingCost":"281.96","orderTotal":"19406.96","allocations":[{"warehouseId":"01996000-0000-7000-8000-000000000005","warehouseName":"Warsaw","quantity":150}]}
 HTTP 201
 ```
 

@@ -56,7 +56,7 @@ export const submitOrderRequestExamples = {
   repeated: {
     summary: "Repeated submissionId (201, original Order)",
     description:
-      'The "Accepted Order" request again, as after a double click or a lost response. Returns the original Order, byte-identical, without deducting stock again.',
+      'The "Accepted Order" request again, as after a double click or a lost response. Returns the original Order without deducting stock again.',
     value: acceptedRequest,
   },
   changedInput: {
@@ -87,15 +87,16 @@ export const acceptedOrderExample = {
   submissionId: EXAMPLE_SUBMISSION_ID,
   quantity: validEstimateExample.quantity,
   destination: validEstimateExample.destination,
-  unitPrice: "150.00",
+  unitPrice: validEstimateExample.unitPrice,
   merchandiseSubtotal: validEstimateExample.merchandiseSubtotal,
   discountRate: validEstimateExample.discountRate,
   discountAmount: validEstimateExample.discountAmount,
   discountedMerchandiseTotal: validEstimateExample.discountedMerchandiseTotal,
   shippingCost: validEstimateExample.shippingCost,
   orderTotal: validEstimateExample.orderTotal,
-  allocations: validEstimateExample.allocations.map(({ warehouseId, quantity }) => ({
+  allocations: validEstimateExample.allocations.map(({ warehouseId, warehouseName, quantity }) => ({
     warehouseId,
+    warehouseName,
     quantity,
   })),
 } as const;
@@ -110,7 +111,7 @@ export const submitOrderResponseExamples = {
     repeated: {
       summary: "Repeated submissionId: the original Order",
       description:
-        "The same submissionId, quantity and destination again (a double click or a retry after a lost response). The body is byte-identical to the original response; stock is not deducted again.",
+        "The same submissionId, quantity and destination again (a double click or a retry after a lost response). The body repeats the original response, apart from an allocation's `warehouseName` if that warehouse has since been renamed; stock is not deducted again.",
       value: acceptedOrderExample,
     },
   },

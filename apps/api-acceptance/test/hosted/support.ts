@@ -313,7 +313,12 @@ export async function stableRead<T>(
 // Decimal serialization, checked on the raw response text
 // ---------------------------------------------------------------------------
 
-/** The monetary fields of an estimate and of an accepted Order. */
+/**
+ * The monetary fields an accepted Order carries, which an estimate carries
+ * too. An estimate adds {@link ESTIMATE_ONLY_MONEY}; an Order has no shipping
+ * limit, because the limit belongs to the advisory decision, not to the
+ * historical facts of an accepted Order.
+ */
 export const MONEY_FIELDS = [
   "unitPrice",
   "merchandiseSubtotal",
@@ -322,6 +327,9 @@ export const MONEY_FIELDS = [
   "shippingCost",
   "orderTotal",
 ] as const;
+
+/** The monetary fields only an estimate carries. */
+export const ESTIMATE_ONLY_MONEY = ["shippingLimit"] as const;
 
 const MONEY_TEXT = /^"\d{1,10}\.\d{2}"$/;
 const DISCOUNT_RATE_TEXT = /^"(?:0\.\d{2}|1\.00)"$/;

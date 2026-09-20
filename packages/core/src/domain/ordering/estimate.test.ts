@@ -5,6 +5,7 @@ import { DomainError } from "#domain/shared/errors";
 import type { Quantity } from "#domain/shared/quantity";
 import type { WarehouseStock } from "#domain/shipping/allocation";
 import { EARTH_RADIUS_KM } from "#domain/shipping/distance";
+import { publishedShippingLimitFor } from "#domain/shipping/shipping";
 
 import { type OrderEstimate, estimateOrder } from "./estimate";
 
@@ -16,12 +17,48 @@ const destinationAt = (latitude: number, longitude: number): Destination =>
 const longitudeForKm = (km: number): number => ((km / EARTH_RADIUS_KM) * 180) / Math.PI;
 
 const PRD_WAREHOUSES: readonly WarehouseStock[] = [
-  { warehouseId: "wh-1-los-angeles", latitude: 33.9425, longitude: -118.408056, available: 355 },
-  { warehouseId: "wh-2-new-york", latitude: 40.639722, longitude: -73.778889, available: 578 },
-  { warehouseId: "wh-3-sao-paulo", latitude: -23.435556, longitude: -46.473056, available: 265 },
-  { warehouseId: "wh-4-paris", latitude: 49.009722, longitude: 2.547778, available: 694 },
-  { warehouseId: "wh-5-warsaw", latitude: 52.165833, longitude: 20.967222, available: 245 },
-  { warehouseId: "wh-6-hong-kong", latitude: 22.308889, longitude: 113.914444, available: 419 },
+  {
+    warehouseId: "wh-1-los-angeles",
+    warehouseName: "Los Angeles",
+    latitude: 33.9425,
+    longitude: -118.408056,
+    available: 355,
+  },
+  {
+    warehouseId: "wh-2-new-york",
+    warehouseName: "New York",
+    latitude: 40.639722,
+    longitude: -73.778889,
+    available: 578,
+  },
+  {
+    warehouseId: "wh-3-sao-paulo",
+    warehouseName: "São Paulo",
+    latitude: -23.435556,
+    longitude: -46.473056,
+    available: 265,
+  },
+  {
+    warehouseId: "wh-4-paris",
+    warehouseName: "Paris",
+    latitude: 49.009722,
+    longitude: 2.547778,
+    available: 694,
+  },
+  {
+    warehouseId: "wh-5-warsaw",
+    warehouseName: "Warsaw",
+    latitude: 52.165833,
+    longitude: 20.967222,
+    available: 245,
+  },
+  {
+    warehouseId: "wh-6-hong-kong",
+    warehouseName: "Hong Kong",
+    latitude: 22.308889,
+    longitude: 113.914444,
+    available: 419,
+  },
 ];
 
 const summarise = (estimate: OrderEstimate) => ({
@@ -39,7 +76,7 @@ const summarise = (estimate: OrderEstimate) => ({
 describe("estimateOrder", () => {
   test("a destination at a warehouse ships for free", () => {
     const estimate = estimateOrder({ quantity: asQuantity(3), destination: destinationAt(0, 0) }, [
-      { warehouseId: "w", latitude: 0, longitude: 0, available: 3 },
+      { warehouseId: "w", warehouseName: "Paris", latitude: 0, longitude: 0, available: 3 },
     ]);
     expect(summarise(estimate)).toEqual({
       valid: true,
@@ -57,8 +94,8 @@ describe("estimateOrder", () => {
 
   test("insufficient stock retains merchandise and discount with null shipping and total", () => {
     const estimate = estimateOrder({ quantity: asQuantity(30), destination: destinationAt(0, 0) }, [
-      { warehouseId: "w", latitude: 0, longitude: 0, available: 29 },
-      { warehouseId: "empty", latitude: 0, longitude: 1, available: 0 },
+      { warehouseId: "w", warehouseName: "Paris", latitude: 0, longitude: 0, available: 29 },
+      { warehouseId: "empty", warehouseName: "Warsaw", latitude: 0, longitude: 1, available: 0 },
     ]);
     expect(summarise(estimate)).toEqual({
       valid: false,
@@ -83,7 +120,7 @@ describe("estimateOrder", () => {
     const estimateAtKm = (km: number) =>
       estimateOrder(
         { quantity: asQuantity(1), destination: destinationAt(0, longitudeForKm(km)) },
-        [{ warehouseId: "w", latitude: 0, longitude: 0, available: 1 }],
+        [{ warehouseId: "w", warehouseName: "Paris", latitude: 0, longitude: 0, available: 1 }],
       );
 
     test("below the limit is valid", () => {
@@ -156,7 +193,13 @@ describe("estimateOrder", () => {
     const quantity = 60_000_000;
     const run = () =>
       estimateOrder({ quantity: asQuantity(quantity), destination: destinationAt(0, 0) }, [
-        { warehouseId: "antipode", latitude: 0, longitude: 180, available: quantity },
+        {
+          warehouseId: "antipode",
+          warehouseName: "Antipode",
+          latitude: 0,
+          longitude: 180,
+          available: quantity,
+        },
       ]);
     expect(run).toThrow(DomainError);
     expect(run).toThrow(/exceeds NUMERIC/);
@@ -169,6 +212,74 @@ describe("estimateOrder", () => {
     );
     expect(Object.isFrozen(estimate)).toBe(true);
     expect(Object.isFrozen(estimate.allocations)).toBe(true);
+  });
+});
+
+describe("published unit price and shipping limit", () => {
+  const WAREHOUSE = {
+    warehouseId: "w",
+    warehouseName: "Paris",
+    latitude: 0,
+    longitude: 0,
+    available: 30,
+  } satisfies WarehouseStock;
+
+  const estimateAt = (quantity: number, km = 0) =>
+    estimateOrder(
+      { quantity: asQuantity(quantity), destination: destinationAt(0, longitudeForKm(km)) },
+      [WAREHOUSE],
+    );
+
+  // One per variant: 30 units at the warehouse, 1 unit just past the limit,
+  // and 31 units against 30 in stock.
+  const valid = estimateAt(30);
+  const exceeds = estimateAt(1, 6166.5);
+  const insufficient = estimateAt(31);
+
+  test("every variant carries the unit price the subtotal was calculated with", () => {
+    for (const estimate of [valid, exceeds, insufficient]) {
+      expect(estimate.unitPrice.toString()).toBe("150.00");
+      expect(
+        estimate.unitPrice
+          .toDecimal()
+          .times(estimate.quantity)
+          .equals(estimate.merchandiseSubtotal.toDecimal()),
+      ).toBe(true);
+    }
+  });
+
+  test("a priced estimate publishes the truncated limit its shipping was tested against", () => {
+    expect(valid.shippingLimit?.toString()).toBe("641.25"); // 15% of 4275.00
+    expect(exceeds.shippingLimit?.toString()).toBe("22.50"); // 15% of 150.00
+    for (const estimate of [valid, exceeds]) {
+      expect(estimate.shippingLimit?.toString()).toBe(
+        publishedShippingLimitFor(estimate.discountedMerchandiseTotal).toString(),
+      );
+    }
+  });
+
+  test("insufficient stock publishes no limit, alongside its other null amounts", () => {
+    expect(insufficient.reason).toBe("INSUFFICIENT_STOCK");
+    expect(insufficient.shippingLimit).toBeNull();
+    expect(insufficient.shippingCost).toBeNull();
+    expect(insufficient.orderTotal).toBeNull();
+  });
+
+  test("publishing the limit did not move the accept or reject boundary", () => {
+    // Shipping equal to the published limit is still accepted and one cent
+    // more is still rejected, as before either field was carried.
+    const atLimit = estimateAt(1, 6165.2);
+    expect(atLimit.shippingCost?.toString()).toBe("22.50");
+    expect(atLimit.shippingLimit?.toString()).toBe("22.50");
+    expect(atLimit.valid).toBe(true);
+    expect(atLimit.reason).toBeNull();
+
+    expect(exceeds.shippingCost?.toString()).toBe("22.51");
+    expect(exceeds.valid).toBe(false);
+    expect(exceeds.reason).toBe("SHIPPING_EXCEEDS_LIMIT");
+
+    expect(valid.valid).toBe(true);
+    expect(valid.shippingCost?.toString()).toBe("0.00");
   });
 });
 

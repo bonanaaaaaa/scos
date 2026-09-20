@@ -10,6 +10,10 @@
  * half-up to cents, and a limit of 15% of the discounted merchandise total.
  * Keep it free of any dependency on the application code.
  *
+ * Warehouse names travel with the plan because the API publishes them beside
+ * every `warehouseId`; they are labels only, and {@link allocate} never lets
+ * one influence the order it produces.
+ *
  * @module
  */
 
@@ -51,6 +55,9 @@ export function formatCents(cents: bigint): string {
   const text = cents.toString().padStart(3, "0");
   return `${text.slice(0, -2)}.${text.slice(-2)}`;
 }
+
+/** PRD: every unit is $150.00, whatever the quantity or the destination. */
+export const UNIT_PRICE = "150.00";
 
 /** Discount percentage for a quantity (PRD tiers). */
 export function discountPercent(quantity: number): number {
@@ -99,8 +106,25 @@ export function shippingCents(allocations: readonly { quantity: number; distance
   return (numerator * 200n + denominator) / (2n * denominator);
 }
 
+/**
+ * The published shipping limit: 15% of the discounted merchandise total,
+ * truncated toward zero to cents.
+ *
+ * Truncation, not the half-up rounding used for the charge itself, is what
+ * makes the published number honest. `shippingCost` is a whole number of
+ * cents, so `shipping <= floor(15% of discounted)` is exactly the same test as
+ * `100 x shipping <= 15 x discounted` — the unrounded comparison the server
+ * decides with. Rounding the limit up instead would publish a limit a client
+ * could meet on a cent the server rejects.
+ */
+export function shippingLimitCents(discountedCents: bigint): bigint {
+  return (discountedCents * 15n) / 100n; // BigInt division truncates toward zero
+}
+
 export interface PlannedAllocation {
   warehouseId: string;
+  /** The planning warehouse's name, for display only; see the module docblock. */
+  warehouseName: string;
   quantity: number;
   distanceKm: number;
 }
@@ -123,7 +147,7 @@ export function allocate(
   for (const { w, distanceKm } of ranked) {
     if (remaining === 0) break;
     const take = Math.min(remaining, w.stock);
-    plan.push({ warehouseId: w.id, quantity: take, distanceKm });
+    plan.push({ warehouseId: w.id, warehouseName: w.name, quantity: take, distanceKm });
     remaining -= take;
   }
   return plan;
@@ -146,8 +170,11 @@ export function expectedEstimate(
       reason: "INSUFFICIENT_STOCK",
       quantity,
       destination: { latitude: destination.latitude, longitude: destination.longitude },
+      unitPrice: UNIT_PRICE,
       ...merchandise,
       shippingCost: null,
+      // Nothing was planned, so there is no charge to hold to a limit.
+      shippingLimit: null,
       orderTotal: null,
       allocations: [],
     };
@@ -155,16 +182,28 @@ export function expectedEstimate(
   const shipping = shippingCents(plan);
   // shipping <= 0.15 x discounted  <=>  100 x shipping <= 15 x discounted
   const withinLimit = shipping * 100n <= discountedCents * 15n;
+  const limit = shippingLimitCents(discountedCents);
+  // The published limit is a separate expectation from the accept/reject rule
+  // above, so the two are checked against each other here: a client that
+  // compares its own cents to `shippingLimit` must reach the server's verdict
+  // on every amount, never land one cent the other side of it.
+  expect(
+    shipping <= limit,
+    `limit ${formatCents(limit)} disagrees with the exact rule on ${formatCents(shipping)}`,
+  ).toBe(withinLimit);
   return {
     valid: withinLimit,
     reason: withinLimit ? null : "SHIPPING_EXCEEDS_LIMIT",
     quantity,
     destination: { latitude: destination.latitude, longitude: destination.longitude },
+    unitPrice: UNIT_PRICE,
     ...merchandise,
     shippingCost: formatCents(shipping),
+    shippingLimit: formatCents(limit),
     orderTotal: formatCents(discountedCents + shipping),
-    allocations: plan.map(({ warehouseId, quantity: units, distanceKm }) => ({
+    allocations: plan.map(({ warehouseId, warehouseName, quantity: units, distanceKm }) => ({
       warehouseId,
+      warehouseName,
       quantity: units,
       distanceKm: expect.closeTo(distanceKm, 6),
     })),
@@ -187,16 +226,22 @@ export function expectedOrder(
     submissionId,
     quantity,
     destination: estimate.destination,
-    unitPrice: "150.00",
+    unitPrice: UNIT_PRICE,
     merchandiseSubtotal: estimate.merchandiseSubtotal,
     discountRate: estimate.discountRate,
     discountAmount: estimate.discountAmount,
     discountedMerchandiseTotal: estimate.discountedMerchandiseTotal,
     shippingCost: estimate.shippingCost,
+    // An accepted Order publishes no `shippingLimit`: the limit decided its
+    // acceptance and is not a fact about the Order afterwards.
     orderTotal: estimate.orderTotal,
+    // The name is read live through the allocation's warehouse, so as long as
+    // no warehouse is renamed it is the planning warehouse's name — which is
+    // what the estimate above already carries.
     allocations: (estimate.allocations as PlannedAllocation[]).map(
-      ({ warehouseId, quantity: units }) => ({
+      ({ warehouseId, warehouseName, quantity: units }) => ({
         warehouseId,
+        warehouseName,
         quantity: units,
       }),
     ),
@@ -292,7 +337,7 @@ export function destinationWithShippingCents(cents: number): LimitDestination {
       expect(charged, `oracle shipping for ${JSON.stringify(point)}`).toBe(BigInt(cents));
       expect(Math.abs(nearest.km - targetKm)).toBeLessThan(0.01);
       expect(allocate(1, point)).toStrictEqual([
-        { warehouseId: origin.id, quantity: 1, distanceKm: nearest.km },
+        { warehouseId: origin.id, warehouseName: origin.name, quantity: 1, distanceKm: nearest.km },
       ]);
       return {
         ...point,

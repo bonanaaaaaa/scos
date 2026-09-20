@@ -42,6 +42,36 @@ export function shippingLimitFor(discountedMerchandiseTotal: Money): Decimal {
   return discountedMerchandiseTotal.toDecimal().times(SHIPPING_LIMIT_RATIO);
 }
 
+/**
+ * The limit as published to clients: the exact limit truncated toward zero to
+ * cents.
+ *
+ * Truncation, not half-up rounding, is what makes a client's own
+ * `shippingCost <= shippingLimit` check agree with the server in every case.
+ * A shipping cost is at cent scale, so for an exact limit L and its truncation
+ * T = floor(L x 100) / 100, `cost <= L` holds exactly when `cost <= T`:
+ * truncating discards only the amounts strictly between T and L, and no
+ * two-decimal amount lies there. Half-up rounding does not have that property:
+ * it can round the limit UP past an amount the server rejects. 15% of 150.05
+ * is 22.5075, which rounds to 22.51 and would admit shipping of 22.51, while
+ * the server rejects it. Truncation gives 22.50, which the server accepts.
+ *
+ * The published limit is advisory: {@link isShippingWithinLimit} still decides
+ * against the exact, unrounded limit.
+ *
+ * The sub-cent digits this discards do not arise from a real order: with a
+ * $150 unit price and whole-percent tiers every discounted merchandise total
+ * is a multiple of $7.50, so its exact 15% has at most three decimals. The
+ * function still takes any Money, and its tests cover a four-decimal limit
+ * (15% of 1500.01), because nothing here should depend on the current price
+ * or tiers.
+ */
+export function publishedShippingLimitFor(discountedMerchandiseTotal: Money): Money {
+  return Money.fromDecimal(
+    shippingLimitFor(discountedMerchandiseTotal).toDecimalPlaces(2, DomainDecimal.ROUND_DOWN),
+  );
+}
+
 /** Rounded shipping at or below the exact limit is valid; equality passes. */
 export function isShippingWithinLimit(
   shippingCost: Money,

@@ -92,6 +92,7 @@ import {
   HEALTH,
   HTTP_METHODS,
   type JsonRecord,
+  ESTIMATE_ONLY_MONEY,
   MONEY_FIELDS,
   type Method,
   SUBMIT,
@@ -400,9 +401,12 @@ test.describe("POST /api/v1/orders: rejections store nothing and consume no stoc
 });
 
 test.describe("decimal serialization: money is a two-decimal JSON string, never a number", () => {
-  const ESTIMATE_MONEY = MONEY_FIELDS.filter((field) => field !== "unitPrice");
-  // A quantity above the remaining stock nulls shipping and the order total.
-  const NULLABLE = { nullable: ["shippingCost", "orderTotal"] };
+  // An estimate carries every amount an Order does, including `unitPrice`,
+  // plus the shipping limit the charge was tested against.
+  const ESTIMATE_MONEY = [...MONEY_FIELDS, ...ESTIMATE_ONLY_MONEY];
+  // A quantity above the remaining stock nulls shipping, its limit and the
+  // order total.
+  const NULLABLE = { nullable: ["shippingCost", "shippingLimit", "orderTotal"] };
 
   test("a valid estimate", async () => {
     const response = await verify({ quantity: 30, ...MANHATTAN });
@@ -422,6 +426,7 @@ test.describe("decimal serialization: money is a two-decimal JSON string, never 
     const response = await verify({ quantity: total + 1, ...AT_PARIS });
     expectJson(response, 200);
     expect(response.text).toContain('"shippingCost":null');
+    expect(response.text).toContain('"shippingLimit":null');
     expect(response.text).toContain('"orderTotal":null');
     expectDecimalStrings(response.text, [...ESTIMATE_MONEY, "discountRate"], NULLABLE);
   });

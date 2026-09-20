@@ -68,13 +68,17 @@ describe("per-endpoint compositions against PostgreSQL", () => {
         await snapshot(postJson(verify, "/api/v1/orders/verify", { quantity: 700, ...AT_PARIS }))
       ).json(),
     );
-    expect(before.allocations[0]).toMatchObject({ warehouseId: PARIS, quantity: 694 });
+    expect(before.allocations[0]).toMatchObject({
+      warehouseId: PARIS,
+      warehouseName: "Paris",
+      quantity: 694,
+    });
 
     const body = { submissionId: "endpoint-1", quantity: 100, ...AT_PARIS };
     const first = await snapshot(postJson(submit, "/api/v1/orders", body));
     expect(first.status, first.text).toBe(201);
     expect(orderResponseSchema.parse(first.json()).allocations).toStrictEqual([
-      { warehouseId: PARIS, quantity: 100 },
+      { warehouseId: PARIS, warehouseName: "Paris", quantity: 100 },
     ]);
 
     // Verification, on its own pool, sees the deducted stock.
@@ -83,7 +87,11 @@ describe("per-endpoint compositions against PostgreSQL", () => {
         await snapshot(postJson(verify, "/api/v1/orders/verify", { quantity: 700, ...AT_PARIS }))
       ).json(),
     );
-    expect(after.allocations[0]).toMatchObject({ warehouseId: PARIS, quantity: 594 });
+    expect(after.allocations[0]).toMatchObject({
+      warehouseId: PARIS,
+      warehouseName: "Paris",
+      quantity: 594,
+    });
     expect(await stockById(db.pool)).toStrictEqual({
       ...stockBefore,
       [PARIS]: (stockBefore[PARIS] ?? 0) - 100,

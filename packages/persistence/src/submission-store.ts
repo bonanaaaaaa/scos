@@ -68,12 +68,17 @@ export interface OrderRow {
   readonly discountRate: Prisma.Decimal;
   readonly discountAmount: Prisma.Decimal;
   readonly shippingCost: Prisma.Decimal;
-  readonly allocations: readonly { readonly warehouseId: string; readonly quantity: number }[];
+  readonly allocations: readonly {
+    readonly warehouseId: string;
+    readonly quantity: number;
+    readonly warehouse: { readonly name: string };
+  }[];
 }
 
-/** A locked warehouse row as returned by {@link LOCK_WAREHOUSES}. */
+/** A locked warehouse row as returned by the lock query. */
 export interface WarehouseStockRow {
   readonly id: string;
+  readonly name: string;
   readonly latitude: number;
   readonly longitude: number;
   readonly stock: number;
@@ -98,7 +103,13 @@ const orderSelect = {
   discountAmount: true,
   shippingCost: true,
   allocations: {
-    select: { warehouseId: true, quantity: true },
+    // The warehouse's name is read through the allocation's foreign key rather
+    // than copied onto the row: `warehouse_id` already identifies it, and the
+    // FK is ON DELETE RESTRICT, so the related row always exists. The name is
+    // therefore the warehouse's CURRENT name, and renaming a warehouse changes
+    // it in later reads of an Order already returned (see the `201` response
+    // description in the submit-order contract).
+    select: { warehouseId: true, quantity: true, warehouse: { select: { name: true } } },
     orderBy: { id: "asc" },
   },
 } as const satisfies Prisma.OrderSelect;
@@ -119,15 +130,25 @@ export function toDomainOrder(row: OrderRow): Order {
     discountRate: formatDiscountRate(row.discountRate),
     discountAmount: formatMoney(row.discountAmount),
     shippingCost: formatMoney(row.shippingCost),
-    allocations: row.allocations.map(({ warehouseId, quantity }) => ({ warehouseId, quantity })),
+    allocations: row.allocations.map(({ warehouseId, warehouse, quantity }) => ({
+      warehouseId,
+      warehouseName: warehouse.name,
+      quantity,
+    })),
   });
 }
 
 /** Maps locked warehouse rows to the core inventory snapshot. */
 export function toInventorySnapshot(rows: readonly WarehouseStockRow[]): InventorySnapshot {
   return Object.freeze(
-    rows.map(({ id, latitude, longitude, stock }) =>
-      Object.freeze({ warehouseId: id, latitude, longitude, available: stock }),
+    rows.map(({ id, name, latitude, longitude, stock }) =>
+      Object.freeze({
+        warehouseId: id,
+        warehouseName: name,
+        latitude,
+        longitude,
+        available: stock,
+      }),
     ),
   );
 }
@@ -184,9 +205,11 @@ function createTransaction(tx: Prisma.TransactionClient): SubmissionTransaction 
 
   return {
     async lockInventory() {
+      // The name is read under the same lock as the stock, so the plan the
+      // estimate returns names the warehouses it was actually built from.
       const rows = await classified(
         () => tx.$queryRaw<WarehouseStockRow[]>`
-          SELECT id::text AS id, latitude, longitude, stock
+          SELECT id::text AS id, name, latitude, longitude, stock
           FROM warehouses
           ORDER BY id
           FOR UPDATE`,

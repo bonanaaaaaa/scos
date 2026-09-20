@@ -23,6 +23,7 @@ import type { Logger } from "#http/logger";
 export const inventory: InventorySnapshot = [
   {
     warehouseId: "01996000-0000-7000-8000-000000000001",
+    warehouseName: "Null Island",
     latitude: 0,
     longitude: 0,
     available: 100,

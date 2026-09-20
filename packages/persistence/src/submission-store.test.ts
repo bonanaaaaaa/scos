@@ -39,15 +39,23 @@ const row: OrderRow = {
   discountAmount: decimal("12000"),
   shippingCost: decimal("654.32"),
   allocations: [
-    { warehouseId: LA, quantity: 355 },
-    { warehouseId: NY, quantity: 45 },
+    { warehouseId: LA, quantity: 355, warehouse: { name: "Los Angeles" } },
+    { warehouseId: NY, quantity: 45, warehouse: { name: "New York" } },
   ],
 };
 
 function newOrder(quantity = 10): NewOrder {
   const estimate = estimateOrder(
     orderRequestSchema.parse({ quantity, latitude: 33.9425, longitude: -118.408056 }),
-    [{ warehouseId: LA, latitude: 33.9425, longitude: -118.408056, available: 100 }],
+    [
+      {
+        warehouseId: LA,
+        warehouseName: "Los Angeles",
+        latitude: 33.9425,
+        longitude: -118.408056,
+        available: 100,
+      },
+    ],
   );
   return createOrder({
     orderNumber: "SO-0000000000AA",
@@ -80,6 +88,7 @@ function sqlOf(strings: TemplateStringsArray) {
 interface FakeOptions {
   readonly warehouses?: readonly {
     id: string;
+    name: string;
     latitude: number;
     longitude: number;
     stock: number;
@@ -140,10 +149,11 @@ describe("toDomainOrder", () => {
       discountedMerchandiseTotal: "48000.00",
       shippingCost: "654.32",
       orderTotal: "48654.32",
-      // Allocations keep the order they were read in.
+      // Allocations keep the order they were read in, each named by the
+      // warehouse its foreign key points at rather than by a stored column.
       allocations: [
-        { warehouseId: LA, quantity: 355 },
-        { warehouseId: NY, quantity: 45 },
+        { warehouseId: LA, warehouseName: "Los Angeles", quantity: 355 },
+        { warehouseId: NY, warehouseName: "New York", quantity: 45 },
       ],
     });
     expect(Object.isFrozen(order)).toBe(true);
@@ -168,14 +178,29 @@ describe("toDomainOrder", () => {
       /at most 2 decimal places/,
     );
     expect(() => toDomainOrder({ ...row, allocations: [] })).toThrow(DomainError);
+    // restoreOrder requires a non-empty name on every allocation. The joined
+    // `warehouses.name` is NOT NULL with a non-blank CHECK and the foreign key
+    // is ON DELETE RESTRICT, so this cannot arise in the database; the mapping
+    // still refuses it rather than rebuilding an Order with a nameless
+    // warehouse.
+    expect(() =>
+      toDomainOrder({
+        ...row,
+        allocations: [{ warehouseId: LA, quantity: 400, warehouse: { name: "" } }],
+      }),
+    ).toThrow(DomainError);
     expect(() => toDomainOrder({ ...row, orderNumber: "" })).toThrow(DomainError);
     expect(() => toDomainOrder({ ...row, submissionKey: " padded" })).toThrow(DomainError);
   });
 });
 
 test("toInventorySnapshot maps locked warehouse rows to core warehouse stock", () => {
-  const snapshot = toInventorySnapshot([{ id: LA, latitude: 1, longitude: 2, stock: 3 }]);
-  expect(snapshot).toStrictEqual([{ warehouseId: LA, latitude: 1, longitude: 2, available: 3 }]);
+  const snapshot = toInventorySnapshot([
+    { id: LA, name: "Los Angeles", latitude: 1, longitude: 2, stock: 3 },
+  ]);
+  expect(snapshot).toStrictEqual([
+    { warehouseId: LA, warehouseName: "Los Angeles", latitude: 1, longitude: 2, available: 3 },
+  ]);
   expect(Object.isFrozen(snapshot)).toBe(true);
   expect(Object.isFrozen(snapshot[0])).toBe(true);
 });
@@ -186,7 +211,7 @@ test("assertAllocationsCoverQuantity refuses allocations that do not sum to the 
   expect(() =>
     assertAllocationsCoverQuantity({
       ...order,
-      allocations: [{ warehouseId: LA, quantity: 11 }],
+      allocations: [{ warehouseId: LA, warehouseName: "Los Angeles", quantity: 11 }],
     }),
   ).toThrow(/Allocations sum to 11, but the Order quantity is 10/);
 });
@@ -229,7 +254,9 @@ describe("runInTransaction", () => {
   test("classifies database failures at the transaction boundary", async () => {
     const { prisma } = fakePrisma({
       createError: uniqueViolation("orders_submission_key_key"),
-      warehouses: [{ id: LA, latitude: 33.9425, longitude: -118.408056, stock: 100 }],
+      warehouses: [
+        { id: LA, name: "Los Angeles", latitude: 33.9425, longitude: -118.408056, stock: 100 },
+      ],
     });
     const store = createPrismaSubmissionStore(prisma);
     await expect(
@@ -258,19 +285,22 @@ describe("runInTransaction", () => {
     ).rejects.toBe(failure);
   });
 
-  test("locks every warehouse row in id order and returns the snapshot", async () => {
+  test("locks every warehouse row in id order and returns the snapshot with its names", async () => {
     const { prisma, calls } = fakePrisma({
       warehouses: [
-        { id: LA, latitude: 1, longitude: 2, stock: 3 },
-        { id: NY, latitude: 4, longitude: 5, stock: 6 },
+        { id: LA, name: "Los Angeles", latitude: 1, longitude: 2, stock: 3 },
+        { id: NY, name: "New York", latitude: 4, longitude: 5, stock: 6 },
       ],
     });
     const snapshot = await createPrismaSubmissionStore(prisma).runInTransaction((tx) =>
       tx.lockInventory(),
     );
     expect(snapshot.map((stock) => stock.warehouseId)).toStrictEqual([LA, NY]);
+    // The name is read under the same lock as the stock, so the plan and the
+    // Order it becomes name the warehouse the same way.
+    expect(snapshot.map((stock) => stock.warehouseName)).toStrictEqual(["Los Angeles", "New York"]);
     expect(calls.at(-1)?.sql).toBe(
-      "SELECT id::text AS id, latitude, longitude, stock FROM warehouses ORDER BY id FOR UPDATE",
+      "SELECT id::text AS id, name, latitude, longitude, stock FROM warehouses ORDER BY id FOR UPDATE",
     );
   });
 
@@ -310,6 +340,8 @@ describe("runInTransaction", () => {
         discountRate: "0.15",
         discountAmount: "2250.00",
         shippingCost: "0.00",
+        // Only the reference and the quantity are written; the name is not
+        // copied onto the row, because warehouse_id already identifies it.
         allocations: { createMany: { data: [{ warehouseId: LA, quantity: 100 }] } },
       },
       select: { id: true },
@@ -340,7 +372,7 @@ describe("runInTransaction", () => {
         await transaction.lockInventory();
         return transaction.saveAcceptedOrder({
           ...order,
-          allocations: [{ warehouseId: LA, quantity: 9 }],
+          allocations: [{ warehouseId: LA, warehouseName: "Los Angeles", quantity: 9 }],
         });
       }),
     ).rejects.toThrow(/Allocations sum to 9/);
@@ -364,8 +396,10 @@ describe("findOrderBySubmissionKey", () => {
       expect.objectContaining({
         where: { submissionKey: "submission-1" },
         select: expect.objectContaining({
+          // The name is joined through the allocation's foreign key rather
+          // than read from a column of its own.
           allocations: {
-            select: { warehouseId: true, quantity: true },
+            select: { warehouseId: true, quantity: true, warehouse: { select: { name: true } } },
             orderBy: { id: "asc" },
           },
         }),
